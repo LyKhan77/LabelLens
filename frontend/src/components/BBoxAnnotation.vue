@@ -16,6 +16,8 @@ const canvas = ref<HTMLCanvasElement | null>(null)
 const container = ref<HTMLDivElement | null>(null)
 
 const isDrawing = ref(false)
+const isHovering = ref(false)
+const hoverPos = ref({ x: 0, y: 0 })
 const drawStart = ref({ x: 0, y: 0 })
 const drawCurrent = ref({ x: 0, y: 0 })
 const labelInput = ref('')
@@ -79,8 +81,8 @@ function renderCanvas() {
     ctx.fillText(ann.label, x1 / scaleX + 4, y1 / scaleY - 6)
   })
 
-  // Draw alignment guides and rubber-band rect while drawing
-  if (isDrawing.value) {
+  const guidePos = isDrawing.value ? drawCurrent.value : hoverPos.value
+  if ((isDrawing.value || isHovering.value) && !showLabelPopup.value) {
     const ctx2 = cvs.getContext('2d')
     if (!ctx2) return
 
@@ -89,12 +91,18 @@ function renderCanvas() {
     ctx2.lineWidth = 1
     ctx2.setLineDash([2, 3])
     ctx2.beginPath()
-    ctx2.moveTo(drawCurrent.value.x, 0)
-    ctx2.lineTo(drawCurrent.value.x, displayH)
-    ctx2.moveTo(0, drawCurrent.value.y)
-    ctx2.lineTo(displayW, drawCurrent.value.y)
+    ctx2.moveTo(guidePos.x, 0)
+    ctx2.lineTo(guidePos.x, displayH)
+    ctx2.moveTo(0, guidePos.y)
+    ctx2.lineTo(displayW, guidePos.y)
     ctx2.stroke()
     ctx2.restore()
+  }
+
+  // Draw rubber-band rect while drawing
+  if (isDrawing.value) {
+    const ctx2 = cvs.getContext('2d')
+    if (!ctx2) return
 
     ctx2.strokeStyle = '#3ecf8e'
     ctx2.lineWidth = 2
@@ -127,8 +135,21 @@ function onMouseDown(e: MouseEvent) {
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (!isDrawing.value) return
-  drawCurrent.value = getCanvasPos(e)
+  if (showLabelPopup.value) return
+  const pos = getCanvasPos(e)
+  hoverPos.value = pos
+  isHovering.value = true
+  if (isDrawing.value) {
+    drawCurrent.value = pos
+  }
+  renderCanvas()
+}
+
+function onMouseLeave() {
+  isHovering.value = false
+  if (isDrawing.value) {
+    isDrawing.value = false
+  }
   renderCanvas()
 }
 
@@ -188,6 +209,7 @@ onUnmounted(() => { imageEl = null })
       @mousedown="onMouseDown"
       @mousemove="onMouseMove"
       @mouseup="onMouseUp"
+      @mouseleave="onMouseLeave"
     />
 
     <!-- Label popup -->

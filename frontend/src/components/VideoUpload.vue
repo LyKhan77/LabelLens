@@ -61,9 +61,9 @@ function onDragLeave() {
       </div>
       <button
         class="text-xs text-ink-mute hover:text-red-500 transition-colors"
-        @click="store.file = null"
+        @click="store.clearMediaInput()"
       >
-        Remove
+        Clear Media
       </button>
     </div>
   </div>

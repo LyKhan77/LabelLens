@@ -13,10 +13,10 @@
 
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
-- **Canvas BBox Annotation** — Interactive drawing tool with thin X/Y guide lines for annotating reference images as visual grounding input
+- **Canvas BBox Annotation** — Interactive drawing tool with thin hover/drag X/Y guide lines for annotating reference images as visual grounding input
 - **Configurable Inference** — Confidence threshold slider, label/bbox visibility toggles
 - **Detection Dashboard** — Floating right-side inference panel with compact stats and scrollable detection log
-- **Collapsible Controls** — Left Controls panel can collapse into a slim rail without unmounting prompt/media state
+- **Clear Media Workflow** — Media mode switching is locked until inference is stopped and current media input is cleared
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
@@ -41,7 +41,7 @@ LabelLens/
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE). Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with X/Y guides, floating compact inference panel, scrollable detection log, and state-preserving collapsible Controls panel are functional.
+**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE). Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, state-preserving collapsible Controls panel, and explicit Clear Media mode switching are functional.
 
 **Being Developed:**
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights

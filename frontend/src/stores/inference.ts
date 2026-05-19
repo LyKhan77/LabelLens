@@ -56,6 +56,13 @@ export const useInferenceStore = defineStore('inference', () => {
   watch(() => ws.connected.value, (v) => { rtspConnected.value = v })
   watch(() => ws.error.value, (v) => { if (v) error.value = v })
 
+  const hasMediaInput = computed(() => {
+    if (mediaMode.value === 'rtsp') return rtspUrl.value.trim().length > 0
+    return file.value !== null
+  })
+
+  const canSwitchMediaMode = computed(() => !isRunning.value && !hasMediaInput.value)
+
   const canRun = computed(() => {
     if (isRunning.value) return false
     if (promptMode.value === 'text' && labels.value.length === 0) return false
@@ -87,6 +94,43 @@ export const useInferenceStore = defineStore('inference', () => {
 
   function clearAnnotations() {
     annotations.value = []
+  }
+
+  function selectMediaMode(mode: MediaMode) {
+    if (mode === mediaMode.value) return
+    if (!canSwitchMediaMode.value) {
+      error.value = isRunning.value
+        ? 'Stop inference before switching media mode'
+        : 'Clear Media before switching media mode'
+      return
+    }
+    error.value = null
+    mediaMode.value = mode
+  }
+
+  function clearOutput() {
+    resultImage.value = ''
+    detections.value = []
+    stats.value = null
+    error.value = null
+    viewerState.value = 'empty'
+    videoFrames.value = []
+    videoIndex.value = 0
+    rtspFrame.value = ''
+  }
+
+  function clearMediaInput() {
+    if (isRunning.value) {
+      error.value = 'Stop inference before clearing media'
+      return
+    }
+
+    stopVideo()
+    ws.disconnect()
+    rtspConnected.value = false
+    file.value = null
+    rtspUrl.value = ''
+    clearOutput()
   }
 
   function buildPromptParams() {
@@ -224,21 +268,15 @@ export const useInferenceStore = defineStore('inference', () => {
     if (mediaMode.value === 'rtsp') {
       ws.disconnect()
       rtspConnected.value = false
+      rtspFrame.value = ''
     }
-    if (viewerState.value === 'loading') {
+    if (viewerState.value === 'loading' || viewerState.value === 'rtsp') {
       viewerState.value = 'empty'
     }
   }
 
   function reset() {
-    resultImage.value = ''
-    detections.value = []
-    stats.value = null
-    error.value = null
-    viewerState.value = 'empty'
-    videoFrames.value = []
-    videoIndex.value = 0
-    rtspFrame.value = ''
+    clearOutput()
     stopVideo()
   }
 
@@ -249,8 +287,9 @@ export const useInferenceStore = defineStore('inference', () => {
     isRunning, viewerState, resultImage, detections, stats, error,
     videoFrames, videoIndex, videoPlaying,
     rtspFrame, rtspConnected, ws,
-    canRun,
+    hasMediaInput, canSwitchMediaMode, canRun,
     addLabel, removeLabel, addAnnotation, removeAnnotation, clearAnnotations,
+    selectMediaMode, clearMediaInput,
     runInference, stopInference, reset, playVideo, stopVideo,
   }
 })
