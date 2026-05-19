@@ -9,6 +9,8 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 
 ## Features
 
+- **Feature Modes Page** — select Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts) before entering the dashboard
+- **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
 - **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes with hover X/Y alignment lines, and detect visually similar objects via SAVPE encoder
 - **Image Detection** — upload static images (JPG, PNG)
@@ -55,7 +57,7 @@ LabelLens/
 
 - Python 3.10+
 - Node.js 18+
-- YOLOE-26L segmentation model weight (`models/yoloe-26l-seg.pt`)
+- YOLOE-26L segmentation model weight (`models/yoloe-26l-seg.pt` for prompt mode, `models/yoloe-26l-seg-pf.pt` for free mode)
 
 ### Run Frontend + Backend (Recommended)
 
@@ -86,12 +88,14 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 
 ## Usage
 
-1. **Text Prompt** — type comma-separated labels in the grounding prompt field
-2. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels
-3. **Select media** — choose Image / Video / RTSP before adding media input
-4. **Adjust settings** — set confidence threshold and choose label/bbox/mask overlays before starting inference; image/video changes require rerun, RTSP changes require restarting the stream
-5. **Run or switch media** — Start/Stop can reuse the current media; use Clear Media after stopping inference to switch modes
-6. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
+1. **Select Mode** — choose Free Inference (no prompts needed) or Prompt Inference on the landing page
+2. **Text Prompt** — type comma-separated labels in the grounding prompt field (Prompt mode only)
+3. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels (Prompt mode only)
+4. **Select media** — choose Image / Video / RTSP before adding media input
+5. **Adjust settings** — set confidence threshold and choose label/bbox/mask overlays before starting inference; image/video changes require rerun, RTSP changes require restarting the stream
+6. **Run or switch media** — Start/Stop can reuse the current media; use Clear Media after stopping inference to switch modes
+7. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
+8. **Switch Mode** — click "Switch Mode" in the header to return to mode selection
 
 ## Environment Variables
 
