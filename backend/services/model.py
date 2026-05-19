@@ -202,7 +202,7 @@ class ModelService:
 
         mask_tensor = mask_data.unsqueeze(0).unsqueeze(0).float()
         scaled = ops.scale_masks(mask_tensor, (orig_h, orig_w))[0, 0]
-        binary = (scaled > 0.5).detach().cpu().numpy().astype(np.uint8)
+        binary = (scaled > 0).detach().cpu().numpy().astype(np.uint8)
         if binary.max() == 0:
             return None
         return binary
@@ -227,16 +227,7 @@ class ModelService:
         if binary is None:
             return None
 
-        orig_h, orig_w = binary.shape[:2]
         binary = binary * 255
-        min_side = max(1, min(orig_h, orig_w))
-        kernel_size = max(3, int(round(min_side * 0.006)))
-        if kernel_size % 2 == 0:
-            kernel_size += 1
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
-
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         if not contours:
             return None

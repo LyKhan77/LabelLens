@@ -7,6 +7,7 @@ import StatsGrid from './StatsGrid.vue'
 
 const store = useInferenceStore()
 const mediaImg = ref<HTMLImageElement | null>(null)
+const mediaWrapper = ref<HTMLDivElement | null>(null)
 const maskCanvas = ref<HTMLCanvasElement | null>(null)
 
 const MASK_RGB = [
@@ -17,8 +18,8 @@ const MASK_RGB = [
   [234, 88, 12],
 ]
 
-const MASK_COLORS = MASK_RGB.map(([r, g, b]) => `rgba(${r}, ${g}, ${b}, 0.32)`)
-const MASK_STROKES = MASK_RGB.map(([r, g, b]) => `rgba(${r}, ${g}, ${b}, 0.82)`)
+const MASK_COLORS = MASK_RGB.map(([r, g, b]) => `rgba(${r}, ${g}, ${b}, 0.25)`)
+const MASK_STROKES = MASK_RGB.map(([r, g, b]) => `rgba(${r}, ${g}, ${b}, 0.65)`)
 
 const activeDetections = computed<Detection[]>(() => {
   if (store.viewerState === 'video') {
@@ -71,7 +72,7 @@ function drawRasterMask(
         imageData.data[offset] = color[0]
         imageData.data[offset + 1] = color[1]
         imageData.data[offset + 2] = color[2]
-        imageData.data[offset + 3] = 128
+        imageData.data[offset + 3] = 102
       }
     }
     pixel += count
@@ -86,7 +87,10 @@ function drawRasterMask(
   const dh = (mask.height / naturalHeight) * displayHeight
 
   ctx.imageSmoothingEnabled = true
+  ctx.save()
+  ctx.filter = 'blur(1px)'
   ctx.drawImage(maskCanvas, dx, dy, dw, dh)
+  ctx.restore()
 }
 
 function drawSmoothPolygon(ctx: CanvasRenderingContext2D, points: [number, number][]) {
@@ -110,11 +114,13 @@ function midpoint(a: [number, number], b: [number, number]): [number, number] {
 
 function drawMasks() {
   const img = mediaImg.value
+  const wrapper = mediaWrapper.value
   const canvas = maskCanvas.value
-  if (!img || !canvas) return
+  if (!img || !wrapper || !canvas) return
 
-  const width = img.clientWidth
-  const height = img.clientHeight
+  const rect = wrapper.getBoundingClientRect()
+  const width = rect.width
+  const height = rect.height
   const naturalWidth = img.naturalWidth
   const naturalHeight = img.naturalHeight
   if (!width || !height || !naturalWidth || !naturalHeight) return
@@ -122,8 +128,6 @@ function drawMasks() {
   const dpr = window.devicePixelRatio || 1
   canvas.width = Math.round(width * dpr)
   canvas.height = Math.round(height * dpr)
-  canvas.style.width = `${width}px`
-  canvas.style.height = `${height}px`
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -133,7 +137,15 @@ function drawMasks() {
 
   if (!store.showMasks) return
 
-  activeDetections.value.forEach((det, index) => {
+  const sorted = activeDetections.value
+    .map((det, index) => ({
+      det,
+      index,
+      area: (det.box[2] - det.box[0]) * (det.box[3] - det.box[1]),
+    }))
+    .sort((a, b) => b.area - a.area)
+
+  sorted.forEach(({ det, index }) => {
     if (det.mask_rle) {
       drawRasterMask(
         ctx,
@@ -172,6 +184,8 @@ watch(mediaImg, (img) => {
   if (img && 'ResizeObserver' in window) {
     resizeObserver = new ResizeObserver(scheduleDrawMasks)
     resizeObserver.observe(img)
+    const wrapper = mediaWrapper.value
+    if (wrapper) resizeObserver.observe(wrapper)
   }
 
   scheduleDrawMasks()
@@ -244,7 +258,7 @@ onBeforeUnmount(() => {
 
     <!-- Image result -->
     <div v-else-if="store.viewerState === 'result'" class="w-full h-full min-h-0 flex items-center justify-center p-3 sm:p-4">
-      <div class="relative inline-flex max-w-full max-h-full">
+      <div ref="mediaWrapper" class="relative inline-flex max-w-full max-h-full overflow-hidden">
         <img
           ref="mediaImg"
           :src="`data:image/jpeg;base64,${store.resultImage}`"
@@ -263,7 +277,7 @@ onBeforeUnmount(() => {
     <!-- Video result -->
     <div v-else-if="store.viewerState === 'video'" class="w-full h-full min-h-0 flex flex-col">
       <div class="min-h-0 flex-1 flex items-center justify-center p-3 sm:p-4">
-        <div class="relative inline-flex max-w-full max-h-full">
+        <div ref="mediaWrapper" class="relative inline-flex max-w-full max-h-full overflow-hidden">
           <img
             ref="mediaImg"
             :src="`data:image/jpeg;base64,${store.videoFrames[store.videoIndex]}`"
@@ -305,7 +319,7 @@ onBeforeUnmount(() => {
     <div v-else-if="store.viewerState === 'rtsp'" class="w-full h-full min-h-0 flex flex-col">
       <div class="min-h-0 flex-1 flex items-center justify-center p-3 sm:p-4">
         <div v-if="store.rtspFrame" class="w-full h-full min-h-0 flex items-center justify-center">
-          <div class="relative inline-flex max-w-full max-h-full">
+          <div ref="mediaWrapper" class="relative inline-flex max-w-full max-h-full overflow-hidden">
             <img
               ref="mediaImg"
               :src="`data:image/jpeg;base64,${store.rtspFrame}`"
