@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { Detection } from '../types'
+import type { Detection, MaskRle } from '../types'
 import { useInferenceStore } from '../stores/inference'
 import DetectionLog from './DetectionLog.vue'
 import StatsGrid from './StatsGrid.vue'
@@ -9,21 +9,16 @@ const store = useInferenceStore()
 const mediaImg = ref<HTMLImageElement | null>(null)
 const maskCanvas = ref<HTMLCanvasElement | null>(null)
 
-const MASK_COLORS = [
-  'rgba(62, 207, 142, 0.32)',
-  'rgba(107, 1, 194, 0.28)',
-  'rgba(37, 99, 235, 0.28)',
-  'rgba(255, 219, 19, 0.30)',
-  'rgba(234, 88, 12, 0.28)',
+const MASK_RGB = [
+  [62, 207, 142],
+  [107, 1, 194],
+  [37, 99, 235],
+  [255, 219, 19],
+  [234, 88, 12],
 ]
 
-const MASK_STROKES = [
-  'rgba(62, 207, 142, 0.88)',
-  'rgba(107, 1, 194, 0.80)',
-  'rgba(37, 99, 235, 0.82)',
-  'rgba(180, 140, 0, 0.84)',
-  'rgba(234, 88, 12, 0.82)',
-]
+const MASK_COLORS = MASK_RGB.map(([r, g, b]) => `rgba(${r}, ${g}, ${b}, 0.32)`)
+const MASK_STROKES = MASK_RGB.map(([r, g, b]) => `rgba(${r}, ${g}, ${b}, 0.82)`)
 
 const activeDetections = computed<Detection[]>(() => {
   if (store.viewerState === 'video') {
@@ -46,6 +41,53 @@ function scheduleDrawMasks() {
   })
 }
 
+
+
+function drawRasterMask(
+  ctx: CanvasRenderingContext2D,
+  mask: MaskRle,
+  color: number[],
+  naturalWidth: number,
+  naturalHeight: number,
+  displayWidth: number,
+  displayHeight: number,
+) {
+  if (mask.width <= 0 || mask.height <= 0 || mask.counts.length === 0) return
+
+  const maskCanvas = document.createElement('canvas')
+  maskCanvas.width = mask.width
+  maskCanvas.height = mask.height
+
+  const maskCtx = maskCanvas.getContext('2d')
+  if (!maskCtx) return
+
+  const imageData = maskCtx.createImageData(mask.width, mask.height)
+  let value = 0
+  let pixel = 0
+  for (const count of mask.counts) {
+    if (value === 1) {
+      for (let i = 0; i < count; i++) {
+        const offset = (pixel + i) * 4
+        imageData.data[offset] = color[0]
+        imageData.data[offset + 1] = color[1]
+        imageData.data[offset + 2] = color[2]
+        imageData.data[offset + 3] = 128
+      }
+    }
+    pixel += count
+    value = value === 0 ? 1 : 0
+  }
+
+  maskCtx.putImageData(imageData, 0, 0)
+
+  const dx = (mask.x / naturalWidth) * displayWidth
+  const dy = (mask.y / naturalHeight) * displayHeight
+  const dw = (mask.width / naturalWidth) * displayWidth
+  const dh = (mask.height / naturalHeight) * displayHeight
+
+  ctx.imageSmoothingEnabled = true
+  ctx.drawImage(maskCanvas, dx, dy, dw, dh)
+}
 
 function drawSmoothPolygon(ctx: CanvasRenderingContext2D, points: [number, number][]) {
   const len = points.length
@@ -92,6 +134,19 @@ function drawMasks() {
   if (!store.showMasks) return
 
   activeDetections.value.forEach((det, index) => {
+    if (det.mask_rle) {
+      drawRasterMask(
+        ctx,
+        det.mask_rle,
+        MASK_RGB[index % MASK_RGB.length],
+        naturalWidth,
+        naturalHeight,
+        width,
+        height,
+      )
+      return
+    }
+
     if (!det.mask || det.mask.length < 3) return
 
     const points = det.mask.map(([x, y]) => [

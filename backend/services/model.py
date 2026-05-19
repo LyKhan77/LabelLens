@@ -137,6 +137,10 @@ class ModelService:
                         "confidence": round(confidence, 3),
                         "cls_id": cls_id,
                     }
+                    mask_rle = self._extract_mask_rle(masks, i, orig_shape)
+                    if mask_rle:
+                        detection["mask_rle"] = mask_rle
+
                     mask = self._extract_mask_polygon(masks, i, orig_shape)
                     if mask:
                         detection["mask"] = mask
@@ -151,6 +155,59 @@ class ModelService:
                 "inference_ms": round(inference_ms, 1),
             },
         }
+
+
+    def _extract_mask_rle(self, masks, index: int, orig_shape) -> dict | None:
+        if masks is None or getattr(masks, "data", None) is None or index >= len(masks.data):
+            return None
+
+        binary = self._mask_bitmap(masks.data[index], orig_shape)
+        if binary is None:
+            return None
+
+        ys, xs = np.where(binary > 0)
+        if len(xs) == 0 or len(ys) == 0:
+            return None
+
+        x1, x2 = int(xs.min()), int(xs.max()) + 1
+        y1, y2 = int(ys.min()), int(ys.max()) + 1
+        crop = binary[y1:y2, x1:x2].astype(np.uint8).ravel()
+
+        counts: list[int] = []
+        current = 0
+        run = 0
+        for value in crop:
+            value = int(value)
+            if value == current:
+                run += 1
+            else:
+                counts.append(run)
+                current = value
+                run = 1
+        counts.append(run)
+
+        return {
+            "x": x1,
+            "y": y1,
+            "width": x2 - x1,
+            "height": y2 - y1,
+            "counts": counts,
+        }
+
+    def _mask_bitmap(self, mask_data, orig_shape) -> np.ndarray | None:
+        mask = mask_data.detach().cpu().numpy().astype(np.float32)
+        if orig_shape is None:
+            orig_h, orig_w = mask.shape[:2]
+        else:
+            orig_h, orig_w = int(orig_shape[0]), int(orig_shape[1])
+
+        if mask.shape[:2] != (orig_h, orig_w):
+            mask = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+
+        binary = (mask > 0.5).astype(np.uint8)
+        if binary.max() == 0:
+            return None
+        return binary
 
     def _extract_mask_polygon(self, masks, index: int, orig_shape) -> list[list[float]] | None:
         if masks is None:
@@ -168,19 +225,12 @@ class ModelService:
         return None
 
     def _polygon_from_mask_bitmap(self, mask_data, orig_shape) -> list[list[float]] | None:
-        mask = mask_data.detach().cpu().numpy().astype(np.float32)
-        if orig_shape is None:
-            orig_h, orig_w = mask.shape[:2]
-        else:
-            orig_h, orig_w = int(orig_shape[0]), int(orig_shape[1])
-
-        if mask.shape[:2] != (orig_h, orig_w):
-            mask = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-
-        binary = (mask > 0.5).astype(np.uint8) * 255
-        if binary.max() == 0:
+        binary = self._mask_bitmap(mask_data, orig_shape)
+        if binary is None:
             return None
 
+        orig_h, orig_w = binary.shape[:2]
+        binary = binary * 255
         min_side = max(1, min(orig_h, orig_w))
         kernel_size = max(3, int(round(min_side * 0.006)))
         if kernel_size % 2 == 0:

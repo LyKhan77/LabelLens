@@ -16,12 +16,21 @@ export interface VisualPrompt {
 
 export type GroundingPrompt = TextPrompt | VisualPrompt
 
+export interface MaskRle {
+  x: number
+  y: number
+  width: number
+  height: number
+  counts: number[]
+}
+
 export interface Detection {
   box: number[]
   label: string
   confidence: number
   cls_id?: number
   mask?: [number, number][]
+  mask_rle?: MaskRle
 }
 
 export interface Stats {

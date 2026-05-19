@@ -14,7 +14,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 - **Image Detection** — upload static images (JPG, PNG)
 - **Video Processing** — upload video files (MP4, AVI, MOV) with frame-by-frame detection
 - **RTSP Live Streaming** — connect to RTSP camera streams with real-time WebSocket inference and visible connection errors
-- **Configurable Settings** — confidence threshold plus label, bbox, and smoothed live mask overlay toggles
+- **Configurable Settings** — confidence threshold plus label, bbox, and raster live mask overlay toggles
 - **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
 - **Clear Media Workflow** — stop inference, clear current media, then switch Image/Video/RTSP modes without losing prompt state
 
