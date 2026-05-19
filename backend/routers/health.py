@@ -1,8 +1,12 @@
+import logging
+
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from backend.services.model import model_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -29,4 +33,8 @@ async def load_model(req: LoadModelRequest):
         model_service.load_model(req.mode)
         return model_service.get_status()
     except (ValueError, FileNotFoundError) as e:
-        return {"success": False, "error": str(e)}
+        logger.error(f"Model load failed: {e}")
+        return JSONResponse(status_code=422, content={"error": str(e)})
+    except Exception as e:
+        logger.error(f"Model load error: {e}")
+        return JSONResponse(status_code=500, content={"error": str(e)})

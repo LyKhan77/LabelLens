@@ -11,6 +11,7 @@ export const useInferenceStore = defineStore('inference', () => {
   const modelLoaded = ref(false)
   const modelLoading = ref(false)
   const modelError = ref<string | null>(null)
+  const loadingMode = ref<InferenceMode | null>(null)
 
   // Grounding prompt
   const promptMode = ref<PromptMode>('text')
@@ -306,6 +307,7 @@ export const useInferenceStore = defineStore('inference', () => {
   async function selectMode(mode: InferenceMode) {
     modelLoading.value = true
     modelError.value = null
+    loadingMode.value = mode
     try {
       const result = await loadModel(mode)
       if (result.loaded) {
@@ -318,6 +320,7 @@ export const useInferenceStore = defineStore('inference', () => {
       modelError.value = e instanceof Error ? e.message : 'Failed to load model'
     } finally {
       modelLoading.value = false
+      loadingMode.value = null
     }
   }
 
@@ -338,10 +341,11 @@ export const useInferenceStore = defineStore('inference', () => {
     modelLoaded.value = false
     inferenceMode.value = null
     modelError.value = null
+    loadingMode.value = null
   }
 
   return {
-    inferenceMode, modelLoaded, modelLoading, modelError,
+    inferenceMode, modelLoaded, modelLoading, modelError, loadingMode,
     promptMode, labels, referImage, annotations,
     mediaMode, file, rtspUrl,
     confidence, showLabels, showBbox, showMasks,

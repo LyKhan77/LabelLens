@@ -35,8 +35,11 @@ class ModelService:
             raise ValueError(f"Unknown mode: {mode}. Must be one of {list(MODEL_MODES)}")
 
         model_path = MODEL_MODES[mode]
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"Model file not found: {model_path}")
+        # YOLOE auto-downloads from ultralytics if file not found locally
+        if os.path.isfile(model_path):
+            source = model_path
+        else:
+            source = os.path.basename(model_path)
 
         # Unload previous model
         if self.model is not None:
@@ -45,7 +48,7 @@ class ModelService:
             gc.collect()
             torch.cuda.empty_cache()
 
-        self.model = YOLOE(model_path)
+        self.model = YOLOE(source)
         self._is_seg_model = "seg" in model_path.lower()
         self.current_mode = mode
         self.model_path = model_path
