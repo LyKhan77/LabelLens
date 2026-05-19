@@ -46,5 +46,6 @@ export interface ImageDetectionResponse {
 }
 
 export type MediaMode = 'image' | 'video' | 'rtsp'
-export type PromptMode = 'text' | 'visual'
+export type PromptMode = 'text' | 'visual' | 'free'
+export type InferenceMode = 'free' | 'prompt'
 export type ViewerState = 'empty' | 'loading' | 'result' | 'video' | 'rtsp'
