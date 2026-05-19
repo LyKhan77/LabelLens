@@ -1,9 +1,9 @@
 import { api } from './client'
-import type { ImageDetectionResponse } from '../types'
+import type { Detection, ImageDetectionResponse } from '../types'
 
 export interface VideoDetectionResponse {
   frames: string[]
-  detections: { box: number[]; label: string; confidence: number }[][]
+  detections: Detection[][]
   stats: {
     total_objects: number
     classes_count: Record<string, number>

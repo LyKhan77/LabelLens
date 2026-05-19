@@ -1,9 +1,135 @@
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { Detection } from '../types'
 import { useInferenceStore } from '../stores/inference'
 import DetectionLog from './DetectionLog.vue'
 import StatsGrid from './StatsGrid.vue'
 
 const store = useInferenceStore()
+const mediaImg = ref<HTMLImageElement | null>(null)
+const maskCanvas = ref<HTMLCanvasElement | null>(null)
+
+const MASK_COLORS = [
+  'rgba(62, 207, 142, 0.32)',
+  'rgba(107, 1, 194, 0.28)',
+  'rgba(37, 99, 235, 0.28)',
+  'rgba(255, 219, 19, 0.30)',
+  'rgba(234, 88, 12, 0.28)',
+]
+
+const MASK_STROKES = [
+  'rgba(62, 207, 142, 0.88)',
+  'rgba(107, 1, 194, 0.80)',
+  'rgba(37, 99, 235, 0.82)',
+  'rgba(180, 140, 0, 0.84)',
+  'rgba(234, 88, 12, 0.82)',
+]
+
+const activeDetections = computed<Detection[]>(() => {
+  if (store.viewerState === 'video') {
+    return store.videoDetections[store.videoIndex] ?? []
+  }
+  return store.detections
+})
+
+let resizeObserver: ResizeObserver | null = null
+let pendingFrame: number | null = null
+
+function scheduleDrawMasks() {
+  if (pendingFrame !== null) {
+    cancelAnimationFrame(pendingFrame)
+  }
+
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame = null
+    void nextTick(drawMasks)
+  })
+}
+
+function drawMasks() {
+  const img = mediaImg.value
+  const canvas = maskCanvas.value
+  if (!img || !canvas) return
+
+  const width = img.clientWidth
+  const height = img.clientHeight
+  const naturalWidth = img.naturalWidth
+  const naturalHeight = img.naturalHeight
+  if (!width || !height || !naturalWidth || !naturalHeight) return
+
+  const dpr = window.devicePixelRatio || 1
+  canvas.width = Math.round(width * dpr)
+  canvas.height = Math.round(height * dpr)
+  canvas.style.width = `${width}px`
+  canvas.style.height = `${height}px`
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, width, height)
+
+  if (!store.showMasks) return
+
+  activeDetections.value.forEach((det, index) => {
+    if (!det.mask || det.mask.length < 3) return
+
+    ctx.beginPath()
+    det.mask.forEach(([x, y], pointIndex) => {
+      const px = (x / naturalWidth) * width
+      const py = (y / naturalHeight) * height
+      if (pointIndex === 0) {
+        ctx.moveTo(px, py)
+      } else {
+        ctx.lineTo(px, py)
+      }
+    })
+    ctx.closePath()
+    ctx.fillStyle = MASK_COLORS[index % MASK_COLORS.length]
+    ctx.strokeStyle = MASK_STROKES[index % MASK_STROKES.length]
+    ctx.lineWidth = 1.5
+    ctx.fill()
+    ctx.stroke()
+  })
+}
+
+watch(mediaImg, (img) => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+
+  if (img && 'ResizeObserver' in window) {
+    resizeObserver = new ResizeObserver(scheduleDrawMasks)
+    resizeObserver.observe(img)
+  }
+
+  scheduleDrawMasks()
+})
+
+watch(
+  () => [
+    store.showMasks,
+    store.viewerState,
+    store.resultImage,
+    store.rtspFrame,
+    store.videoIndex,
+    store.detections,
+    store.videoDetections,
+  ],
+  scheduleDrawMasks,
+  { deep: true },
+)
+
+onMounted(() => {
+  window.addEventListener('resize', scheduleDrawMasks)
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  if (pendingFrame !== null) {
+    cancelAnimationFrame(pendingFrame)
+  }
+  window.removeEventListener('resize', scheduleDrawMasks)
+})
 </script>
 
 <template>
@@ -46,21 +172,39 @@ const store = useInferenceStore()
 
     <!-- Image result -->
     <div v-else-if="store.viewerState === 'result'" class="w-full h-full min-h-0 flex items-center justify-center p-3 sm:p-4">
-      <img
-        :src="`data:image/jpeg;base64,${store.resultImage}`"
-        alt="Detection result"
-        class="max-w-full max-h-full rounded-lg shadow-lg object-contain"
-      />
+      <div class="relative inline-flex max-w-full max-h-full">
+        <img
+          ref="mediaImg"
+          :src="`data:image/jpeg;base64,${store.resultImage}`"
+          alt="Detection result"
+          class="max-w-full max-h-full rounded-lg shadow-lg object-contain"
+          @load="drawMasks"
+        />
+        <canvas
+          ref="maskCanvas"
+          class="pointer-events-none absolute inset-0 rounded-lg"
+          aria-hidden="true"
+        />
+      </div>
     </div>
 
     <!-- Video result -->
     <div v-else-if="store.viewerState === 'video'" class="w-full h-full min-h-0 flex flex-col">
       <div class="min-h-0 flex-1 flex items-center justify-center p-3 sm:p-4">
-        <img
-          :src="`data:image/jpeg;base64,${store.videoFrames[store.videoIndex]}`"
-          alt="Video frame"
-          class="max-w-full max-h-full rounded-lg shadow-lg object-contain"
-        />
+        <div class="relative inline-flex max-w-full max-h-full">
+          <img
+            ref="mediaImg"
+            :src="`data:image/jpeg;base64,${store.videoFrames[store.videoIndex]}`"
+            alt="Video frame"
+            class="max-w-full max-h-full rounded-lg shadow-lg object-contain"
+            @load="drawMasks"
+          />
+          <canvas
+            ref="maskCanvas"
+            class="pointer-events-none absolute inset-0 rounded-lg"
+            aria-hidden="true"
+          />
+        </div>
       </div>
       <!-- Video controls -->
       <div class="flex items-center gap-2 px-4 py-2 border-t border-hairline bg-canvas">
@@ -89,11 +233,20 @@ const store = useInferenceStore()
     <div v-else-if="store.viewerState === 'rtsp'" class="w-full h-full min-h-0 flex flex-col">
       <div class="min-h-0 flex-1 flex items-center justify-center p-3 sm:p-4">
         <div v-if="store.rtspFrame" class="w-full h-full min-h-0 flex items-center justify-center">
-          <img
-            :src="`data:image/jpeg;base64,${store.rtspFrame}`"
-            alt="RTSP stream"
-            class="max-w-full max-h-full rounded-lg object-contain"
-          />
+          <div class="relative inline-flex max-w-full max-h-full">
+            <img
+              ref="mediaImg"
+              :src="`data:image/jpeg;base64,${store.rtspFrame}`"
+              alt="RTSP stream"
+              class="max-w-full max-h-full rounded-lg object-contain"
+              @load="drawMasks"
+            />
+            <canvas
+              ref="maskCanvas"
+              class="pointer-events-none absolute inset-0 rounded-lg"
+              aria-hidden="true"
+            />
+          </div>
         </div>
         <div v-else class="text-center">
           <div class="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />

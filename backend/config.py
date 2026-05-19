@@ -1,6 +1,6 @@
 import os
 
-MODEL_PATH = os.getenv("MODEL_PATH", "models/yoloe-26s-seg.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "models/yoloe-26l-seg.pt")
 DEVICE = os.getenv("DEVICE", "0")
 HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "3131"))

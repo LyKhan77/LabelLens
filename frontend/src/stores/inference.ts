@@ -20,6 +20,7 @@ export const useInferenceStore = defineStore('inference', () => {
   const confidence = ref(0.5)
   const showLabels = ref(true)
   const showBbox = ref(true)
+  const showMasks = ref(false)
 
   // State
   const isRunning = ref(false)
@@ -31,6 +32,7 @@ export const useInferenceStore = defineStore('inference', () => {
 
   // Video state
   const videoFrames = ref<string[]>([])
+  const videoDetections = ref<Detection[][]>([])
   const videoIndex = ref(0)
   const videoPlaying = ref(false)
   let videoTimer: ReturnType<typeof setInterval> | null = null
@@ -55,6 +57,11 @@ export const useInferenceStore = defineStore('inference', () => {
   })
   watch(() => ws.connected.value, (v) => { rtspConnected.value = v })
   watch(() => ws.error.value, (v) => { if (v) error.value = v })
+  watch(videoIndex, (idx) => {
+    if (viewerState.value === 'video') {
+      detections.value = videoDetections.value[idx] ?? []
+    }
+  })
 
   const hasMediaInput = computed(() => {
     if (mediaMode.value === 'rtsp') return rtspUrl.value.trim().length > 0
@@ -115,6 +122,7 @@ export const useInferenceStore = defineStore('inference', () => {
     error.value = null
     viewerState.value = 'empty'
     videoFrames.value = []
+    videoDetections.value = []
     videoIndex.value = 0
     rtspFrame.value = ''
   }
@@ -176,8 +184,9 @@ export const useInferenceStore = defineStore('inference', () => {
           signal: abortController.signal,
         })
         videoFrames.value = resp.frames
+        videoDetections.value = resp.detections
         videoIndex.value = 0
-        detections.value = resp.detections[0] ?? []
+        detections.value = videoDetections.value[0] ?? []
         stats.value = resp.stats as unknown as Stats
         viewerState.value = 'video'
         playVideo()
@@ -283,9 +292,9 @@ export const useInferenceStore = defineStore('inference', () => {
   return {
     promptMode, labels, referImage, annotations,
     mediaMode, file, rtspUrl,
-    confidence, showLabels, showBbox,
+    confidence, showLabels, showBbox, showMasks,
     isRunning, viewerState, resultImage, detections, stats, error,
-    videoFrames, videoIndex, videoPlaying,
+    videoFrames, videoDetections, videoIndex, videoPlaying,
     rtspFrame, rtspConnected, ws,
     hasMediaInput, canSwitchMediaMode, canRun,
     addLabel, removeLabel, addAnnotation, removeAnnotation, clearAnnotations,

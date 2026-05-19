@@ -1,3 +1,5 @@
+import type { Detection } from '../types'
+
 export interface StreamConfig {
   rtsp_url: string
   prompt_type: 'text' | 'visual'
@@ -12,7 +14,7 @@ export interface StreamConfig {
 
 export interface StreamFrame {
   frame: string
-  detections: { box: number[]; label: string; confidence: number }[]
+  detections: Detection[]
   inference_ms: number
 }
 

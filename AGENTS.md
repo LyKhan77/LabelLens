@@ -2,7 +2,7 @@
 
 ## Project Synopsis
 
-**LabelLens** is a web-based object detection application powered by **YOLOE-26s**. It provides a visual interface for running real-time and batch inference using both text prompts and visual prompts (SAVPE — Semantic-Activated Visual Prompt Encoder). The architecture separates compute-heavy CV workloads (FastAPI + PyTorch) from the presentation layer (Vue 3 SPA), communicating via REST API and WebSockets.
+**LabelLens** is a web-based object detection application powered by **YOLOE-26L**. It provides a visual interface for running real-time and batch inference using both text prompts and visual prompts (SAVPE — Semantic-Activated Visual Prompt Encoder). The architecture separates compute-heavy CV workloads (FastAPI + PyTorch) from the presentation layer (Vue 3 SPA), communicating via REST API and WebSockets.
 
 ## References
 - `https://github.com/THU-MIG/yoloe`
@@ -14,7 +14,7 @@
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
 - **Canvas BBox Annotation** — Interactive drawing tool with thin hover/drag X/Y guide lines for annotating reference images as visual grounding input
-- **Configurable Inference** — Confidence threshold slider, label/bbox visibility toggles
+- **Configurable Inference** — Confidence threshold slider, label/bbox visibility toggles, and live optional mask overlay
 - **Detection Dashboard** — Floating right-side inference panel with compact stats and scrollable detection log
 - **Clear Media Workflow** — Media mode switching is locked until inference is stopped and current media input is cleared
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
@@ -41,13 +41,13 @@ LabelLens/
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE). Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, state-preserving collapsible Controls panel, and explicit Clear Media mode switching are functional.
+**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE), returning YOLOE segmentation polygons when available. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, optional live mask overlay, state-preserving collapsible Controls panel, and explicit Clear Media mode switching are functional.
 
 **Being Developed:**
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights
 - Phase 2 (Video Processing): Backend + Frontend complete — needs testing with sample videos
 - Phase 3 (RTSP Streaming): Backend WebSocket + Frontend integration complete — needs testing with live RTSP feeds
-- Overall: Awaiting model weight placement and integration testing
+- Overall: Awaiting `models/yoloe-26l-seg.pt` placement and integration testing on RTX 5080 device `0` with `CUDA_DEVICE_ORDER=PCI_BUS_ID`
 
 =====================
 

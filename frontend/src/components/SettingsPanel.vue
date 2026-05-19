@@ -55,6 +55,20 @@ const store = useInferenceStore()
           />
         </button>
       </label>
+
+      <label class="flex items-center justify-between">
+        <span class="text-sm text-ink">Show Masks</span>
+        <button
+          class="relative w-9 h-5 rounded-full transition-colors"
+          :class="store.showMasks ? 'bg-primary' : 'bg-hairline'"
+          @click="store.showMasks = !store.showMasks"
+        >
+          <span
+            class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-canvas shadow transition-transform"
+            :class="store.showMasks ? 'translate-x-4' : ''"
+          />
+        </button>
+      </label>
     </div>
 
     <!-- Action button -->

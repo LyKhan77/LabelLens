@@ -20,6 +20,8 @@ export interface Detection {
   box: number[]
   label: string
   confidence: number
+  cls_id?: number
+  mask?: [number, number][]
 }
 
 export interface Stats {

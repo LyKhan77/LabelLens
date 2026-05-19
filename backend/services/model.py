@@ -1,5 +1,8 @@
+import os
 import tempfile
 import time
+
+os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
 import cv2
 import numpy as np
@@ -77,7 +80,6 @@ class ModelService:
                 verbose=False,
             )
         finally:
-            import os
             os.unlink(refer_path)
 
         self._vpe_labels = unique_labels
@@ -121,18 +123,25 @@ class ModelService:
 
         if results and len(results) > 0:
             r = results[0]
+            masks_xy = r.masks.xy if getattr(r, "masks", None) is not None else []
             if r.boxes is not None and len(r.boxes) > 0:
-                for box in r.boxes:
+                for i, box in enumerate(r.boxes):
                     xyxy = box.xyxy[0].cpu().numpy().tolist()
                     cls_id = int(box.cls[0])
                     label = r.names.get(cls_id, str(cls_id))
                     confidence = float(box.conf[0])
-                    boxes_data.append({
+                    detection = {
                         "box": [round(v, 1) for v in xyxy],
                         "label": label,
                         "confidence": round(confidence, 3),
                         "cls_id": cls_id,
-                    })
+                    }
+                    if i < len(masks_xy):
+                        detection["mask"] = [
+                            [round(float(x), 1), round(float(y), 1)]
+                            for x, y in masks_xy[i].tolist()
+                        ]
+                    boxes_data.append(detection)
                     classes_count[label] = classes_count.get(label, 0) + 1
 
         return {
