@@ -15,7 +15,7 @@ Web-based object detection application powered by **YOLOE-26s** with support for
 - **Video Processing** — upload video files (MP4, AVI, MOV) with frame-by-frame detection
 - **RTSP Live Streaming** — connect to RTSP camera streams with real-time WebSocket inference and visible connection errors
 - **Configurable Settings** — confidence threshold, label/bbox visibility toggles
-- **Compact Detection Metrics** — compact object count, FPS, latency, class breakdown, and detection log
+- **Floating Inference Stats** — compact right-side object count, FPS, latency, and class breakdown overlay, with detection log below the viewer
 - **Collapsible Controls** — hide or restore the left Controls panel to expand the viewer area
 
 ## Tech Stack
@@ -81,7 +81,7 @@ App runs at `http://<your-ip>:3131`. Accessible from any device on the network.
 3. **Select media** — switch between Image / Video / RTSP input
 4. **Adjust settings** — set confidence threshold, toggle labels/bboxes
 5. **Manage workspace** — collapse the Controls panel when you need more viewer space
-6. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer
+6. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats float on the right side
 
 ## Environment Variables
 

@@ -13,22 +13,22 @@ const classCount = computed(() => store.stats ? Object.keys(store.stats.classes_
 </script>
 
 <template>
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-px overflow-hidden rounded-(--radius-sm) border border-hairline bg-hairline">
-    <div class="min-w-0 bg-canvas px-3 py-2">
-      <p class="text-[11px] font-medium uppercase tracking-wider text-ink-mute">Objects</p>
-      <p class="text-base font-semibold leading-tight text-ink">{{ store.stats?.total_objects ?? 0 }}</p>
+  <div class="grid grid-cols-2 gap-px overflow-hidden rounded-(--radius-sm) border border-hairline bg-hairline">
+    <div class="min-w-0 bg-canvas px-2.5 py-2">
+      <p class="text-[10px] font-medium uppercase tracking-wider text-ink-mute">Objects</p>
+      <p class="text-sm font-semibold leading-tight text-ink">{{ store.stats?.total_objects ?? 0 }}</p>
     </div>
-    <div class="min-w-0 bg-canvas px-3 py-2">
-      <p class="text-[11px] font-medium uppercase tracking-wider text-ink-mute">FPS</p>
-      <p class="text-base font-semibold leading-tight text-ink">{{ fps }}</p>
+    <div class="min-w-0 bg-canvas px-2.5 py-2">
+      <p class="text-[10px] font-medium uppercase tracking-wider text-ink-mute">FPS</p>
+      <p class="text-sm font-semibold leading-tight text-ink">{{ fps }}</p>
     </div>
-    <div class="min-w-0 bg-canvas px-3 py-2">
-      <p class="text-[11px] font-medium uppercase tracking-wider text-ink-mute">Latency</p>
-      <p class="text-base font-semibold leading-tight text-ink">{{ store.stats?.inference_ms?.toFixed(0) ?? '0' }} ms</p>
+    <div class="min-w-0 bg-canvas px-2.5 py-2">
+      <p class="text-[10px] font-medium uppercase tracking-wider text-ink-mute">Latency</p>
+      <p class="text-sm font-semibold leading-tight text-ink">{{ store.stats?.inference_ms?.toFixed(0) ?? '0' }} ms</p>
     </div>
-    <div class="min-w-0 bg-canvas px-3 py-2">
-      <p class="text-[11px] font-medium uppercase tracking-wider text-ink-mute">Classes</p>
-      <p class="text-base font-semibold leading-tight text-ink">{{ classCount }}</p>
+    <div class="min-w-0 bg-canvas px-2.5 py-2">
+      <p class="text-[10px] font-medium uppercase tracking-wider text-ink-mute">Classes</p>
+      <p class="text-sm font-semibold leading-tight text-ink">{{ classCount }}</p>
     </div>
   </div>
 </template>

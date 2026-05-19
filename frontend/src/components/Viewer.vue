@@ -1,11 +1,23 @@
 <script setup lang="ts">
 import { useInferenceStore } from '../stores/inference'
+import StatsGrid from './StatsGrid.vue'
 
 const store = useInferenceStore()
 </script>
 
 <template>
   <div class="flex-1 flex items-center justify-center bg-canvas-soft relative overflow-hidden">
+    <aside
+      v-if="store.stats && store.viewerState !== 'empty' && store.viewerState !== 'loading'"
+      class="absolute right-3 top-3 z-10 w-[210px] rounded-(--radius-md) border border-hairline bg-canvas/95 p-2 shadow-lg backdrop-blur"
+      aria-label="Inference Stats"
+    >
+      <div class="mb-1.5 flex items-center justify-between gap-2">
+        <p class="text-[11px] font-medium uppercase tracking-wider text-ink-mute">Inference Stats</p>
+        <span class="h-1.5 w-1.5 rounded-full bg-primary" />
+      </div>
+      <StatsGrid />
+    </aside>
     <!-- Empty state -->
     <div v-if="store.viewerState === 'empty'" class="text-center">
       <svg class="w-16 h-16 mx-auto mb-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
