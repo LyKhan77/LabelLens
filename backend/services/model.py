@@ -123,7 +123,8 @@ class ModelService:
 
         if results and len(results) > 0:
             r = results[0]
-            masks_xy = r.masks.xy if getattr(r, "masks", None) is not None else []
+            masks = getattr(r, "masks", None)
+            orig_shape = getattr(r, "orig_shape", None)
             if r.boxes is not None and len(r.boxes) > 0:
                 for i, box in enumerate(r.boxes):
                     xyxy = box.xyxy[0].cpu().numpy().tolist()
@@ -136,11 +137,9 @@ class ModelService:
                         "confidence": round(confidence, 3),
                         "cls_id": cls_id,
                     }
-                    if i < len(masks_xy):
-                        detection["mask"] = [
-                            [round(float(x), 1), round(float(y), 1)]
-                            for x, y in masks_xy[i].tolist()
-                        ]
+                    mask = self._extract_mask_polygon(masks, i, orig_shape)
+                    if mask:
+                        detection["mask"] = mask
                     boxes_data.append(detection)
                     classes_count[label] = classes_count.get(label, 0) + 1
 
@@ -152,6 +151,58 @@ class ModelService:
                 "inference_ms": round(inference_ms, 1),
             },
         }
+
+    def _extract_mask_polygon(self, masks, index: int, orig_shape) -> list[list[float]] | None:
+        if masks is None:
+            return None
+
+        if getattr(masks, "data", None) is not None and index < len(masks.data):
+            polygon = self._polygon_from_mask_bitmap(masks.data[index], orig_shape)
+            if polygon:
+                return polygon
+
+        masks_xy = getattr(masks, "xy", [])
+        if index < len(masks_xy):
+            return [[round(float(x), 1), round(float(y), 1)] for x, y in masks_xy[index].tolist()]
+
+        return None
+
+    def _polygon_from_mask_bitmap(self, mask_data, orig_shape) -> list[list[float]] | None:
+        mask = mask_data.detach().cpu().numpy().astype(np.float32)
+        if orig_shape is None:
+            orig_h, orig_w = mask.shape[:2]
+        else:
+            orig_h, orig_w = int(orig_shape[0]), int(orig_shape[1])
+
+        if mask.shape[:2] != (orig_h, orig_w):
+            mask = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
+
+        binary = (mask > 0.5).astype(np.uint8) * 255
+        if binary.max() == 0:
+            return None
+
+        min_side = max(1, min(orig_h, orig_w))
+        kernel_size = max(3, int(round(min_side * 0.006)))
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        if not contours:
+            return None
+
+        contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(contour) < 4:
+            return None
+
+        epsilon = max(1.0, cv2.arcLength(contour, True) * 0.0015)
+        contour = cv2.approxPolyDP(contour, epsilon, True).reshape(-1, 2)
+        if len(contour) < 3:
+            return None
+
+        return [[round(float(x), 1), round(float(y), 1)] for x, y in contour]
 
 
 model_service = ModelService()

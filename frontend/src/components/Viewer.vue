@@ -46,6 +46,26 @@ function scheduleDrawMasks() {
   })
 }
 
+
+function drawSmoothPolygon(ctx: CanvasRenderingContext2D, points: [number, number][]) {
+  const len = points.length
+  if (len < 3) return
+
+  const first = midpoint(points[0], points[1])
+  ctx.moveTo(first[0], first[1])
+
+  for (let i = 1; i <= len; i++) {
+    const current = points[i % len]
+    const next = points[(i + 1) % len]
+    const mid = midpoint(current, next)
+    ctx.quadraticCurveTo(current[0], current[1], mid[0], mid[1])
+  }
+}
+
+function midpoint(a: [number, number], b: [number, number]): [number, number] {
+  return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+}
+
 function drawMasks() {
   const img = mediaImg.value
   const canvas = maskCanvas.value
@@ -74,16 +94,13 @@ function drawMasks() {
   activeDetections.value.forEach((det, index) => {
     if (!det.mask || det.mask.length < 3) return
 
+    const points = det.mask.map(([x, y]) => [
+      (x / naturalWidth) * width,
+      (y / naturalHeight) * height,
+    ] as [number, number])
+
     ctx.beginPath()
-    det.mask.forEach(([x, y], pointIndex) => {
-      const px = (x / naturalWidth) * width
-      const py = (y / naturalHeight) * height
-      if (pointIndex === 0) {
-        ctx.moveTo(px, py)
-      } else {
-        ctx.lineTo(px, py)
-      }
-    })
+    drawSmoothPolygon(ctx, points)
     ctx.closePath()
     ctx.fillStyle = MASK_COLORS[index % MASK_COLORS.length]
     ctx.strokeStyle = MASK_STROKES[index % MASK_STROKES.length]
