@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useInferenceStore } from '../stores/inference'
+import { useInferenceStore } from '../../../../shared/stores/inference'
 import ImageUpload from './ImageUpload.vue'
 import VideoUpload from './VideoUpload.vue'
 import RtspInput from './RtspInput.vue'

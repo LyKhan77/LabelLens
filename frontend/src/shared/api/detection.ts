@@ -15,7 +15,7 @@ export interface VideoDetectionResponse {
 
 export async function detectImage(params: {
   file: File
-  promptType: 'text' | 'visual'
+  promptType: 'text' | 'visual' | 'free'
   labels?: string[]
   referImage?: File
   bboxes?: [number, number, number, number][]
@@ -49,7 +49,7 @@ export async function detectImage(params: {
 
 export async function detectVideo(params: {
   file: File
-  promptType: 'text' | 'visual'
+  promptType: 'text' | 'visual' | 'free'
   labels?: string[]
   referImage?: File
   bboxes?: [number, number, number, number][]

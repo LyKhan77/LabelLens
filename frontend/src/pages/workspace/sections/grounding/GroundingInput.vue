@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useInferenceStore } from '../stores/inference'
+import { useInferenceStore } from '../../../../shared/stores/inference'
 import TextPromptInput from './TextPromptInput.vue'
 import VisualPromptInput from './VisualPromptInput.vue'
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useBackendStatus } from '../composables/useBackendStatus'
-import { useTheme } from '../composables/useTheme'
-import { useInferenceStore } from '../stores/inference'
+import { useBackendStatus } from '../../../shared/composables/useBackendStatus'
+import { useTheme } from '../../../shared/composables/useTheme'
+import { useInferenceStore } from '../../../shared/stores/inference'
 
 const { connected } = useBackendStatus()
 const { theme, toggle } = useTheme()

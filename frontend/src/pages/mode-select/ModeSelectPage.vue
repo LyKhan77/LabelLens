@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useInferenceStore } from '../stores/inference'
-import type { InferenceMode } from '../types'
+import { useInferenceStore } from '../../shared/stores/inference'
+import type { InferenceMode } from '../../shared/types'
 
 const store = useInferenceStore()
 
@@ -33,12 +33,6 @@ function select(mode: InferenceMode) {
 
 function isLoading(m: ModeCard) {
   return store.modelLoading && store.loadingMode === m.mode
-}
-
-function hasError(m: ModeCard) {
-  return store.modelError && store.loadingMode === null && store.inferenceMode === null
-    // Show error on the card that was last attempted
-    && !store.modelLoaded
 }
 </script>
 

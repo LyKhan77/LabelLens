@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useInferenceStore } from '../stores/inference'
+import { useInferenceStore } from '../../../shared/stores/inference'
 
 const store = useInferenceStore()
 

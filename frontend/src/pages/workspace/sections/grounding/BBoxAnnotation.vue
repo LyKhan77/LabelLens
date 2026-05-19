@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import type { BBoxAnnotation } from '../types'
+import type { BBoxAnnotation } from '../../../../shared/types'
 
 const props = defineProps<{
   imageSrc: string

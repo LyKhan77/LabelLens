@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useInferenceStore } from '../stores/inference'
+import { useInferenceStore } from '../../../../shared/stores/inference'
 import BBoxAnnotation from './BBoxAnnotation.vue'
 
 const store = useInferenceStore()

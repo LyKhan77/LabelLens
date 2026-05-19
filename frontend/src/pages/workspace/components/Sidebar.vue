@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import GroundingInput from './GroundingInput.vue'
-import MediaInput from './MediaInput.vue'
-import SettingsPanel from './SettingsPanel.vue'
+import GroundingInput from '../sections/grounding/GroundingInput.vue'
+import MediaInput from '../sections/media/MediaInput.vue'
+import SettingsPanel from '../sections/settings/SettingsPanel.vue'
 
 const collapsed = ref(false)
 </script>

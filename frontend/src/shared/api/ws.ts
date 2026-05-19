@@ -2,7 +2,7 @@ import type { Detection } from '../types'
 
 export interface StreamConfig {
   rtsp_url: string
-  prompt_type: 'text' | 'visual'
+  prompt_type: 'text' | 'visual' | 'free'
   labels?: string[]
   refer_image_b64?: string
   bboxes?: [number, number, number, number][]

@@ -36,11 +36,13 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 LabelLens/
 ├── frontend/                # Vue 3 SPA
 │   └── src/
-│       ├── api/             # REST & WebSocket clients
-│       ├── composables/     # Backend status, WebSocket hooks
-│       ├── components/      # UI components (BBoxAnnotation, Viewer, etc.)
-│       ├── stores/          # Pinia state management
-│       └── types/           # TypeScript interfaces
+│       ├── app/             # App shell, entrypoint, global style
+│       ├── pages/           # Logical pages (mode-select, workspace)
+│       │   └── workspace/
+│       │       ├── components/   # Workspace layout/display blocks
+│       │       └── sections/     # Grounding, media, settings sections
+│       ├── shared/          # Shared api, composables, store, types
+│       └── assets/          # Static assets
 ├── backend/                 # FastAPI server
 │   ├── routers/             # API endpoints (health, detection, stream)
 │   ├── services/            # Model, video, RTSP services

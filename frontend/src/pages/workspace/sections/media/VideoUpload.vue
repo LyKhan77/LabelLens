@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useInferenceStore } from '../stores/inference'
+import { useInferenceStore } from '../../../../shared/stores/inference'
 
 const store = useInferenceStore()
 const isDragOver = ref(false)

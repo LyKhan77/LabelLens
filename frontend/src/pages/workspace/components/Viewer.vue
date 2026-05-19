@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useInferenceStore } from '../stores/inference'
+import { useInferenceStore } from '../../../shared/stores/inference'
 import DetectionLog from './DetectionLog.vue'
 import StatsGrid from './StatsGrid.vue'
 
