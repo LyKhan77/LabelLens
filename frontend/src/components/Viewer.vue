@@ -9,6 +9,7 @@ const store = useInferenceStore()
 const mediaImg = ref<HTMLImageElement | null>(null)
 const mediaWrapper = ref<HTMLDivElement | null>(null)
 const maskCanvas = ref<HTMLCanvasElement | null>(null)
+const statsPanelOpen = ref(true)
 
 const MASK_RGB = [
   [62, 207, 142],
@@ -220,14 +221,33 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="min-w-0 min-h-0 flex-1 flex items-center justify-center bg-canvas-soft relative overflow-hidden">
+    <!-- Stats toggle pill (collapsed) -->
+    <button
+      v-if="store.stats && store.viewerState !== 'empty' && store.viewerState !== 'loading' && !statsPanelOpen"
+      class="absolute right-3 top-3 z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-hairline bg-canvas/95 shadow-md backdrop-blur text-[11px] font-medium uppercase tracking-wider text-ink-mute hover:text-ink hover:bg-canvas transition-colors cursor-pointer"
+      aria-label="Show Inference Stats"
+      @click="statsPanelOpen = true"
+    >
+      <span class="h-1.5 w-1.5 rounded-full bg-primary" />
+      Stats
+    </button>
+    <!-- Stats panel (expanded) -->
     <aside
-      v-if="store.stats && store.viewerState !== 'empty' && store.viewerState !== 'loading'"
+      v-if="store.stats && store.viewerState !== 'empty' && store.viewerState !== 'loading' && statsPanelOpen"
       class="absolute right-3 top-3 z-10 w-[260px] max-h-[calc(100%-1.5rem)] overflow-hidden rounded-(--radius-md) border border-hairline bg-canvas/95 p-2 shadow-lg backdrop-blur"
       aria-label="Inference Stats and Detection Log"
     >
       <div class="mb-1.5 flex items-center justify-between gap-2">
         <p class="text-[11px] font-medium uppercase tracking-wider text-ink-mute">Inference Stats</p>
-        <span class="h-1.5 w-1.5 rounded-full bg-primary" />
+        <button
+          class="p-0.5 rounded hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink"
+          aria-label="Hide Inference Stats"
+          @click="statsPanelOpen = false"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
       </div>
       <StatsGrid />
       <div class="my-2 border-t border-hairline" />
