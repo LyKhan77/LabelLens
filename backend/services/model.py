@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLOE
 from ultralytics.models.yolo.yoloe.predict import YOLOEVPSegPredictor
+from ultralytics.utils import ops
 
 from backend.config import MODEL_PATH, DEVICE
 
@@ -156,7 +157,6 @@ class ModelService:
             },
         }
 
-
     def _extract_mask_rle(self, masks, index: int, orig_shape) -> dict | None:
         if masks is None or getattr(masks, "data", None) is None or index >= len(masks.data):
             return None
@@ -195,16 +195,14 @@ class ModelService:
         }
 
     def _mask_bitmap(self, mask_data, orig_shape) -> np.ndarray | None:
-        mask = mask_data.detach().cpu().numpy().astype(np.float32)
         if orig_shape is None:
-            orig_h, orig_w = mask.shape[:2]
+            orig_h, orig_w = mask_data.shape[-2:]
         else:
             orig_h, orig_w = int(orig_shape[0]), int(orig_shape[1])
 
-        if mask.shape[:2] != (orig_h, orig_w):
-            mask = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
-
-        binary = (mask > 0.5).astype(np.uint8)
+        mask_tensor = mask_data.unsqueeze(0).unsqueeze(0).float()
+        scaled = ops.scale_masks(mask_tensor, (orig_h, orig_w))[0, 0]
+        binary = (scaled > 0.5).detach().cpu().numpy().astype(np.uint8)
         if binary.max() == 0:
             return None
         return binary
