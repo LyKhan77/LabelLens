@@ -1,5 +1,6 @@
 import gc
 import os
+import shutil
 import tempfile
 import time
 
@@ -35,11 +36,8 @@ class ModelService:
             raise ValueError(f"Unknown mode: {mode}. Must be one of {list(MODEL_MODES)}")
 
         model_path = MODEL_MODES[mode]
-        # YOLOE auto-downloads from ultralytics if file not found locally
-        if os.path.isfile(model_path):
-            source = model_path
-        else:
-            source = os.path.basename(model_path)
+        local_exists = os.path.isfile(model_path)
+        source = model_path if local_exists else os.path.basename(model_path)
 
         # Unload previous model
         if self.model is not None:
@@ -49,6 +47,12 @@ class ModelService:
             torch.cuda.empty_cache()
 
         self.model = YOLOE(source)
+
+        # If auto-downloaded, copy to models/ for future loads
+        if not local_exists and hasattr(self.model, "ckpt_path") and self.model.ckpt_path:
+            os.makedirs(os.path.dirname(model_path), exist_ok=True)
+            shutil.copy2(self.model.ckpt_path, model_path)
+
         self._is_seg_model = "seg" in model_path.lower()
         self.current_mode = mode
         self.model_path = model_path
