@@ -1,0 +1,146 @@
+import tempfile
+import time
+
+import cv2
+import numpy as np
+from ultralytics import YOLOE
+from ultralytics.models.yolo.yoloe.predict import YOLOEVPSegPredictor
+
+from backend.config import MODEL_PATH
+
+
+class ModelService:
+    def __init__(self):
+        self.model: YOLOE | None = None
+        self.current_classes: list[str] = []
+        self._is_seg_model = False
+        self._vpe_labels: list[str] = []
+
+    def load(self, model_path: str = MODEL_PATH):
+        self.model = YOLOE(model_path)
+        self._is_seg_model = "seg" in model_path.lower()
+
+    def predict_text(
+        self,
+        image: np.ndarray,
+        labels: list[str],
+        conf: float = 0.5,
+    ) -> dict:
+        if set(labels) != set(self.current_classes):
+            self.model.set_classes(labels)
+            self.current_classes = list(labels)
+
+        t0 = time.perf_counter()
+        results = self.model.predict(image, conf=conf, verbose=False)
+        inference_ms = (time.perf_counter() - t0) * 1000
+
+        return self._parse_results(results, inference_ms)
+
+    def setup_visual_prompt(
+        self,
+        refer_image: np.ndarray,
+        bboxes: list[list[float]],
+        cls: list[str],
+    ) -> list[str]:
+        """Extract VPE from refer_image and set on model. Call once before predict_with_vpe()."""
+        # Map string labels to integer indices
+        unique_labels: list[str] = []
+        label_to_idx: dict[str, int] = {}
+        cls_indices: list[int] = []
+
+        for label in cls:
+            if label not in label_to_idx:
+                label_to_idx[label] = len(unique_labels)
+                unique_labels.append(label)
+            cls_indices.append(label_to_idx[label])
+
+        visual_prompts = {"bboxes": bboxes, "cls": cls_indices}
+        predictor_cls = YOLOEVPSegPredictor if self._is_seg_model else None
+
+        # Save refer_image to temp file (get_vpe works better with paths)
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            cv2.imwrite(f.name, refer_image)
+            refer_path = f.name
+
+        try:
+            # This call extracts VPE via get_vpe(), sets classes on model,
+            # resets predictor, then runs standard predict on the refer_image itself.
+            # We only care about the VPE setup side-effect.
+            self.model.predict(
+                source=refer_path,
+                visual_prompts=visual_prompts,
+                refer_image=refer_path,
+                predictor=predictor_cls,
+                conf=0.01,
+                verbose=False,
+            )
+        finally:
+            import os
+            os.unlink(refer_path)
+
+        self._vpe_labels = unique_labels
+        return unique_labels
+
+    def predict_with_vpe(
+        self,
+        image: np.ndarray,
+        conf: float = 0.5,
+    ) -> dict:
+        """Predict on a frame using pre-set VPE from setup_visual_prompt()."""
+        t0 = time.perf_counter()
+        results = self.model.predict(image, conf=conf, verbose=False)
+        inference_ms = (time.perf_counter() - t0) * 1000
+
+        result = self._parse_results(results, inference_ms)
+
+        # Remap generic names (object0, object1...) to actual labels
+        for det in result["detections"]:
+            idx = int(det.get("cls_id", -1))
+            if 0 <= idx < len(self._vpe_labels):
+                det["label"] = self._vpe_labels[idx]
+
+        return result
+
+    def predict_visual(
+        self,
+        image: np.ndarray,
+        refer_image: np.ndarray,
+        bboxes: list[list[float]],
+        cls: list[str],
+        conf: float = 0.5,
+    ) -> dict:
+        """One-shot visual prompt detection. For repeated calls, use setup + predict_with_vpe."""
+        self.setup_visual_prompt(refer_image, bboxes, cls)
+        return self.predict_with_vpe(image, conf)
+
+    def _parse_results(self, results, inference_ms: float) -> dict:
+        boxes_data = []
+        classes_count: dict[str, int] = {}
+
+        if results and len(results) > 0:
+            r = results[0]
+            if r.boxes is not None and len(r.boxes) > 0:
+                for box in r.boxes:
+                    xyxy = box.xyxy[0].cpu().numpy().tolist()
+                    cls_id = int(box.cls[0])
+                    label = r.names.get(cls_id, str(cls_id))
+                    confidence = float(box.conf[0])
+                    boxes_data.append({
+                        "box": [round(v, 1) for v in xyxy],
+                        "label": label,
+                        "confidence": round(confidence, 3),
+                        "cls_id": cls_id,
+                    })
+                    classes_count[label] = classes_count.get(label, 0) + 1
+
+        return {
+            "detections": boxes_data,
+            "stats": {
+                "total_objects": len(boxes_data),
+                "classes_count": classes_count,
+                "inference_ms": round(inference_ms, 1),
+            },
+        }
+
+
+model_service = ModelService()

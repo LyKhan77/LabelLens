@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  /* DESIGN.md colors */
+  --color-primary: #3ecf8e;
+  --color-primary-deep: #24b47e;
+  --color-primary-soft: #4ade80;
+  --color-ink: #171717;
+  --color-ink-secondary: #212121;
+  --color-ink-mute: #707070;
+  --color-ink-mute-2: #9a9a9a;
+  --color-ink-faint: #b2b2b2;
+  --color-on-primary: #171717;
+  --color-on-dark: #ffffff;
+  --color-canvas: #ffffff;
+  --color-canvas-soft: #fafafa;
+  --color-canvas-night: #1c1c1c;
+  --color-canvas-night-soft: #202020;
+  --color-hairline: #dfdfdf;
+  --color-hairline-strong: #c7c7c7;
+  --color-hairline-cool: #ededed;
+  --color-accent-purple: #6b01c2;
+  --color-accent-violet: #644fc1;
+  --color-accent-yellow: #ffdb13;
+
+  /* Border radius (DESIGN.md) */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Font family */
+  --font-sans: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, Menlo, Monaco, Consolas, monospace;
+
+  /* Spacing base unit: 8px */
+  --spacing-xxs: 2px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-xxl: 32px;
+  --spacing-huge: 64px;
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--color-ink);
+    background: var(--color-canvas);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Dark mode variable overrides */
+  .dark {
+    --color-ink: #ededed;
+    --color-ink-secondary: #d4d4d4;
+    --color-ink-mute: #a0a0a0;
+    --color-ink-mute-2: #777777;
+    --color-ink-faint: #5a5a5a;
+    --color-on-primary: #171717;
+    --color-on-dark: #ffffff;
+    --color-canvas: #1c1c1c;
+    --color-canvas-soft: #141414;
+    --color-canvas-night: #1c1c1c;
+    --color-canvas-night-soft: #202020;
+    --color-hairline: #2e2e2e;
+    --color-hairline-strong: #3d3d3d;
+    --color-hairline-cool: #262626;
+  }
+}
