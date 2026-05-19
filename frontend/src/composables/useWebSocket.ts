@@ -1,6 +1,6 @@
-import { ref, shallowRef } from 'vue'
+import { ref } from 'vue'
 import type { Detection } from '../types'
-import { createStreamWS, type StreamConfig, type StreamFrame } from '../api/ws'
+import { createStreamWS, type StreamConfig, type StreamMessage } from '../api/ws'
 
 export function useWebSocket() {
   const lastFrame = ref<string>('')
@@ -15,29 +15,36 @@ export function useWebSocket() {
     error.value = null
     connected.value = false
 
-    ws = createStreamWS(config)
+    const socket = createStreamWS()
+    ws = socket
 
-    ws.onopen = () => {
+    socket.onopen = () => {
       connected.value = true
+      socket.send(JSON.stringify(config))
     }
 
-    ws.onmessage = (ev) => {
+    socket.onmessage = (ev) => {
       try {
-        const frame: StreamFrame = JSON.parse(ev.data)
-        lastFrame.value = frame.frame
-        detections.value = frame.detections
-        inferenceMs.value = frame.inference_ms
+        const message: StreamMessage = JSON.parse(ev.data)
+        if ('error' in message) {
+          error.value = message.error
+          return
+        }
+
+        lastFrame.value = message.frame
+        detections.value = message.detections
+        inferenceMs.value = message.inference_ms
       } catch {
         // ignore malformed frames
       }
     }
 
-    ws.onerror = () => {
+    socket.onerror = () => {
       error.value = 'Connection error'
       connected.value = false
     }
 
-    ws.onclose = () => {
+    socket.onclose = () => {
       connected.value = false
     }
   }

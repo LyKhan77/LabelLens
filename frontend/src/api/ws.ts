@@ -16,14 +16,14 @@ export interface StreamFrame {
   inference_ms: number
 }
 
-export function createStreamWS(config: StreamConfig): WebSocket {
+export interface StreamError {
+  error: string
+}
+
+export type StreamMessage = StreamFrame | StreamError
+
+export function createStreamWS(): WebSocket {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   const url = `${proto}//${location.host}/ws/stream`
-  const ws = new WebSocket(url)
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify(config))
-  }
-
-  return ws
+  return new WebSocket(url)
 }

@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -20,7 +21,8 @@ async def stream_endpoint(ws: WebSocket):
 
     try:
         # Receive config
-        config_raw = await ws.receive_text()
+        logger.info("WebSocket stream accepted, waiting for config")
+        config_raw = await asyncio.wait_for(ws.receive_text(), timeout=5.0)
         config = json.loads(config_raw)
 
         rtsp_url = config["rtsp_url"]
@@ -31,6 +33,13 @@ async def stream_endpoint(ws: WebSocket):
         show_bbox = config.get("show_bbox", True)
         bboxes = config.get("bboxes", [])
         vcls = config.get("vcls", [])
+
+        logger.info(
+            "RTSP stream config received: prompt_type=%s labels=%d visual_boxes=%d",
+            prompt_type,
+            len(labels),
+            len(bboxes),
+        )
 
         refer_image = None
         refer_b64 = config.get("refer_image_b64")
@@ -53,6 +62,12 @@ async def stream_endpoint(ws: WebSocket):
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
+    except asyncio.TimeoutError:
+        logger.warning("WebSocket stream config timed out")
+        try:
+            await ws.send_json({"error": "Stream configuration timed out. Please retry RTSP connection."})
+        except Exception:
+            pass
     except Exception as e:
         logger.error(f"Stream error: {e}")
         try:
