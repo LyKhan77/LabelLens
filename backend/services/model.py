@@ -36,7 +36,9 @@ class ModelService:
             self.current_classes = list(labels)
 
         t0 = time.perf_counter()
-        results = self.model.predict(image, conf=conf, device=self.device, verbose=False)
+        results = self.model.predict(
+            image, conf=conf, device=self.device, verbose=False, retina_masks=True
+        )
         inference_ms = (time.perf_counter() - t0) * 1000
 
         return self._parse_results(results, inference_ms)
@@ -79,6 +81,7 @@ class ModelService:
                 device=self.device,
                 conf=0.01,
                 verbose=False,
+                retina_masks=True,
             )
         finally:
             os.unlink(refer_path)
@@ -93,7 +96,9 @@ class ModelService:
     ) -> dict:
         """Predict on a frame using pre-set VPE from setup_visual_prompt()."""
         t0 = time.perf_counter()
-        results = self.model.predict(image, conf=conf, device=self.device, verbose=False)
+        results = self.model.predict(
+            image, conf=conf, device=self.device, verbose=False, retina_masks=True
+        )
         inference_ms = (time.perf_counter() - t0) * 1000
 
         result = self._parse_results(results, inference_ms)
