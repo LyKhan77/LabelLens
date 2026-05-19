@@ -11,6 +11,8 @@
 
 ## Key Features - ALWAYS Update this section based on Changes or Features Made
 
+- **Feature Modes Page** — Landing page with mode selection: Free Inference (LRPC, 1200+ LVIS categories) or Prompt Inference (text/visual)
+- **Free Inference Mode** — Prompt-free detection using YOLOE LRPC internal vocabulary (separate `yoloe-26l-seg-pf.pt` weights, no user prompts needed)
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
 - **Canvas BBox Annotation** — Interactive drawing tool with thin hover/drag X/Y guide lines for annotating reference images as visual grounding input
@@ -26,28 +28,31 @@ LabelLens/
 ├── frontend/src/
 │   ├── api/             (client.ts, detection.ts, ws.ts)
 │   ├── composables/     (useBackendStatus.ts, useWebSocket.ts)
-│   ├── components/      (BBoxAnnotation, GroundingInput, VisualPromptInput,
-│   │                    MediaInput, Viewer, DetectionLog, Sidebar, ...)
+│   ├── components/      (FeatureModes, BBoxAnnotation, GroundingInput,
+│   │                    VisualPromptInput, MediaInput, Viewer, DetectionLog,
+│   │                    Sidebar, ...)
 │   ├── stores/          (inference.ts — Pinia)
 │   └── types/           (index.ts)
 ├── backend/
-│   ├── routers/         (health.py, detection.py, stream.py)
-│   ├── services/        (model.py — YOLOE + SAVPE, video.py, rtsp.py)
+│   ├── routers/         (health.py — model/status + model/load, detection.py, stream.py)
+│   ├── services/        (model.py — YOLOE + SAVPE + LRPC free mode, video.py, rtsp.py)
 │   └── utils/           (drawing.py, encoding.py)
 ├── docs/plans/          (saved implementation plans)
+├── docs/superpowers/specs/ (design specs)
 ├── temp/                (runtime/debug snapshots, including html.txt preview)
 ├── PRD.md, DESIGN.md, AGENTS.md, README.md, preview.html
 ```
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE), returning YOLOE segmentation polygons when available. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, and explicit Clear Media mode switching are functional.
+**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users select Free Inference or Prompt Inference from the Feature Modes landing page. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, and explicit Clear Media mode switching are functional.
 
 **Being Developed:**
+- Free Mode Inference: Backend + Frontend complete — needs `models/yoloe-26l-seg-pf.pt` placement and testing
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights
 - Phase 2 (Video Processing): Backend + Frontend complete — needs testing with sample videos
 - Phase 3 (RTSP Streaming): Backend WebSocket + Frontend integration complete — needs testing with live RTSP feeds
-- Overall: Awaiting `models/yoloe-26l-seg.pt` placement and integration testing on RTX 5080 device `0` with `CUDA_DEVICE_ORDER=PCI_BUS_ID`
+- Overall: Awaiting `models/yoloe-26l-seg.pt` and `models/yoloe-26l-seg-pf.pt` placement and integration testing on RTX 5080 device `0` with `CUDA_DEVICE_ORDER=PCI_BUS_ID`
 
 =====================
 

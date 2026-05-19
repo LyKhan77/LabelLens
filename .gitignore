@@ -49,6 +49,7 @@ models/*.pth
 models/*.onnx
 models/*.engine
 mobileclip2_b.ts
+mobileclip_blt.ts
 
 # --- Other ---
 docs/superpowers/
