@@ -1,3 +1,4 @@
+import gc
 import os
 import tempfile
 import time
@@ -6,24 +7,62 @@ os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 
 import cv2
 import numpy as np
+import torch
 from ultralytics import YOLOE
 from ultralytics.models.yolo.yoloe.predict import YOLOEVPSegPredictor
 from ultralytics.utils import ops
 
-from backend.config import MODEL_PATH, DEVICE
+from backend.config import DEVICE
+
+MODEL_MODES = {
+    "prompt": "models/yoloe-26l-seg.pt",
+    "free": "models/yoloe-26l-seg-pf.pt",
+}
 
 
 class ModelService:
     def __init__(self):
         self.model: YOLOE | None = None
+        self.current_mode: str | None = None
+        self.model_path: str | None = None
         self.current_classes: list[str] = []
         self._is_seg_model = False
         self._vpe_labels: list[str] = []
         self.device = DEVICE
 
-    def load(self, model_path: str = MODEL_PATH):
+    def load_model(self, mode: str):
+        if mode not in MODEL_MODES:
+            raise ValueError(f"Unknown mode: {mode}. Must be one of {list(MODEL_MODES)}")
+
+        model_path = MODEL_MODES[mode]
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+
+        # Unload previous model
+        if self.model is not None:
+            del self.model
+            self.model = None
+            gc.collect()
+            torch.cuda.empty_cache()
+
         self.model = YOLOE(model_path)
         self._is_seg_model = "seg" in model_path.lower()
+        self.current_mode = mode
+        self.model_path = model_path
+        self.current_classes = []
+        self._vpe_labels = []
+
+    def get_status(self) -> dict:
+        return {
+            "mode": self.current_mode,
+            "loaded": self.model is not None,
+            "model_name": os.path.basename(self.model_path) if self.model_path else None,
+            "device": f"cuda:{self.device}",
+        }
+
+    def _require_model(self):
+        if self.model is None:
+            raise RuntimeError("No model loaded. Select a mode first.")
 
     def predict_text(
         self,
@@ -31,6 +70,7 @@ class ModelService:
         labels: list[str],
         conf: float = 0.5,
     ) -> dict:
+        self._require_model()
         if set(labels) != set(self.current_classes):
             self.model.set_classes(labels)
             self.current_classes = list(labels)
@@ -43,6 +83,19 @@ class ModelService:
 
         return self._parse_results(results, inference_ms)
 
+    def predict_free(
+        self,
+        image: np.ndarray,
+        conf: float = 0.5,
+    ) -> dict:
+        self._require_model()
+        t0 = time.perf_counter()
+        results = self.model.predict(
+            image, conf=conf, device=self.device, verbose=False, retina_masks=True
+        )
+        inference_ms = (time.perf_counter() - t0) * 1000
+        return self._parse_results(results, inference_ms)
+
     def setup_visual_prompt(
         self,
         refer_image: np.ndarray,
@@ -50,6 +103,7 @@ class ModelService:
         cls: list[str],
     ) -> list[str]:
         """Extract VPE from refer_image and set on model. Call once before predict_with_vpe()."""
+        self._require_model()
         # Map string labels to integer indices
         unique_labels: list[str] = []
         label_to_idx: dict[str, int] = {}
@@ -95,6 +149,7 @@ class ModelService:
         conf: float = 0.5,
     ) -> dict:
         """Predict on a frame using pre-set VPE from setup_visual_prompt()."""
+        self._require_model()
         t0 = time.perf_counter()
         results = self.model.predict(
             image, conf=conf, device=self.device, verbose=False, retina_masks=True

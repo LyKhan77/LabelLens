@@ -10,7 +10,6 @@ from backend.services.model import model_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    model_service.load()
     yield
 
 
