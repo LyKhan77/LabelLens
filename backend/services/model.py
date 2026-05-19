@@ -143,11 +143,11 @@ class ModelService:
                         "confidence": round(confidence, 3),
                         "cls_id": cls_id,
                     }
-                    mask_rle = self._extract_mask_rle(masks, i, orig_shape)
+                    mask_rle = self._extract_mask_rle(masks, i, orig_shape, xyxy)
                     if mask_rle:
                         detection["mask_rle"] = mask_rle
 
-                    mask = self._extract_mask_polygon(masks, i, orig_shape)
+                    mask = self._extract_mask_polygon(masks, i, orig_shape, xyxy)
                     if mask:
                         detection["mask"] = mask
                     boxes_data.append(detection)
@@ -162,11 +162,11 @@ class ModelService:
             },
         }
 
-    def _extract_mask_rle(self, masks, index: int, orig_shape) -> dict | None:
+    def _extract_mask_rle(self, masks, index: int, orig_shape, box: list[float]) -> dict | None:
         if masks is None or getattr(masks, "data", None) is None or index >= len(masks.data):
             return None
 
-        binary = self._mask_bitmap(masks.data[index], orig_shape)
+        binary = self._mask_bitmap(masks.data[index], orig_shape, box)
         if binary is None:
             return None
 
@@ -199,7 +199,7 @@ class ModelService:
             "counts": counts,
         }
 
-    def _mask_bitmap(self, mask_data, orig_shape) -> np.ndarray | None:
+    def _mask_bitmap(self, mask_data, orig_shape, box: list[float] | None = None) -> np.ndarray | None:
         if orig_shape is None:
             orig_h, orig_w = mask_data.shape[-2:]
         else:
@@ -207,28 +207,54 @@ class ModelService:
 
         mask_tensor = mask_data.unsqueeze(0).unsqueeze(0).float()
         scaled = ops.scale_masks(mask_tensor, (orig_h, orig_w))[0, 0]
-        binary = (scaled > 0).detach().cpu().numpy().astype(np.uint8)
+        binary = (scaled > 0.5).detach().cpu().numpy().astype(np.uint8)
+        if box is not None:
+            binary = self._clip_binary_to_box(binary, box)
         if binary.max() == 0:
             return None
         return binary
 
-    def _extract_mask_polygon(self, masks, index: int, orig_shape) -> list[list[float]] | None:
+    def _clip_binary_to_box(self, binary: np.ndarray, box: list[float]) -> np.ndarray:
+        h, w = binary.shape[:2]
+        x1 = max(0, min(w, int(np.floor(box[0]))))
+        y1 = max(0, min(h, int(np.floor(box[1]))))
+        x2 = max(0, min(w, int(np.ceil(box[2]))))
+        y2 = max(0, min(h, int(np.ceil(box[3]))))
+
+        clipped = np.zeros_like(binary, dtype=np.uint8)
+        if x2 <= x1 or y2 <= y1:
+            return clipped
+        clipped[y1:y2, x1:x2] = binary[y1:y2, x1:x2]
+        return clipped
+
+    def _extract_mask_polygon(self, masks, index: int, orig_shape, box: list[float]) -> list[list[float]] | None:
         if masks is None:
             return None
 
         if getattr(masks, "data", None) is not None and index < len(masks.data):
-            polygon = self._polygon_from_mask_bitmap(masks.data[index], orig_shape)
+            polygon = self._polygon_from_mask_bitmap(masks.data[index], orig_shape, box)
             if polygon:
                 return polygon
 
         masks_xy = getattr(masks, "xy", [])
         if index < len(masks_xy):
-            return [[round(float(x), 1), round(float(y), 1)] for x, y in masks_xy[index].tolist()]
+            return self._clip_polygon_points(masks_xy[index].tolist(), box)
 
         return None
 
-    def _polygon_from_mask_bitmap(self, mask_data, orig_shape) -> list[list[float]] | None:
-        binary = self._mask_bitmap(mask_data, orig_shape)
+    def _clip_polygon_points(self, points, box: list[float]) -> list[list[float]] | None:
+        x1, y1, x2, y2 = box
+        clipped = [
+            [
+                round(float(min(max(x, x1), x2)), 1),
+                round(float(min(max(y, y1), y2)), 1),
+            ]
+            for x, y in points
+        ]
+        return clipped if len(clipped) >= 3 else None
+
+    def _polygon_from_mask_bitmap(self, mask_data, orig_shape, box: list[float]) -> list[list[float]] | None:
+        binary = self._mask_bitmap(mask_data, orig_shape, box)
         if binary is None:
             return None
 

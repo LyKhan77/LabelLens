@@ -23,6 +23,7 @@ export async function detectImage(params: {
   confidence: number
   showLabels: boolean
   showBbox: boolean
+  showMasks: boolean
 }): Promise<ImageDetectionResponse> {
   const form = new FormData()
   form.append('file', params.file)
@@ -30,6 +31,7 @@ export async function detectImage(params: {
   form.append('confidence', String(params.confidence))
   form.append('show_labels', String(params.showLabels))
   form.append('show_bbox', String(params.showBbox))
+  form.append('show_masks', String(params.showMasks))
 
   if (params.promptType === 'text' && params.labels) {
     form.append('labels', params.labels.join(','))
@@ -55,6 +57,7 @@ export async function detectVideo(params: {
   confidence: number
   showLabels: boolean
   showBbox: boolean
+  showMasks: boolean
   sampleFps?: number
   signal?: AbortSignal
 }): Promise<VideoDetectionResponse> {
@@ -64,6 +67,7 @@ export async function detectVideo(params: {
   form.append('confidence', String(params.confidence))
   form.append('show_labels', String(params.showLabels))
   form.append('show_bbox', String(params.showBbox))
+  form.append('show_masks', String(params.showMasks))
   form.append('sample_fps', String(params.sampleFps ?? 5))
 
   if (params.promptType === 'text' && params.labels) {

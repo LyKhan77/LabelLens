@@ -18,6 +18,7 @@ def process_video(
     conf: float = 0.5,
     show_labels: bool = True,
     show_bbox: bool = True,
+    show_masks: bool = False,
     sample_fps: int = 5,
 ) -> dict:
     # Setup visual prompt once (VPE extraction) if using visual mode
@@ -64,6 +65,7 @@ def process_video(
                     result["detections"],
                     show_labels=show_labels,
                     show_bbox=show_bbox,
+                    show_masks=show_masks,
                 )
                 frames.append(frame_to_base64(annotated, quality=70))
                 all_detections.append(result["detections"])

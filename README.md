@@ -14,7 +14,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 - **Image Detection** — upload static images (JPG, PNG)
 - **Video Processing** — upload video files (MP4, AVI, MOV) with frame-by-frame detection
 - **RTSP Live Streaming** — connect to RTSP camera streams with real-time WebSocket inference and visible connection errors
-- **Configurable Settings** — confidence threshold plus label, bbox, and raster live mask overlay toggles
+- **Configurable Settings** — confidence threshold plus backend-rendered label, bbox, and clipped mask overlay toggles
 - **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
 - **Clear Media Workflow** — stop inference, clear current media, then switch Image/Video/RTSP modes without losing prompt state
 
@@ -89,7 +89,7 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 1. **Text Prompt** — type comma-separated labels in the grounding prompt field
 2. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels
 3. **Select media** — choose Image / Video / RTSP before adding media input
-4. **Adjust settings** — set confidence threshold, toggle labels/bboxes, and turn `Show Masks` on/off live after inference
+4. **Adjust settings** — set confidence threshold and choose label/bbox/mask overlays before starting inference; image/video changes require rerun, RTSP changes require restarting the stream
 5. **Run or switch media** — Start/Stop can reuse the current media; use Clear Media after stopping inference to switch modes
 6. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
 

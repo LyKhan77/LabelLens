@@ -33,6 +33,7 @@ class RTSPStream:
         conf: float = 0.5,
         show_labels: bool = True,
         show_bbox: bool = True,
+        show_masks: bool = False,
     ) -> AsyncGenerator[dict, None]:
         self._running = True
         loop = asyncio.get_event_loop()
@@ -81,6 +82,7 @@ class RTSPStream:
                     last_detections,
                     show_labels=show_labels,
                     show_bbox=show_bbox,
+                    show_masks=show_masks,
                 )
 
                 yield {

@@ -155,6 +155,7 @@ export const useInferenceStore = defineStore('inference', () => {
       confidence: confidence.value,
       showLabels: showLabels.value,
       showBbox: showBbox.value,
+      showMasks: showMasks.value,
     }
   }
 
@@ -231,6 +232,7 @@ export const useInferenceStore = defineStore('inference', () => {
       confidence: confidence.value,
       show_labels: showLabels.value,
       show_bbox: showBbox.value,
+      show_masks: showMasks.value,
     })
   }
 

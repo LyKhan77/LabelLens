@@ -10,6 +10,7 @@ export interface StreamConfig {
   confidence: number
   show_labels: boolean
   show_bbox: boolean
+  show_masks: boolean
 }
 
 export interface StreamFrame {

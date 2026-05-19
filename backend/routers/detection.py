@@ -22,6 +22,7 @@ async def detect_image(
     confidence: float = Form(0.5),
     show_labels: bool = Form(True),
     show_bbox: bool = Form(True),
+    show_masks: bool = Form(False),
 ):
     target_bytes = await file.read()
     target_img = decode_image(target_bytes)
@@ -62,6 +63,7 @@ async def detect_image(
         result["detections"],
         show_labels=show_labels,
         show_bbox=show_bbox,
+        show_masks=show_masks,
     )
 
     return {
@@ -82,6 +84,7 @@ async def detect_video(
     confidence: float = Form(0.5),
     show_labels: bool = Form(True),
     show_bbox: bool = Form(True),
+    show_masks: bool = Form(False),
     sample_fps: int = Form(5),
 ):
     file_bytes = await file.read()
@@ -111,6 +114,7 @@ async def detect_video(
         conf=confidence,
         show_labels=show_labels,
         show_bbox=show_bbox,
+        show_masks=show_masks,
         sample_fps=sample_fps,
     )
 

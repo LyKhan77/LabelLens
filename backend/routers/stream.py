@@ -31,6 +31,7 @@ async def stream_endpoint(ws: WebSocket):
         confidence = config.get("confidence", 0.5)
         show_labels = config.get("show_labels", True)
         show_bbox = config.get("show_bbox", True)
+        show_masks = config.get("show_masks", False)
         bboxes = config.get("bboxes", [])
         vcls = config.get("vcls", [])
 
@@ -57,6 +58,7 @@ async def stream_endpoint(ws: WebSocket):
             conf=confidence,
             show_labels=show_labels,
             show_bbox=show_bbox,
+            show_masks=show_masks,
         ):
             await ws.send_json(frame_data)
 
