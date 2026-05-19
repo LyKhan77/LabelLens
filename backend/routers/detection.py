@@ -45,6 +45,8 @@ async def detect_image(
             cls=cls_list,
             conf=confidence,
         )
+    elif prompt_type == "free":
+        result = model_service.predict_free(image=target_img, conf=confidence)
     else:
         label_list = [l.strip() for l in labels.split(",") if l.strip()]
         if not label_list:
@@ -103,6 +105,9 @@ async def detect_video(
         refer_img = decode_image(refer_bytes)
 
     label_list = [l.strip() for l in labels.split(",") if l.strip()] if prompt_type == "text" else None
+
+    if prompt_type == "free":
+        label_list = None
 
     result = process_video(
         file_bytes=file_bytes,

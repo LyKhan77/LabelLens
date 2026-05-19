@@ -52,7 +52,7 @@ async def stream_endpoint(ws: WebSocket):
             rtsp_url=rtsp_url,
             prompt_type=prompt_type,
             labels=labels if prompt_type == "text" else None,
-            refer_image=refer_image,
+            refer_image=refer_image if prompt_type == "visual" else None,
             bboxes=bboxes if prompt_type == "visual" else None,
             cls=vcls if prompt_type == "visual" else None,
             conf=confidence,

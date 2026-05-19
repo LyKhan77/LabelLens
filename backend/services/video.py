@@ -53,6 +53,8 @@ def process_video(
             if frame_idx % frame_interval == 0:
                 if prompt_type == "visual" and refer_image is not None:
                     result = model_service.predict_with_vpe(frame, conf)
+                elif prompt_type == "free":
+                    result = model_service.predict_free(frame, conf)
                 else:
                     result = model_service.predict_text(
                         image=frame,
