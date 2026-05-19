@@ -9,13 +9,10 @@ const { theme, toggle } = useTheme()
 <template>
   <header class="flex items-center justify-between px-(--spacing-lg) h-14 border-b border-hairline bg-canvas">
     <div class="flex items-center gap-2">
-      <div class="w-6 h-6 rounded-(--radius-sm) bg-primary flex items-center justify-center">
-        <svg class="w-4 h-4 text-on-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <circle cx="11" cy="11" r="8" />
-          <path d="m21 21-4.3-4.3" />
-        </svg>
-      </div>
-      <span class="text-ink font-medium text-lg tracking-tight">LabelLens</span>
+      <img src="/favicon.png" alt="LabelLens" class="w-7 h-7 rounded-(--radius-sm)" />
+      <span class="font-bold text-lg tracking-tight">
+        <span class="text-ink">Label</span><span class="text-primary">Lens</span>
+      </span>
     </div>
 
     <div class="flex items-center gap-3">
