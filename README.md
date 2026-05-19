@@ -57,6 +57,16 @@ LabelLens/
 - Node.js 18+
 - YOLOE-26L segmentation model weight (`models/yoloe-26l-seg.pt`)
 
+### Run Frontend + Backend (Recommended)
+
+```bash
+./run-dev.sh
+```
+
+Default URL:
+- Frontend: `http://localhost:8282`
+- Backend API: `http://localhost:3131`
+
 ### Backend
 
 ```bash
@@ -72,7 +82,7 @@ npm install
 npm run dev
 ```
 
-App runs at `http://<your-ip>:3131`. Accessible from any device on the network.
+Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http://<your-ip>:3131`.
 
 ## Usage
 
