@@ -13,9 +13,10 @@ Web-based object detection application powered by **YOLOE-26s** with support for
 - **Visual Prompt Detection** — upload a reference image, draw bounding boxes on objects, and detect visually similar objects via SAVPE encoder
 - **Image Detection** — upload static images (JPG, PNG)
 - **Video Processing** — upload video files (MP4, AVI, MOV) with frame-by-frame detection
-- **RTSP Live Streaming** — connect to RTSP camera streams with real-time WebSocket inference
+- **RTSP Live Streaming** — connect to RTSP camera streams with real-time WebSocket inference and visible connection errors
 - **Configurable Settings** — confidence threshold, label/bbox visibility toggles
-- **Detection Metrics** — object count, FPS, inference time, class breakdown
+- **Compact Detection Metrics** — compact object count, FPS, latency, class breakdown, and detection log
+- **Collapsible Controls** — hide or restore the left Controls panel to expand the viewer area
 
 ## Tech Stack
 
@@ -42,6 +43,7 @@ LabelLens/
 │   ├── routers/             # API endpoints (health, detection, stream)
 │   ├── services/            # Model, video, RTSP services
 │   └── utils/               # Drawing, encoding helpers
+├── docs/plans/              # Saved implementation plans
 ├── PRD.md                   # Product requirements document
 ├── DESIGN.md                # Supabase-inspired design system tokens
 └── AGENTS.md                # Agent guidelines & project overview
@@ -78,7 +80,8 @@ App runs at `http://<your-ip>:3131`. Accessible from any device on the network.
 2. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels
 3. **Select media** — switch between Image / Video / RTSP input
 4. **Adjust settings** — set confidence threshold, toggle labels/bboxes
-5. **Start Inference** — click "Start Inference" to run detection
+5. **Manage workspace** — collapse the Controls panel when you need more viewer space
+6. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer
 
 ## Environment Variables
 

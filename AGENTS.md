@@ -15,7 +15,8 @@
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
 - **Canvas BBox Annotation** — Interactive drawing tool for annotating reference images as visual grounding input
 - **Configurable Inference** — Confidence threshold slider, label/bbox visibility toggles
-- **Detection Dashboard** — Real-time metrics (object count, FPS, ms/frame, class breakdown) + detection log
+- **Detection Dashboard** — Compact real-time metrics (object count, FPS, latency, class breakdown) + detection log
+- **Collapsible Controls** — Left Controls panel can collapse into a slim rail to expand the viewer area
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
@@ -33,12 +34,14 @@ LabelLens/
 │   ├── routers/         (health.py, detection.py, stream.py)
 │   ├── services/        (model.py — YOLOE + SAVPE, video.py, rtsp.py)
 │   └── utils/           (drawing.py, encoding.py)
+├── docs/plans/          (saved implementation plans)
+├── temp/                (runtime/debug snapshots, including html.txt preview)
 ├── PRD.md, DESIGN.md, AGENTS.md, README.md, preview.html
 ```
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE). Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool is functional.
+**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE). Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool, compact metrics bar, and collapsible Controls panel are functional.
 
 **Being Developed:**
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights
