@@ -47,9 +47,12 @@ function hasError(m: ModeCard) {
     <div class="w-full max-w-[680px] px-(--spacing-xl)">
       <!-- Header -->
       <div class="text-center mb-(--spacing-huge)">
-        <h1 class="text-[28px] font-medium text-ink tracking-[-0.42px] mb-(--spacing-sm)">
-          LabelLens
-        </h1>
+        <div class="flex items-center justify-center gap-3 mb-(--spacing-md)">
+          <img src="/favicon.png" alt="LabelLens" class="w-12 h-12 rounded-(--radius-md)" />
+          <span class="text-[36px] font-bold tracking-[-0.72px]">
+            <span class="text-ink">Label</span><span class="text-primary">Lens</span>
+          </span>
+        </div>
         <p class="text-[13px] text-ink-mute leading-[1.45]">
           Select an inference mode to continue
         </p>

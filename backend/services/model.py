@@ -48,10 +48,13 @@ class ModelService:
 
         self.model = YOLOE(source)
 
-        # If auto-downloaded, copy to models/ for future loads
-        if not local_exists and hasattr(self.model, "ckpt_path") and self.model.ckpt_path:
+        # If auto-downloaded, move to models/ and clean up CWD spawn
+        if not local_exists:
             os.makedirs(os.path.dirname(model_path), exist_ok=True)
-            shutil.copy2(self.model.ckpt_path, model_path)
+            # Check CWD (where ultralytics drops auto-downloads)
+            cwd_spawn = os.path.basename(model_path)
+            if os.path.isfile(cwd_spawn):
+                shutil.move(cwd_spawn, model_path)
 
         self._is_seg_model = "seg" in model_path.lower()
         self.current_mode = mode
