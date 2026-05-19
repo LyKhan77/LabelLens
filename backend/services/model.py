@@ -6,7 +6,7 @@ import numpy as np
 from ultralytics import YOLOE
 from ultralytics.models.yolo.yoloe.predict import YOLOEVPSegPredictor
 
-from backend.config import MODEL_PATH
+from backend.config import MODEL_PATH, DEVICE
 
 
 class ModelService:
@@ -15,6 +15,7 @@ class ModelService:
         self.current_classes: list[str] = []
         self._is_seg_model = False
         self._vpe_labels: list[str] = []
+        self.device = DEVICE
 
     def load(self, model_path: str = MODEL_PATH):
         self.model = YOLOE(model_path)
@@ -31,7 +32,7 @@ class ModelService:
             self.current_classes = list(labels)
 
         t0 = time.perf_counter()
-        results = self.model.predict(image, conf=conf, verbose=False)
+        results = self.model.predict(image, conf=conf, device=self.device, verbose=False)
         inference_ms = (time.perf_counter() - t0) * 1000
 
         return self._parse_results(results, inference_ms)
@@ -71,6 +72,7 @@ class ModelService:
                 visual_prompts=visual_prompts,
                 refer_image=refer_path,
                 predictor=predictor_cls,
+                device=self.device,
                 conf=0.01,
                 verbose=False,
             )
@@ -88,7 +90,7 @@ class ModelService:
     ) -> dict:
         """Predict on a frame using pre-set VPE from setup_visual_prompt()."""
         t0 = time.perf_counter()
-        results = self.model.predict(image, conf=conf, verbose=False)
+        results = self.model.predict(image, conf=conf, device=self.device, verbose=False)
         inference_ms = (time.perf_counter() - t0) * 1000
 
         result = self._parse_results(results, inference_ms)
