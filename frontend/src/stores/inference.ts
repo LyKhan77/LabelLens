@@ -1,10 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type { PromptMode, MediaMode, ViewerState, BBoxAnnotation, Detection, Stats } from '../types'
+import type { PromptMode, MediaMode, ViewerState, BBoxAnnotation, Detection, Stats, InferenceMode } from '../types'
 import { detectImage, detectVideo } from '../api/detection'
+import { loadModel, getModelStatus } from '../api/client'
 import { useWebSocket } from '../composables/useWebSocket'
 
 export const useInferenceStore = defineStore('inference', () => {
+  // Mode selection
+  const inferenceMode = ref<InferenceMode | null>(null)
+  const modelLoaded = ref(false)
+  const modelLoading = ref(false)
+  const modelError = ref<string | null>(null)
+
   // Grounding prompt
   const promptMode = ref<PromptMode>('text')
   const labels = ref<string[]>([])
@@ -72,8 +79,12 @@ export const useInferenceStore = defineStore('inference', () => {
 
   const canRun = computed(() => {
     if (isRunning.value) return false
-    if (promptMode.value === 'text' && labels.value.length === 0) return false
-    if (promptMode.value === 'visual' && (annotations.value.length === 0 || !referImage.value)) return false
+    if (inferenceMode.value === 'free') {
+      // Free mode needs no prompt validation
+    } else {
+      if (promptMode.value === 'text' && labels.value.length === 0) return false
+      if (promptMode.value === 'visual' && (annotations.value.length === 0 || !referImage.value)) return false
+    }
     if (mediaMode.value === 'image' && !file.value) return false
     if (mediaMode.value === 'video' && !file.value) return false
     if (mediaMode.value === 'rtsp' && !rtspUrl.value.trim()) return false
@@ -142,14 +153,15 @@ export const useInferenceStore = defineStore('inference', () => {
   }
 
   function buildPromptParams() {
+    const effectivePromptType = inferenceMode.value === 'free' ? 'free' as const : promptMode.value
     return {
-      promptType: promptMode.value,
-      labels: promptMode.value === 'text' ? labels.value : undefined,
-      referImage: promptMode.value === 'visual' ? referImage.value ?? undefined : undefined,
-      bboxes: promptMode.value === 'visual'
+      promptType: effectivePromptType,
+      labels: effectivePromptType === 'text' ? labels.value : undefined,
+      referImage: effectivePromptType === 'visual' ? referImage.value ?? undefined : undefined,
+      bboxes: effectivePromptType === 'visual'
         ? annotations.value.map(a => a.bbox) as [number, number, number, number][]
         : undefined,
-      vcls: promptMode.value === 'visual'
+      vcls: effectivePromptType === 'visual'
         ? annotations.value.map(a => a.label)
         : undefined,
       confidence: confidence.value,
@@ -291,7 +303,45 @@ export const useInferenceStore = defineStore('inference', () => {
     stopVideo()
   }
 
+  async function selectMode(mode: InferenceMode) {
+    modelLoading.value = true
+    modelError.value = null
+    try {
+      const result = await loadModel(mode)
+      if (result.loaded) {
+        inferenceMode.value = mode
+        modelLoaded.value = true
+      } else {
+        modelError.value = result.error || 'Failed to load model'
+      }
+    } catch (e: unknown) {
+      modelError.value = e instanceof Error ? e.message : 'Failed to load model'
+    } finally {
+      modelLoading.value = false
+    }
+  }
+
+  async function loadModelStatus() {
+    try {
+      const status = await getModelStatus()
+      if (status.loaded) {
+        inferenceMode.value = status.mode as InferenceMode
+        modelLoaded.value = true
+      }
+    } catch {
+      // Backend unreachable, stay on mode selection
+    }
+  }
+
+  function switchMode() {
+    if (isRunning.value) stopInference()
+    modelLoaded.value = false
+    inferenceMode.value = null
+    modelError.value = null
+  }
+
   return {
+    inferenceMode, modelLoaded, modelLoading, modelError,
     promptMode, labels, referImage, annotations,
     mediaMode, file, rtspUrl,
     confidence, showLabels, showBbox, showMasks,
@@ -302,5 +352,6 @@ export const useInferenceStore = defineStore('inference', () => {
     addLabel, removeLabel, addAnnotation, removeAnnotation, clearAnnotations,
     selectMediaMode, clearMediaInput,
     runInference, stopInference, reset, playVideo, stopVideo,
+    selectMode, loadModelStatus, switchMode,
   }
 })
