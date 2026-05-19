@@ -7,16 +7,19 @@ const store = useInferenceStore()
 const imageSrc = ref('')
 const isDragOver = ref(false)
 
-function handleFile(file: File) {
-  if (!file.type.startsWith('image/')) return
-  store.referImage = file
-  store.clearAnnotations()
-
+function loadPreview(file: File) {
   const reader = new FileReader()
   reader.onload = (e) => {
     imageSrc.value = e.target?.result as string
   }
   reader.readAsDataURL(file)
+}
+
+function handleFile(file: File) {
+  if (!file.type.startsWith('image/')) return
+  store.referImage = file
+  store.clearAnnotations()
+  loadPreview(file)
 }
 
 function onFileInput(e: Event) {
@@ -40,10 +43,12 @@ function onDragLeave() {
 }
 
 watch(() => store.referImage, (newFile) => {
-  if (!newFile) {
+  if (newFile) {
+    loadPreview(newFile)
+  } else {
     imageSrc.value = ''
   }
-})
+}, { immediate: true })
 </script>
 
 <template>

@@ -12,7 +12,7 @@ const collapsed = ref(false)
     class="shrink-0 border-r border-hairline bg-canvas h-full transition-[width] duration-200 overflow-hidden"
     :class="collapsed ? 'w-12' : 'w-[380px]'"
   >
-    <div v-if="collapsed" class="h-full flex flex-col items-center py-3">
+    <div v-show="collapsed" class="h-full flex flex-col items-center py-3">
       <button
         type="button"
         class="w-9 h-9 flex items-center justify-center rounded-(--radius-sm) border border-hairline text-ink-mute hover:text-ink hover:bg-canvas-soft transition-colors cursor-pointer"
@@ -29,7 +29,7 @@ const collapsed = ref(false)
       </span>
     </div>
 
-    <div v-else class="h-full overflow-y-auto">
+    <div v-show="!collapsed" class="h-full overflow-y-auto">
       <div class="p-(--spacing-lg) space-y-(--spacing-xl)">
         <div class="flex items-center justify-between gap-3">
           <p class="text-xs font-medium text-ink-mute uppercase tracking-wider">Controls</p>

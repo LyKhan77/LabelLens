@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useInferenceStore } from '../stores/inference'
 
 const store = useInferenceStore()
+const isActiveInference = computed(() => store.isRunning || store.viewerState === 'loading' || store.viewerState === 'rtsp')
 </script>
 
 <template>
@@ -60,7 +62,7 @@ const store = useInferenceStore()
     <!-- Action button -->
     <div>
       <button
-        v-if="store.isRunning"
+        v-if="isActiveInference"
         class="w-full px-4 py-2 text-sm font-medium rounded-(--radius-sm) bg-red-500 text-white hover:bg-red-600 transition-colors cursor-pointer"
         @click="store.stopInference()"
       >

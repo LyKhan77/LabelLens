@@ -1,22 +1,25 @@
 <script setup lang="ts">
 import { useInferenceStore } from '../stores/inference'
+import DetectionLog from './DetectionLog.vue'
 import StatsGrid from './StatsGrid.vue'
 
 const store = useInferenceStore()
 </script>
 
 <template>
-  <div class="flex-1 flex items-center justify-center bg-canvas-soft relative overflow-hidden">
+  <div class="min-w-0 min-h-0 flex-1 flex items-center justify-center bg-canvas-soft relative overflow-hidden">
     <aside
       v-if="store.stats && store.viewerState !== 'empty' && store.viewerState !== 'loading'"
-      class="absolute right-3 top-3 z-10 w-[210px] rounded-(--radius-md) border border-hairline bg-canvas/95 p-2 shadow-lg backdrop-blur"
-      aria-label="Inference Stats"
+      class="absolute right-3 top-3 z-10 w-[260px] max-h-[calc(100%-1.5rem)] overflow-hidden rounded-(--radius-md) border border-hairline bg-canvas/95 p-2 shadow-lg backdrop-blur"
+      aria-label="Inference Stats and Detection Log"
     >
       <div class="mb-1.5 flex items-center justify-between gap-2">
         <p class="text-[11px] font-medium uppercase tracking-wider text-ink-mute">Inference Stats</p>
         <span class="h-1.5 w-1.5 rounded-full bg-primary" />
       </div>
       <StatsGrid />
+      <div class="my-2 border-t border-hairline" />
+      <DetectionLog />
     </aside>
     <!-- Empty state -->
     <div v-if="store.viewerState === 'empty'" class="text-center">
@@ -42,7 +45,7 @@ const store = useInferenceStore()
     </div>
 
     <!-- Image result -->
-    <div v-else-if="store.viewerState === 'result'" class="w-full h-full flex items-center justify-center p-4">
+    <div v-else-if="store.viewerState === 'result'" class="w-full h-full min-h-0 flex items-center justify-center p-3 sm:p-4">
       <img
         :src="`data:image/jpeg;base64,${store.resultImage}`"
         alt="Detection result"
@@ -51,8 +54,8 @@ const store = useInferenceStore()
     </div>
 
     <!-- Video result -->
-    <div v-else-if="store.viewerState === 'video'" class="w-full h-full flex flex-col">
-      <div class="flex-1 flex items-center justify-center p-4">
+    <div v-else-if="store.viewerState === 'video'" class="w-full h-full min-h-0 flex flex-col">
+      <div class="min-h-0 flex-1 flex items-center justify-center p-3 sm:p-4">
         <img
           :src="`data:image/jpeg;base64,${store.videoFrames[store.videoIndex]}`"
           alt="Video frame"
@@ -83,9 +86,9 @@ const store = useInferenceStore()
     </div>
 
     <!-- RTSP result -->
-    <div v-else-if="store.viewerState === 'rtsp'" class="w-full h-full flex flex-col">
-      <div class="flex-1 flex items-center justify-center p-4">
-        <div v-if="store.rtspFrame" class="w-full h-full flex items-center justify-center">
+    <div v-else-if="store.viewerState === 'rtsp'" class="w-full h-full min-h-0 flex flex-col">
+      <div class="min-h-0 flex-1 flex items-center justify-center p-3 sm:p-4">
+        <div v-if="store.rtspFrame" class="w-full h-full min-h-0 flex items-center justify-center">
           <img
             :src="`data:image/jpeg;base64,${store.rtspFrame}`"
             alt="RTSP stream"

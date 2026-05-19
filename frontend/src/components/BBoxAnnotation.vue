@@ -79,10 +79,23 @@ function renderCanvas() {
     ctx.fillText(ann.label, x1 / scaleX + 4, y1 / scaleY - 6)
   })
 
-  // Draw rubber-band rect while drawing
+  // Draw alignment guides and rubber-band rect while drawing
   if (isDrawing.value) {
     const ctx2 = cvs.getContext('2d')
     if (!ctx2) return
+
+    ctx2.save()
+    ctx2.strokeStyle = 'rgba(62, 207, 142, 0.65)'
+    ctx2.lineWidth = 1
+    ctx2.setLineDash([2, 3])
+    ctx2.beginPath()
+    ctx2.moveTo(drawCurrent.value.x, 0)
+    ctx2.lineTo(drawCurrent.value.x, displayH)
+    ctx2.moveTo(0, drawCurrent.value.y)
+    ctx2.lineTo(displayW, drawCurrent.value.y)
+    ctx2.stroke()
+    ctx2.restore()
+
     ctx2.strokeStyle = '#3ecf8e'
     ctx2.lineWidth = 2
     ctx2.setLineDash([4, 4])

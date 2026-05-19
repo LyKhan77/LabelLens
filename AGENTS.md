@@ -13,10 +13,10 @@
 
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
-- **Canvas BBox Annotation** — Interactive drawing tool for annotating reference images as visual grounding input
+- **Canvas BBox Annotation** — Interactive drawing tool with thin X/Y guide lines for annotating reference images as visual grounding input
 - **Configurable Inference** — Confidence threshold slider, label/bbox visibility toggles
-- **Detection Dashboard** — Floating compact inference stats (object count, FPS, latency, class breakdown) + bottom detection log
-- **Collapsible Controls** — Left Controls panel can collapse into a slim rail to expand the viewer area
+- **Detection Dashboard** — Floating right-side inference panel with compact stats and scrollable detection log
+- **Collapsible Controls** — Left Controls panel can collapse into a slim rail without unmounting prompt/media state
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
@@ -27,7 +27,7 @@ LabelLens/
 │   ├── api/             (client.ts, detection.ts, ws.ts)
 │   ├── composables/     (useBackendStatus.ts, useWebSocket.ts)
 │   ├── components/      (BBoxAnnotation, GroundingInput, VisualPromptInput,
-│   │                    MediaInput, Viewer, MetricsBar, Sidebar, ...)
+│   │                    MediaInput, Viewer, DetectionLog, Sidebar, ...)
 │   ├── stores/          (inference.ts — Pinia)
 │   └── types/           (index.ts)
 ├── backend/
@@ -41,7 +41,7 @@ LabelLens/
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE). Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool, floating compact inference stats, and collapsible Controls panel are functional.
+**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports both `predict_text()` and `predict_visual()` (SAVPE). Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with X/Y guides, floating compact inference panel, scrollable detection log, and state-preserving collapsible Controls panel are functional.
 
 **Being Developed:**
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights

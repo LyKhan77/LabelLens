@@ -26,7 +26,7 @@ const modes = [
         :key="mode.key"
         class="flex-1 px-3 py-1.5 text-sm font-medium transition-colors"
         :class="store.mediaMode === mode.key
-          ? 'bg-canvas-night text-on-dark'
+          ? 'bg-primary text-on-primary'
           : 'bg-canvas text-ink-mute hover:text-ink'"
         @click="store.mediaMode = mode.key"
       >

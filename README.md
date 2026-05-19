@@ -10,13 +10,13 @@ Web-based object detection application powered by **YOLOE-26s** with support for
 ## Features
 
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
-- **Visual Prompt Detection** — upload a reference image, draw bounding boxes on objects, and detect visually similar objects via SAVPE encoder
+- **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes, and detect visually similar objects via SAVPE encoder
 - **Image Detection** — upload static images (JPG, PNG)
 - **Video Processing** — upload video files (MP4, AVI, MOV) with frame-by-frame detection
 - **RTSP Live Streaming** — connect to RTSP camera streams with real-time WebSocket inference and visible connection errors
 - **Configurable Settings** — confidence threshold, label/bbox visibility toggles
-- **Floating Inference Stats** — compact right-side object count, FPS, latency, and class breakdown overlay, with detection log below the viewer
-- **Collapsible Controls** — hide or restore the left Controls panel to expand the viewer area
+- **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
+- **Collapsible Controls** — hide or restore the left Controls panel without losing prompt/media state
 
 ## Tech Stack
 
@@ -80,8 +80,8 @@ App runs at `http://<your-ip>:3131`. Accessible from any device on the network.
 2. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels
 3. **Select media** — switch between Image / Video / RTSP input
 4. **Adjust settings** — set confidence threshold, toggle labels/bboxes
-5. **Manage workspace** — collapse the Controls panel when you need more viewer space
-6. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats float on the right side
+5. **Manage workspace** — collapse the Controls panel when you need more viewer space; prompt and reference image state stays mounted
+6. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
 
 ## Environment Variables
 
