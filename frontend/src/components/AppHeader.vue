@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { useBackendStatus } from '../composables/useBackendStatus'
 import { useTheme } from '../composables/useTheme'
+import { useInferenceStore } from '../stores/inference'
 
 const { connected } = useBackendStatus()
 const { theme, toggle } = useTheme()
+const store = useInferenceStore()
 </script>
 
 <template>
@@ -16,6 +18,13 @@ const { theme, toggle } = useTheme()
     </div>
 
     <div class="flex items-center gap-3">
+      <button
+        class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink"
+        @click="store.switchMode()"
+      >
+        Switch Mode
+      </button>
+
       <div class="flex items-center gap-2">
         <span
           class="w-2 h-2 rounded-full transition-colors"

@@ -7,7 +7,7 @@ const store = useInferenceStore()
 </script>
 
 <template>
-  <div>
+  <div v-if="store.inferenceMode === 'prompt'">
     <p class="text-xs font-medium text-ink-mute uppercase tracking-wider mb-2">
       Step 1 — Grounding Prompt
     </p>
