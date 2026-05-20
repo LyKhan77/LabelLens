@@ -10,7 +10,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 ## Features
 
 - **Feature Modes Page** — select Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts) before entering the dashboard
-- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management, Roboflow-style thumbnail gallery review, batch upload, auto-label jobs, and YOLO/COCO export
+- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management, Roboflow-style paginated thumbnail gallery review, centered modal inspector, batch upload, auto-label jobs, and YOLO/COCO export
 - **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
 - **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes with hover X/Y alignment lines, and detect visually similar objects via SAVPE encoder
@@ -109,7 +109,7 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 3. Click **Upload + Auto-Label** and upload either multiple images or one video. Video frames are sampled once based on the selected FPS until the video ends.
 4. Choose Free, Text, or Visual prompt mode. Visual prompt uses an inline reference image + bbox annotation editor.
 5. Load the required YOLOE model, start labeling, and watch the batch progress preview.
-6. Inspect thumbnails in the gallery. Click any image to open the review modal with bbox/label/mask overlays, class filters, per-object visibility, and accept/reject controls.
+6. Inspect the paginated thumbnail gallery (25 images per page). Click any image to open the centered review modal with bbox/label/mask overlays, class filters, per-object visibility, and accept/reject controls.
 7. Export accepted detections as YOLO TXT or COCO JSON with train/val split.
 
 ## Environment Variables

@@ -20,7 +20,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const images = ref<DatasetImage[]>([])
   const imagesTotal = ref(0)
   const imagesPage = ref(1)
-  const imagesLimit = ref(48)
+  const imagesLimit = ref(25)
 
   // Review
   const selectedImage = ref<string | null>(null)

@@ -156,14 +156,14 @@ onUnmounted(stopPolling)
 <template>
   <Transition
     enter-active-class="transition ease-out duration-200"
-    enter-from-class="opacity-0"
-    enter-to-class="opacity-100"
+    enter-from-class="opacity-0 scale-[0.98]"
+    enter-to-class="opacity-100 scale-100"
     leave-active-class="transition ease-in duration-150"
-    leave-to-class="opacity-0"
+    leave-to-class="opacity-0 scale-[0.98]"
   >
-    <div class="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" @click.self="close">
-    <section class="bg-canvas rounded-(--radius-xl) w-full max-w-[760px] border border-hairline shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] max-h-[92vh] overflow-hidden flex flex-col">
-      <header class="px-6 py-5 border-b border-hairline flex items-center justify-between shrink-0">
+    <div class="fixed inset-0 bg-black/35 backdrop-blur-sm flex items-center justify-center z-50 p-3 md:p-6" @click.self="close">
+    <section class="bg-canvas rounded-(--radius-xl) w-full max-w-[900px] h-[90vh] max-h-[840px] border border-hairline shadow-[0_16px_48px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col">
+      <header class="px-5 md:px-6 py-5 border-b border-hairline flex items-center justify-between shrink-0 bg-canvas">
         <div>
           <h3 class="text-[18px] font-medium text-ink tracking-[-0.3px]">Upload + Auto-Label</h3>
           <p class="text-[12px] text-ink-mute">Upload data, configure YOLOE grounding, then review results.</p>
@@ -173,7 +173,7 @@ onUnmounted(stopPolling)
         </button>
       </header>
 
-      <div class="px-6 py-3 border-b border-hairline flex items-center gap-2 text-[11px] text-ink-mute shrink-0 overflow-x-auto">
+      <div class="px-5 md:px-6 py-4 border-b border-hairline flex items-center gap-2 text-[11px] text-ink-mute shrink-0 overflow-x-auto bg-canvas-soft">
         <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'upload' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">1 Upload</span>
         <span class="h-px w-6 bg-hairline" />
         <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'configure' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">2 Auto-Label</span>
@@ -183,10 +183,10 @@ onUnmounted(stopPolling)
         <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'done' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">4 Review</span>
       </div>
 
-      <div class="min-h-0 overflow-y-auto p-6">
+      <div class="min-h-0 overflow-y-auto p-5 md:p-6">
         <template v-if="phase === 'upload'">
           <div
-            class="border-2 border-dashed rounded-(--radius-lg) p-8 text-center transition-colors cursor-pointer"
+            class="border-2 border-dashed rounded-(--radius-lg) p-8 md:p-10 text-center transition-all duration-200 cursor-pointer bg-canvas"
             :class="isDragging ? 'border-primary bg-primary/5' : 'border-hairline hover:border-hairline-strong'"
             @dragover.prevent="isDragging = true"
             @dragleave="isDragging = false"
@@ -194,12 +194,12 @@ onUnmounted(stopPolling)
             @click="($refs.fileInput as HTMLInputElement)?.click()"
           >
             <input ref="fileInput" type="file" multiple accept="image/*,video/*" class="hidden" @change="(e) => files.push(...Array.from((e.target as HTMLInputElement).files ?? []))" />
-            <svg class="w-9 h-9 mx-auto mb-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+            <svg class="w-10 h-10 mx-auto mb-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
             <p class="text-[14px] text-ink font-medium">Drop images or one video here</p>
             <p class="text-[12px] text-ink-mute mt-1">Images are stored raw first. Video is sampled once until EOF.</p>
           </div>
 
-          <div v-if="files.length" class="mt-4 border border-hairline rounded-(--radius-md) divide-y divide-hairline max-h-[180px] overflow-y-auto">
+          <div v-if="files.length" class="mt-4 border border-hairline rounded-(--radius-md) divide-y divide-hairline max-h-[180px] overflow-y-auto bg-canvas">
             <div v-for="(f, i) in files" :key="f.name + i" class="flex items-center justify-between px-3 py-2 text-[12px]">
               <span class="text-ink-mute truncate">{{ f.name }}</span>
               <button class="text-ink-faint hover:text-red-500 cursor-pointer" @click="removeFile(i)">Remove</button>
@@ -211,39 +211,39 @@ onUnmounted(stopPolling)
               <span class="text-ink-mute uppercase tracking-wide">Frame sampling</span>
               <span class="font-mono text-ink">{{ sampleFps }} fps</span>
             </div>
-            <input v-model.number="sampleFps" type="range" min="0.5" max="10" step="0.5" class="w-full accent-[#3ecf8e]" />
+            <input v-model.number="sampleFps" type="range" min="0.5" max="10" step="0.5" class="w-full accent-primary" />
           </label>
         </template>
 
         <template v-else-if="phase === 'configure'">
-          <div class="grid grid-cols-3 gap-2 mb-4">
-            <button v-for="mode in ['free', 'text', 'visual']" :key="mode" class="px-3 py-2 rounded-(--radius-sm) border text-[13px] font-medium capitalize cursor-pointer transition-colors" :class="promptType === mode ? 'border-primary bg-primary text-on-primary' : 'border-hairline text-ink-mute hover:text-ink'" @click="promptType = mode as 'free' | 'text' | 'visual'">
+          <div class="grid grid-cols-3 gap-2 mb-5 rounded-(--radius-md) border border-hairline bg-canvas-soft p-1">
+            <button v-for="mode in ['free', 'text', 'visual']" :key="mode" class="px-3 py-2 rounded-(--radius-sm) border text-[13px] font-medium capitalize cursor-pointer transition-colors" :class="promptType === mode ? 'border-primary bg-primary text-on-primary shadow-[0_1px_3px_rgba(0,0,0,0.06)]' : 'border-transparent text-ink-mute hover:text-ink hover:bg-canvas'" @click="promptType = mode as 'free' | 'text' | 'visual'">
               {{ mode }}
             </button>
           </div>
 
           <label v-if="promptType === 'text'" class="block mb-4">
             <span class="text-[12px] text-ink-mute uppercase tracking-wide">Labels</span>
-            <input v-model="labelsText" class="block w-full mt-1 px-3 py-2 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary" placeholder="person, vehicle, defect" />
+            <input v-model="labelsText" class="block w-full mt-1.5 px-3.5 py-2.5 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)] transition-all" placeholder="person, vehicle, defect" />
           </label>
 
           <div v-if="promptType === 'visual'" class="mb-4">
-            <div v-if="!referPreview" class="border-2 border-dashed border-hairline rounded-(--radius-lg) p-5 text-center">
+            <div v-if="!referPreview" class="border-2 border-dashed border-hairline rounded-(--radius-lg) p-8 text-center bg-canvas">
               <p class="text-[13px] text-ink-mute mb-2">Upload reference image for SAVPE visual prompt.</p>
               <label class="inline-flex px-3 py-2 rounded-(--radius-sm) bg-primary text-on-primary text-[13px] font-medium cursor-pointer hover:bg-primary-deep transition-colors">
                 Browse Reference
                 <input type="file" accept="image/*" class="hidden" @change="(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleReference(f) }" />
               </label>
             </div>
-            <div v-else class="flex gap-4 items-start">
+            <div v-else class="flex flex-col lg:flex-row gap-4 items-start">
               <BBoxAnnotationCanvas :image-src="referPreview" :annotations="visualAnnotations" :max-width="480" @add="visualAnnotations.push($event)" @remove="visualAnnotations.splice($event, 1)" />
-              <div class="flex-1 min-w-[180px] bg-canvas border border-hairline rounded-(--radius-md) p-4">
+              <div class="w-full lg:flex-1 lg:min-w-[220px] bg-canvas-soft border border-hairline rounded-(--radius-md) p-4">
                 <p class="text-[11px] uppercase tracking-wide text-ink-faint mb-2.5">Annotations ({{ visualAnnotations.length }})</p>
                 <div v-if="!visualAnnotations.length" class="text-[12px] text-ink-faint py-2">Draw bboxes on the image to add annotations.</div>
                 <div v-for="(ann, idx) in visualAnnotations" :key="idx" class="flex items-center gap-2 py-2 border-b border-hairline/50 last:border-b-0">
                   <span class="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
                   <span class="text-[12px] font-medium text-ink flex-1">{{ ann.label }}</span>
-                  <button class="text-[11px] text-red-400 hover:text-red-500 bg-none border-none cursor-pointer" @click="visualAnnotations.splice(idx, 1)">✕</button>
+                  <button class="text-[11px] text-ink-faint hover:text-ink bg-none border-none cursor-pointer" @click="visualAnnotations.splice(idx, 1)">Remove</button>
                 </div>
                 <label class="mt-3 pt-3 border-t border-hairline/50 inline-flex text-[12px] text-primary hover:text-primary-deep cursor-pointer font-medium">
                   Change reference
@@ -258,7 +258,7 @@ onUnmounted(stopPolling)
               <span class="text-ink-mute uppercase tracking-wide">Confidence</span>
               <span class="font-mono text-ink">{{ Math.round(confidence * 100) }}%</span>
             </div>
-            <input v-model.number="confidence" type="range" min="0.05" max="0.95" step="0.05" class="w-full accent-[#3ecf8e]" />
+            <input v-model.number="confidence" type="range" min="0.05" max="0.95" step="0.05" class="w-full accent-primary" />
           </label>
 
           <div class="rounded-(--radius-md) border border-hairline bg-canvas-soft p-3 text-[12px] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -270,7 +270,7 @@ onUnmounted(stopPolling)
         </template>
 
         <template v-else>
-          <div class="rounded-(--radius-lg) border border-hairline overflow-hidden bg-canvas-soft">
+          <div class="rounded-(--radius-lg) border border-hairline overflow-hidden bg-canvas shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
             <div class="aspect-video bg-black flex items-center justify-center overflow-hidden">
               <img v-if="job?.current_image_url" :src="job.current_image_url" :alt="job.current_filename || 'Current image'" class="w-full h-full object-contain" />
               <span v-else class="text-[12px] text-white/50">Waiting for first frame</span>
@@ -292,7 +292,7 @@ onUnmounted(stopPolling)
         <p v-if="error || inferenceStore.modelError" class="mt-4 text-[12px] text-red-500">{{ error || inferenceStore.modelError }}</p>
       </div>
 
-      <footer class="px-6 py-5 border-t border-hairline flex items-center justify-between shrink-0">
+      <footer class="px-5 md:px-6 py-4 border-t border-hairline flex items-center justify-between shrink-0 bg-canvas">
         <button class="px-3 py-2 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft cursor-pointer" @click="phase === 'upload' || phase === 'done' ? close() : phase = 'upload'">
           {{ phase === 'upload' || phase === 'done' ? 'Close' : 'Back' }}
         </button>
