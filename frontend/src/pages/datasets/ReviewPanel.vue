@@ -122,7 +122,7 @@ onUnmounted(() => {
   >
     <div class="dataset-dialog-backdrop" @click.self="closePanel">
       <section class="dataset-review-dialog">
-        <header class="h-[60px] px-4 md:px-5 border-b border-hairline flex items-center justify-between gap-4 shrink-0 bg-canvas">
+        <header class="dataset-review-header">
           <div class="min-w-0">
             <p class="text-[14px] font-medium text-ink truncate">{{ store.currentAnnotations?.filename || store.selectedImage }}</p>
             <p class="text-[11px] text-ink-mute font-mono truncate">
@@ -131,25 +131,17 @@ onUnmounted(() => {
             </p>
           </div>
 
-          <div class="flex items-center gap-2 shrink-0">
-            <button
-              class="h-8 px-2.5 md:px-3 text-[12px] rounded-(--radius-sm) border border-hairline bg-canvas text-ink-mute hover:bg-canvas-soft hover:text-ink transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
-              :disabled="!canNavigatePrev"
-              @click="navigatePrev"
-            >
+          <div class="dataset-review-nav">
+            <button :disabled="!canNavigatePrev" @click="navigatePrev">
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
               Previous
             </button>
-            <span class="text-[12px] font-mono text-ink-mute min-w-[54px] text-center">{{ currentImageIndex + 1 }} / {{ totalImages }}</span>
-            <button
-              class="h-8 px-2.5 md:px-3 text-[12px] rounded-(--radius-sm) border border-hairline bg-canvas text-ink-mute hover:bg-canvas-soft hover:text-ink transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
-              :disabled="!canNavigateNext"
-              @click="navigateNext"
-            >
+            <span class="dataset-review-index">{{ currentImageIndex + 1 }} / {{ totalImages }}</span>
+            <button :disabled="!canNavigateNext" @click="navigateNext">
               Next
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
-            <button class="w-8 h-8 rounded-(--radius-sm) hover:bg-canvas-soft transition-colors cursor-pointer flex items-center justify-center ml-1 text-ink-mute hover:text-ink" @click="closePanel">
+            <button aria-label="Close review" @click="closePanel">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -160,7 +152,7 @@ onUnmounted(() => {
         <div class="dataset-review-body">
           <main class="dataset-review-stage">
             <div class="dataset-review-frame" :style="frameStyle">
-              <img v-if="imageSrc" :src="imageSrc" :alt="store.currentAnnotations?.filename"  />
+              <img v-if="imageSrc" :src="imageSrc" :alt="store.currentAnnotations?.filename" />
 
               <svg
                 v-if="annotations && store.overlayState.showMasks"
@@ -200,46 +192,33 @@ onUnmounted(() => {
             </div>
           </main>
 
-          <aside class="min-h-0 border-t lg:border-t-0 lg:border-l border-hairline bg-canvas flex flex-col">
-            <div class="grid grid-cols-3 gap-2 p-4 border-b border-hairline bg-canvas-soft">
-              <div class="border border-hairline rounded-(--radius-sm) bg-canvas p-2 text-center">
-                <strong class="block text-[16px] font-medium text-primary">{{ acceptedCount }}</strong>
-                <span class="block text-[9px] text-ink-mute uppercase tracking-[0.05em] mt-0.5">Accepted</span>
+          <aside class="dataset-inspector">
+            <section class="dataset-inspector-section dataset-inspector-summary">
+              <div>
+                <strong class="text-primary">{{ acceptedCount }}</strong>
+                <span>Accepted</span>
               </div>
-              <div class="border border-hairline rounded-(--radius-sm) bg-canvas p-2 text-center">
-                <strong class="block text-[16px] font-medium text-ink">{{ rejectedCount }}</strong>
-                <span class="block text-[9px] text-ink-mute uppercase tracking-[0.05em] mt-0.5">Rejected</span>
+              <div>
+                <strong>{{ rejectedCount }}</strong>
+                <span>Rejected</span>
               </div>
-              <div class="border border-hairline rounded-(--radius-sm) bg-canvas p-2 text-center">
-                <strong class="block text-[16px] font-medium text-ink">{{ classCount }}</strong>
-                <span class="block text-[9px] text-ink-mute uppercase tracking-[0.05em] mt-0.5">Classes</span>
+              <div>
+                <strong>{{ classCount }}</strong>
+                <span>Classes</span>
               </div>
-            </div>
+            </section>
 
-            <div class="p-4 border-b border-hairline flex flex-col gap-3">
-              <div class="grid grid-cols-3 gap-2">
-                <button
-                  class="h-8 text-[11px] font-medium rounded-(--radius-sm) transition-colors cursor-pointer border inline-flex items-center justify-center gap-1"
-                  :class="store.overlayState.showBbox ? 'bg-primary/10 text-primary border-primary/30' : 'border-hairline bg-canvas-soft text-ink-mute hover:text-ink'"
-                  @click="store.toggleOverlay('showBbox')"
-                >BBoxes</button>
-                <button
-                  class="h-8 text-[11px] font-medium rounded-(--radius-sm) transition-colors cursor-pointer border inline-flex items-center justify-center gap-1"
-                  :class="store.overlayState.showLabels ? 'bg-primary/10 text-primary border-primary/30' : 'border-hairline bg-canvas-soft text-ink-mute hover:text-ink'"
-                  @click="store.toggleOverlay('showLabels')"
-                >Labels</button>
-                <button
-                  class="h-8 text-[11px] font-medium rounded-(--radius-sm) transition-colors cursor-pointer border inline-flex items-center justify-center gap-1"
-                  :class="store.overlayState.showMasks ? 'bg-primary/10 text-primary border-primary/30' : 'border-hairline bg-canvas-soft text-ink-mute hover:text-ink'"
-                  @click="store.toggleOverlay('showMasks')"
-                >Masks</button>
+            <section class="dataset-inspector-section">
+              <div class="dataset-layer-controls">
+                <button :class="{ 'is-active': store.overlayState.showBbox }" @click="store.toggleOverlay('showBbox')">BBoxes</button>
+                <button :class="{ 'is-active': store.overlayState.showLabels }" @click="store.toggleOverlay('showLabels')">Labels</button>
+                <button :class="{ 'is-active': store.overlayState.showMasks }" @click="store.toggleOverlay('showMasks')">Masks</button>
               </div>
 
-              <div v-if="classes.length" class="flex flex-wrap gap-1.5">
+              <div v-if="classes.length" class="dataset-class-filters">
                 <button
                   v-for="([cls, count], i) in classes"
                   :key="cls"
-                  class="h-[26px] rounded-full border border-hairline bg-canvas-soft px-2.5 text-[11px] font-medium text-ink cursor-pointer inline-flex items-center gap-1.5 transition-opacity"
                   :class="{ 'opacity-35 line-through': isClassHidden(cls) }"
                   @click="store.toggleClassVisibility(cls)"
                 >
@@ -247,24 +226,24 @@ onUnmounted(() => {
                   {{ cls }} ({{ count }})
                 </button>
               </div>
-            </div>
+            </section>
 
-            <div class="min-h-0 flex-1 overflow-y-auto">
+            <div class="dataset-detection-list">
               <div
                 v-for="det in detections"
                 :key="det.id"
-                class="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 border-b border-hairline/50 hover:bg-canvas-soft transition-colors"
+                class="dataset-detection-row"
                 :class="{ 'opacity-50': !det.accepted }"
               >
                 <button
-                  class="w-7 h-7 rounded-(--radius-sm) border border-hairline bg-canvas-soft flex items-center justify-center cursor-pointer hover:border-hairline-strong hover:text-ink transition-colors"
+                  class="dataset-detection-toggle"
                   :class="{ 'opacity-30': !isVisible(det) }"
                   @click="store.toggleDetectionVisibility(det.id)"
                 >
-                  <svg v-if="isVisible(det)" class="w-3.5 h-3.5 text-ink-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg v-if="isVisible(det)" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                   </svg>
-                  <svg v-else class="w-3.5 h-3.5 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><line x1="1" y1="1" x2="23" y2="23" />
                   </svg>
                 </button>
@@ -275,8 +254,8 @@ onUnmounted(() => {
                 </div>
 
                 <button
-                  class="h-7 px-3 rounded-(--radius-sm) text-[11px] font-medium cursor-pointer border transition-colors"
-                  :class="det.accepted ? 'border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-on-primary' : 'border-hairline bg-canvas-soft text-ink-mute hover:border-hairline-strong hover:text-ink'"
+                  class="dataset-accept-button"
+                  :class="{ 'is-accepted': det.accepted }"
                   @click="toggleAccept(det)"
                 >
                   {{ det.accepted ? 'Accepted' : 'Rejected' }}
