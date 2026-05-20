@@ -20,27 +20,33 @@
 - **Detection Dashboard** — Floating right-side inference panel with compact stats and scrollable detection log
 - **Clear Media Workflow** — Media mode switching is locked until inference is stopped and current media input is cleared
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
+- **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Quick-save from workspace or batch upload via Dataset Manager. Accept/reject detections with per-class and per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split.
+- **Dataset Manager** — Dedicated "Datasets" tab on landing page for multi-project dataset management. Gallery review with granular overlay controls, batch auto-label with configurable frame sampling, and zip export.
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
 
 ```
 LabelLens/
 ├── frontend/src/
-│   ├── api/             (client.ts, detection.ts, ws.ts)
-│   ├── composables/     (useBackendStatus.ts, useWebSocket.ts)
-│   ├── components/      (FeatureModes, BBoxAnnotation, GroundingInput,
-│   │                    VisualPromptInput, MediaInput, Viewer, DetectionLog,
-│   │                    Sidebar, ...)
-│   ├── stores/          (inference.ts — Pinia)
-│   └── types/           (index.ts)
+│   ├── shared/
+│   │   ├── api/             (client.ts, detection.ts, ws.ts, dataset.ts)
+│   │   ├── composables/     (useBackendStatus.ts, useWebSocket.ts)
+│   │   ├── stores/          (inference.ts, dataset.ts — Pinia)
+│   │   └── types/           (index.ts)
+│   └── pages/
+│       ├── mode-select/     (ModeSelectPage.vue — Inference + Datasets tabs)
+│       ├── datasets/        (DatasetList, DatasetDetail, ReviewPanel,
+│       │                    ExportDialog, BatchUploadDialog)
+│       └── workspace/       (components, sections)
 ├── backend/
-│   ├── routers/         (health.py — model/status + model/load, detection.py, stream.py)
-│   ├── services/        (model.py — YOLOE + SAVPE + LRPC free mode, video.py, rtsp.py)
+│   ├── routers/         (health.py, detection.py, stream.py, dataset.py)
+│   ├── services/        (model.py, video.py, rtsp.py, dataset.py)
 │   └── utils/           (drawing.py, encoding.py)
+├── datasets/            (runtime dataset storage, gitignored)
 ├── docs/plans/          (saved implementation plans)
 ├── docs/superpowers/specs/ (design specs)
-├── temp/                (runtime/debug snapshots, including html.txt preview)
-├── PRD.md, DESIGN.md, AGENTS.md, README.md, preview.html
+├── temp/                (runtime/debug snapshots)
+├── PRD.md, DESIGN.md, AGENTS.md, README.md
 ```
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
@@ -48,6 +54,7 @@ LabelLens/
 **Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users select Free Inference or Prompt Inference from the Feature Modes landing page. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, and explicit Clear Media mode switching are functional.
 
 **Being Developed:**
+- Auto-Labelling: Backend service + API, Dataset Manager UI, Auto-Label modal, QuickSave, and inference auto-save hook implemented — needs end-to-end testing with actual model weights
 - Free Mode Inference: Backend + Frontend complete — needs `models/yoloe-26l-seg-pf.pt` placement and testing
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights
 - Phase 2 (Video Processing): Backend + Frontend complete — needs testing with sample videos

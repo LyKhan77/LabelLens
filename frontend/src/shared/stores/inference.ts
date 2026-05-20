@@ -4,6 +4,7 @@ import type { PromptMode, MediaMode, ViewerState, BBoxAnnotation, Detection, Sta
 import { detectImage, detectVideo } from '../api/detection'
 import { loadModel, getModelStatus } from '../api/client'
 import { useWebSocket } from '../composables/useWebSocket'
+import { useDatasetStore } from './dataset'
 
 export const useInferenceStore = defineStore('inference', () => {
   // Mode selection
@@ -190,6 +191,9 @@ export const useInferenceStore = defineStore('inference', () => {
         detections.value = resp.detections
         stats.value = resp.stats
         viewerState.value = 'result'
+
+        // Auto-save to dataset if auto-labelling is active
+        await autoSaveToDataset()
       } else if (mediaMode.value === 'video' && file.value) {
         abortController = new AbortController()
         const resp = await detectVideo({
@@ -302,6 +306,23 @@ export const useInferenceStore = defineStore('inference', () => {
   function reset() {
     clearOutput()
     stopVideo()
+  }
+
+  async function autoSaveToDataset() {
+    const ds = useDatasetStore()
+    if (!ds.autoLabelActive || !ds.autoLabelDataset || !file.value) return
+    if (detections.value.length === 0) return
+
+    try {
+      await ds.saveToDataset(
+        ds.autoLabelDataset,
+        file.value,
+        detections.value,
+        mediaMode.value,
+      )
+    } catch {
+      // Auto-save failure should not block inference
+    }
   }
 
   async function selectMode(mode: InferenceMode) {

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useDatasetStore } from '../../../shared/stores/dataset'
 import GroundingInput from '../sections/grounding/GroundingInput.vue'
 import MediaInput from '../sections/media/MediaInput.vue'
 import SettingsPanel from '../sections/settings/SettingsPanel.vue'
+import AutoLabelModal from './AutoLabelModal.vue'
+import QuickSave from './QuickSave.vue'
 
 const collapsed = ref(false)
+const showAutoLabelModal = ref(false)
+const datasetStore = useDatasetStore()
 </script>
 
 <template>
@@ -55,6 +60,26 @@ const collapsed = ref(false)
         <hr class="border-hairline" />
 
         <SettingsPanel />
+
+        <hr class="border-hairline" />
+
+        <!-- Auto-Labelling -->
+        <div>
+          <p class="text-xs font-medium text-ink-mute uppercase tracking-wider mb-2">Dataset</p>
+          <button
+            @click="showAutoLabelModal = true"
+            class="w-full flex items-center justify-between px-3 py-2 text-[12px] rounded-(--radius-md) border transition-colors"
+            :class="datasetStore.autoLabelActive ? 'border-primary/50 bg-primary/5 text-primary' : 'border-hairline text-ink-mute hover:border-hairline-strong'"
+          >
+            <span>{{ datasetStore.autoLabelActive ? `Auto-Label → ${datasetStore.autoLabelDataset}` : 'Auto-Label' }}</span>
+            <span v-if="datasetStore.autoLabelActive" class="w-2 h-2 rounded-full bg-primary animate-pulse" />
+          </button>
+          <QuickSave class="mt-2" />
+        </div>
+      </div>
+    </div>
+
+    <AutoLabelModal v-if="showAutoLabelModal" @close="showAutoLabelModal = false" />
       </div>
     </div>
   </aside>

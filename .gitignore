@@ -43,6 +43,9 @@ frontend/.vite/
 # --- Runtime/temp files ---
 temp/
 
+# --- Datasets (runtime data) ---
+datasets/
+
 # --- Model artifacts ---
 models/*.pt
 models/*.pth
@@ -53,3 +56,5 @@ mobileclip_blt.ts
 
 # --- Other ---
 docs/superpowers/
+.superpowers/
+.antigravitycli/
