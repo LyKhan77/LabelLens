@@ -10,6 +10,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 ## Features
 
 - **Feature Modes Page** — select Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts) before entering the dashboard
+- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management, Roboflow-style thumbnail gallery review, batch upload, auto-label jobs, and YOLO/COCO export
 - **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
 - **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes with hover X/Y alignment lines, and detect visually similar objects via SAVPE encoder
@@ -19,6 +20,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 - **Configurable Settings** — confidence threshold plus backend-rendered label, bbox, and clipped mask overlay toggles
 - **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
 - **Clear Media Workflow** — stop inference, clear current media, then switch Image/Video/RTSP modes without losing prompt state
+- **Auto-Labelling Workflow** — upload images or sample video frames into a dataset, configure Free/Text/Visual YOLOE grounding in Dataset Manager, load the required model, run batch inference with progress preview, then inspect detections in a modal reviewer
 
 ## Tech Stack
 
@@ -37,7 +39,8 @@ LabelLens/
 ├── frontend/                # Vue 3 SPA
 │   └── src/
 │       ├── app/             # App shell, entrypoint, global style
-│       ├── pages/           # Logical pages (mode-select, workspace)
+│       ├── pages/           # Logical pages (mode-select, datasets, workspace)
+│       │   ├── datasets/    # Dataset Manager gallery, review modal, auto-label wizard
 │       │   └── workspace/
 │       │       ├── components/   # Workspace layout/display blocks
 │       │       └── sections/     # Grounding, media, settings sections
@@ -98,6 +101,16 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 6. **Run or switch media** — Start/Stop can reuse the current media; use Clear Media after stopping inference to switch modes
 7. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
 8. **Switch Mode** — click "Switch Mode" in the header to return to mode selection
+
+### Dataset Manager
+
+1. Open `/datasets` from the Feature Modes page or directly in the browser.
+2. Create or open a dataset project.
+3. Click **Upload + Auto-Label** and upload either multiple images or one video. Video frames are sampled once based on the selected FPS until the video ends.
+4. Choose Free, Text, or Visual prompt mode. Visual prompt uses an inline reference image + bbox annotation editor.
+5. Load the required YOLOE model, start labeling, and watch the batch progress preview.
+6. Inspect thumbnails in the gallery. Click any image to open the review modal with bbox/label/mask overlays, class filters, per-object visibility, and accept/reject controls.
+7. Export accepted detections as YOLO TXT or COCO JSON with train/val split.
 
 ## Environment Variables
 
