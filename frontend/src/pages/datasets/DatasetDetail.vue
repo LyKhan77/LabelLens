@@ -92,9 +92,9 @@ function statusLabel(status: string) {
 }
 
 function statusBadgeClass(status: string) {
-  if (status === 'accepted') return 'bg-primary/90 text-on-primary border-primary/30'
-  if (status === 'review') return 'bg-canvas/95 text-ink border-hairline-strong'
-  return 'bg-canvas/90 text-ink-mute border-hairline'
+  if (status === 'accepted') return 'accepted'
+  if (status === 'review') return 'review'
+  return 'unlabeled'
 }
 
 function statusDotClass(status: string) {
@@ -105,8 +105,8 @@ function statusDotClass(status: string) {
 </script>
 
 <template>
-  <section v-if="project" class="w-full max-w-[1400px] mx-auto">
-    <div class="flex flex-col gap-5 md:flex-row md:items-end md:justify-between mb-8">
+  <section v-if="project" class="dataset-workspace">
+    <div class="dataset-hero">
       <div class="min-w-0">
         <button
           class="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-primary font-medium hover:text-primary-deep transition-colors cursor-pointer mb-3"
@@ -123,7 +123,7 @@ function statusDotClass(status: string) {
         </p>
       </div>
 
-      <div class="flex gap-2 shrink-0">
+      <div class="dataset-actions">
         <button
           class="h-9 px-4 text-[13px] font-medium text-ink border border-hairline rounded-(--radius-sm) bg-canvas hover:bg-canvas-soft hover:border-hairline-strong hover:-translate-y-px transition-all cursor-pointer"
           @click="showBatch = true"
@@ -139,60 +139,57 @@ function statusDotClass(status: string) {
       </div>
     </div>
 
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-      <div class="relative overflow-hidden border border-hairline rounded-(--radius-md) p-5 bg-canvas shadow-[0_1px_3px_rgba(0,0,0,0.06)] before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-primary">
-        <label class="block text-[11px] text-ink-faint uppercase tracking-[0.06em] font-medium mb-1.5">Total Images</label>
-        <strong class="block text-[28px] font-medium tracking-[-0.42px] text-ink leading-tight">{{ metrics.totalImages }}</strong>
-        <small class="block text-[12px] text-ink-mute mt-1.5">{{ pageStart }}-{{ pageEnd }} visible on this page</small>
+    <div class="dataset-metrics">
+      <div class="dataset-metric-card is-primary">
+        <label >Total Images</label>
+        <strong >{{ metrics.totalImages }}</strong>
+        <small >{{ pageStart }}-{{ pageEnd }} visible on this page</small>
       </div>
-      <div class="relative overflow-hidden border border-hairline rounded-(--radius-md) p-5 bg-canvas shadow-[0_1px_3px_rgba(0,0,0,0.06)] before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-hairline-strong">
-        <label class="block text-[11px] text-ink-faint uppercase tracking-[0.06em] font-medium mb-1.5">Annotations</label>
-        <strong class="block text-[28px] font-medium tracking-[-0.42px] text-ink leading-tight">{{ metrics.totalAnnotations }}</strong>
-        <small class="block text-[12px] text-ink-mute mt-1.5">{{ metrics.acceptRate }}% approved confidence</small>
+      <div class="dataset-metric-card">
+        <label >Annotations</label>
+        <strong >{{ metrics.totalAnnotations }}</strong>
+        <small >{{ metrics.acceptRate }}% approved confidence</small>
       </div>
-      <div class="relative overflow-hidden border border-hairline rounded-(--radius-md) p-5 bg-canvas shadow-[0_1px_3px_rgba(0,0,0,0.06)] before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-ink">
-        <label class="block text-[11px] text-ink-faint uppercase tracking-[0.06em] font-medium mb-1.5">Review Queue</label>
-        <strong class="block text-[28px] font-medium tracking-[-0.42px] text-ink leading-tight">{{ metrics.reviewQueue }}</strong>
-        <small class="block text-[12px] text-ink-mute mt-1.5">Rejected or pending verification</small>
+      <div class="dataset-metric-card is-dark">
+        <label >Review Queue</label>
+        <strong >{{ metrics.reviewQueue }}</strong>
+        <small >Rejected or pending verification</small>
       </div>
-      <div class="relative overflow-hidden border border-hairline rounded-(--radius-md) p-5 bg-canvas shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-        <label class="block text-[11px] text-ink-faint uppercase tracking-[0.06em] font-medium mb-1.5">Distinct Classes</label>
-        <strong class="block text-[28px] font-medium tracking-[-0.42px] text-primary leading-tight">{{ metrics.classes }}</strong>
-        <small class="block text-[12px] text-ink-mute mt-1.5 truncate">{{ (project?.stats.classes ?? []).join(', ') || 'No classes yet' }}</small>
+      <div class="dataset-metric-card">
+        <label >Distinct Classes</label>
+        <strong class="text-primary">{{ metrics.classes }}</strong>
+        <small >{{ (project?.stats.classes ?? []).join(', ') || 'No classes yet' }}</small>
       </div>
     </div>
 
-    <div class="bg-canvas border border-hairline rounded-(--radius-md) p-3 md:p-4 shadow-[0_1px_3px_rgba(0,0,0,0.06)] flex flex-col sm:flex-row gap-3 items-stretch sm:items-center mb-4">
-      <div class="relative flex-1">
-        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-        <input v-model="gallerySearch" type="text" placeholder="Filter by filename or source..." class="w-full h-[38px] pl-10 pr-4 text-[13px] bg-canvas-soft border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)] transition-all" />
+    <div class="dataset-filter-bar">
+      <div class="dataset-search-field">
+        <svg  fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+        <input v-model="gallerySearch" type="text" placeholder="Filter by filename or source..."  />
       </div>
-      <div class="flex border border-hairline rounded-(--radius-sm) overflow-hidden bg-canvas-soft p-[2px] shrink-0">
+      <div class="dataset-segments">
         <button
-          class="px-3.5 py-1.5 text-[12px] font-medium rounded-[4px] cursor-pointer transition-colors"
-          :class="galleryFilter === 'all' ? 'bg-canvas text-ink shadow-[0_2px_6px_rgba(0,0,0,0.08)] font-medium' : 'text-ink-mute hover:text-ink'"
+          :class="{ 'is-active': galleryFilter === 'all' }"
           @click="galleryFilter = 'all'"
         >All</button>
         <button
-          class="px-3.5 py-1.5 text-[12px] font-medium rounded-[4px] cursor-pointer transition-colors inline-flex items-center gap-1.5"
-          :class="galleryFilter === 'review' ? 'bg-canvas text-ink shadow-[0_2px_6px_rgba(0,0,0,0.08)] font-medium' : 'text-ink-mute hover:text-ink'"
+          :class="{ 'is-active': galleryFilter === 'review' }"
           @click="galleryFilter = 'review'"
         ><span class="w-[5px] h-[5px] rounded-full bg-ink" />Review</button>
         <button
-          class="px-3.5 py-1.5 text-[12px] font-medium rounded-[4px] cursor-pointer transition-colors inline-flex items-center gap-1.5"
-          :class="galleryFilter === 'accepted' ? 'bg-canvas text-ink shadow-[0_2px_6px_rgba(0,0,0,0.08)] font-medium' : 'text-ink-mute hover:text-ink'"
+          :class="{ 'is-active': galleryFilter === 'accepted' }"
           @click="galleryFilter = 'accepted'"
         ><span class="w-[5px] h-[5px] rounded-full bg-primary" />Accepted</button>
         <button
-          class="px-3.5 py-1.5 text-[12px] font-medium rounded-[4px] cursor-pointer transition-colors"
-          :class="galleryFilter === 'unlabeled' ? 'bg-canvas text-ink shadow-[0_2px_6px_rgba(0,0,0,0.08)] font-medium' : 'text-ink-mute hover:text-ink'"
+          :class="{ 'is-active': galleryFilter === 'unlabeled' }"
           @click="galleryFilter = 'unlabeled'"
         >Unlabeled</button>
       </div>
     </div>
 
     <template v-if="store.images.length">
-      <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-3">
+      <div class="dataset-gallery-section">
+      <div class="dataset-gallery-header">
         <h2 class="text-[16px] font-medium text-ink">Project Files</h2>
         <span class="text-[12px] text-ink-mute font-mono">
           <template v-if="hasGalleryFilter">{{ filteredImages.length }} matches · </template>
@@ -200,34 +197,33 @@ function statusDotClass(status: string) {
         </span>
       </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5">
+      <div class="dataset-gallery-grid">
         <div
           v-for="img in filteredImages"
           :key="img.img_id"
-          class="group text-left rounded-(--radius-md) border border-hairline bg-canvas overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:-translate-y-1 focus:outline-none focus:border-primary focus:shadow-[0_0_0_2px_rgba(62,207,142,0.18)] transition-all duration-200 cursor-pointer"
+          class="dataset-gallery-card"
           tabindex="0"
           role="button"
           @click="selectImage(img.img_id)"
           @keydown.enter="selectImage(img.img_id)"
         >
-          <div class="relative aspect-4/3 bg-canvas-soft overflow-hidden">
+          <div class="dataset-thumbnail">
             <img
               :src="img.image_url"
               :alt="img.filename"
               loading="lazy"
-              class="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+
             />
 
             <template v-if="img.accepted + img.rejected > 0">
-              <div class="absolute border border-primary/70 rounded-[2px] pointer-events-none" style="top: 25%; left: 18%; width: 38%; height: 32%"></div>
-              <div v-if="img.accepted + img.rejected > 1" class="absolute border border-white/70 rounded-[2px] pointer-events-none" style="top: 55%; left: 52%; width: 28%; height: 22%"></div>
+              <div class="dataset-card-bbox" style="top: 25%; left: 18%; width: 38%; height: 32%"></div>
+              <div v-if="img.accepted + img.rejected > 1" class="dataset-card-bbox secondary" style="top: 55%; left: 52%; width: 28%; height: 22%"></div>
             </template>
 
-            <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/60 to-transparent" />
+            <div class="dataset-card-shade" />
 
             <span
-              class="absolute top-2.5 left-2.5 px-2 py-[3px] rounded-[4px] text-[9px] font-medium uppercase tracking-[0.05em] border backdrop-blur-sm"
-              :class="statusBadgeClass(img.status)"
+              :class="['dataset-status-badge', statusBadgeClass(img.status)]"
             >
               <span class="inline-flex items-center gap-1">
                 <span class="w-1.5 h-1.5 rounded-full" :class="statusDotClass(img.status)" />
@@ -235,18 +231,19 @@ function statusDotClass(status: string) {
               </span>
             </span>
 
-            <span class="absolute bottom-2.5 left-2.5 text-[10px] text-white/90 font-mono bg-black/60 border border-white/10 px-2 py-[3px] rounded-(--radius-sm) backdrop-blur-[4px]">
+            <span class="dataset-count-badge">
               {{ img.accepted + img.rejected }} bbox
             </span>
           </div>
 
-          <div class="p-3.5 min-w-0">
-            <p class="text-[13px] font-medium text-ink truncate">{{ img.filename }}</p>
-            <p class="text-[11px] text-ink-mute font-mono mt-0.5 truncate">
+          <div class="dataset-card-meta">
+            <strong>{{ img.filename }}</strong>
+            <span>
               {{ (img.source || 'image').toUpperCase() }}<template v-if="img.width && img.height"> · {{ img.width }}x{{ img.height }}</template>
-            </p>
+            </span>
           </div>
         </div>
+      </div>
       </div>
 
       <div v-if="!filteredImages.length" class="mt-5 border border-dashed border-hairline rounded-(--radius-lg) bg-canvas-soft py-12 text-center">
@@ -271,7 +268,7 @@ function statusDotClass(status: string) {
       </button>
     </div>
 
-    <div v-if="totalPages > 1" class="flex items-center justify-center gap-1.5 mt-8">
+    <div v-if="totalPages > 1" class="dataset-pager">
       <button
         class="h-9 px-3.5 text-[12px] rounded-(--radius-sm) border border-hairline bg-canvas text-ink-mute hover:bg-canvas-soft transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         :disabled="store.imagesPage <= 1"

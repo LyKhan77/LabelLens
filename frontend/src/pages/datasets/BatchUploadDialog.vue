@@ -161,8 +161,8 @@ onUnmounted(stopPolling)
     leave-active-class="transition ease-in duration-150"
     leave-to-class="opacity-0 scale-[0.98]"
   >
-    <div class="fixed inset-0 bg-black/35 backdrop-blur-sm flex items-center justify-center z-50 p-3 md:p-6" @click.self="close">
-    <section class="bg-canvas rounded-(--radius-xl) w-full max-w-[900px] h-[90vh] max-h-[840px] border border-hairline shadow-[0_16px_48px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col">
+    <div class="dataset-dialog-backdrop" @click.self="close">
+    <section class="dataset-upload-dialog">
       <header class="px-5 md:px-6 py-5 border-b border-hairline flex items-center justify-between shrink-0 bg-canvas">
         <div>
           <h3 class="text-[18px] font-medium text-ink tracking-[-0.3px]">Upload + Auto-Label</h3>

@@ -120,8 +120,8 @@ onUnmounted(() => {
     leave-from-class="opacity-100 scale-100"
     leave-to-class="opacity-0 scale-[0.98]"
   >
-    <div class="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm flex items-center justify-center p-3 md:p-6" @click.self="closePanel">
-      <section class="w-full max-w-[1180px] h-[88vh] max-h-[820px] bg-canvas border border-hairline rounded-(--radius-xl) shadow-[0_16px_48px_rgba(0,0,0,0.12)] overflow-hidden flex flex-col">
+    <div class="dataset-dialog-backdrop" @click.self="closePanel">
+      <section class="dataset-review-dialog">
         <header class="h-[60px] px-4 md:px-5 border-b border-hairline flex items-center justify-between gap-4 shrink-0 bg-canvas">
           <div class="min-w-0">
             <p class="text-[14px] font-medium text-ink truncate">{{ store.currentAnnotations?.filename || store.selectedImage }}</p>
@@ -157,10 +157,10 @@ onUnmounted(() => {
           </div>
         </header>
 
-        <div class="min-h-0 flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_350px]">
-          <main class="min-h-0 bg-canvas-soft p-4 md:p-6 flex items-center justify-center overflow-hidden">
-            <div class="relative w-full max-w-[860px] max-h-full bg-canvas-night rounded-(--radius-md) overflow-hidden shadow-[0_8px_24px_rgba(0,0,0,0.08)]" :style="frameStyle">
-              <img v-if="imageSrc" :src="imageSrc" :alt="store.currentAnnotations?.filename" class="absolute inset-0 w-full h-full object-contain" />
+        <div class="dataset-review-body">
+          <main class="dataset-review-stage">
+            <div class="dataset-review-frame" :style="frameStyle">
+              <img v-if="imageSrc" :src="imageSrc" :alt="store.currentAnnotations?.filename"  />
 
               <svg
                 v-if="annotations && store.overlayState.showMasks"

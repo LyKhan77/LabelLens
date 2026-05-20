@@ -70,7 +70,7 @@ onMounted(() => {
       </div>
     </header>
 
-    <main class="flex-1 min-h-0 overflow-y-auto px-(--spacing-lg) py-(--spacing-xl)">
+    <main class="dataset-page-main">
       <DatasetDetail v-if="datasetStore.currentProject" />
       <DatasetList v-else />
     </main>
