@@ -114,7 +114,7 @@ export async function reviewImage(
   imgId: string,
   reviews: { id: number; accepted: boolean }[],
 ): Promise<unknown> {
-  const res = await api.patch(`/datasets/${name}/images/${imgId}/reviews`, reviews)
+  const res = await api.patch(`/datasets/${name}/images/${imgId}/review`, reviews)
   return res.data
 }
 

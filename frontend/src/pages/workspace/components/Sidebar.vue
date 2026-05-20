@@ -80,7 +80,5 @@ const datasetStore = useDatasetStore()
     </div>
 
     <AutoLabelModal v-if="showAutoLabelModal" @close="showAutoLabelModal = false" />
-      </div>
-    </div>
   </aside>
 </template>

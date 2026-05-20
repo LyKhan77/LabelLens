@@ -1,7 +1,7 @@
 import json
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.services.dataset import dataset_service
@@ -135,7 +135,7 @@ async def batch_upload(
 
 
 @router.patch("/datasets/{name}/images/{img_id}/review")
-async def review_image(name: str, img_id: str, reviews: list[dict]):
+async def review_image(name: str, img_id: str, reviews: list[dict] = Body(...)):
     result = dataset_service.review_image(name, img_id, reviews)
     if result is None:
         raise HTTPException(404, "Image not found")
