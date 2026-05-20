@@ -57,7 +57,7 @@ async function deleteProject(name: string) {
       <div
         v-for="p in store.projects"
         :key="p.name"
-        class="group relative text-left p-6 rounded-(--radius-lg) border border-hairline bg-canvas hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] transition-all cursor-pointer"
+        class="group relative text-left p-6 rounded-(--radius-lg) border border-hairline bg-canvas shadow-[0_4px_16px_rgba(0,0,0,0.04)] hover:border-hairline-strong hover:shadow-[0_16px_32px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-200 cursor-pointer"
         tabindex="0"
         role="button"
         @click="openProject(p.name)"
@@ -77,12 +77,12 @@ async function deleteProject(name: string) {
         <div class="w-10 h-10 rounded-(--radius-md) border border-hairline bg-canvas-soft flex items-center justify-center mb-4">
           <svg class="w-5 h-5 text-ink-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></svg>
         </div>
-        <h2 class="text-[16px] font-medium text-ink truncate pr-8">{{ p.name }}</h2>
+        <h2 class="text-[16px] font-semibold text-ink truncate pr-8">{{ p.name }}</h2>
         <p class="text-[13px] text-ink-mute mt-1">{{ p.stats.total_images }} images · {{ p.stats.total_annotations }} annotations</p>
         <div class="flex flex-wrap gap-2 mt-4">
-          <span class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-primary/10 text-primary">{{ p.stats.accepted }} accepted</span>
-          <span v-if="p.stats.rejected" class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-red-500/10 text-red-400">{{ p.stats.rejected }} rejected</span>
-          <span v-if="p.stats.classes.length" class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-canvas-soft text-ink-mute">{{ p.stats.classes.length }} classes</span>
+          <span class="text-[11px] px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium">{{ p.stats.accepted }} accepted</span>
+          <span v-if="p.stats.rejected" class="text-[11px] px-2.5 py-1 rounded-full bg-red-500/10 text-red-400 font-medium">{{ p.stats.rejected }} rejected</span>
+          <span v-if="p.stats.classes.length" class="text-[11px] px-2.5 py-1 rounded-full bg-canvas-soft text-ink-mute font-medium">{{ p.stats.classes.length }} classes</span>
         </div>
       </div>
     </div>
