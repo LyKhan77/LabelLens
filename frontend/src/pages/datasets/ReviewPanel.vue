@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import type { DetectionAnnotation } from '../../shared/api/dataset'
 
+const emit = defineEmits<{ close: [] }>()
 const store = useDatasetStore()
 const imageSrc = ref('')
 
@@ -16,6 +17,20 @@ const classes = computed(() => {
   }
   return Array.from(cls.entries())
 })
+
+function closePanel() {
+  emit('close')
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closePanel()
+  if (e.key === 'ArrowRight') navigateNext()
+  if (e.key === 'ArrowLeft') navigatePrev()
+}
+
+import { onMounted, onUnmounted } from 'vue'
+onMounted(() => window.addEventListener('keydown', handleKeydown))
+onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 
 const acceptedCount = computed(() => detections.value.filter((d) => d.accepted).length)
 const rejectedCount = computed(() => detections.value.filter((d) => !d.accepted).length)
@@ -106,7 +121,17 @@ function detColor(idx: number): string {
 </script>
 
 <template>
-  <div class="flex flex-col border border-hairline rounded-(--radius-lg) bg-canvas overflow-hidden h-fit">
+  <div class="flex flex-col border border-hairline rounded bg-canvas overflow-hidden h-fit">
+    <!-- Header bar -->
+    <div class="flex items-center justify-between px-2 py-1 border-b border-hairline bg-ink/[0.02]">
+      <span class="text-[10px] text-ink-mute truncate">{{ store.selectedImage }}</span>
+      <button @click="closePanel" class="text-ink-faint hover:text-ink transition-colors">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+
     <!-- Image viewer -->
     <div class="relative bg-black/5 aspect-video overflow-hidden">
       <img v-if="imageSrc" :src="imageSrc" class="w-full h-full object-contain" />
@@ -127,7 +152,7 @@ function detColor(idx: number): string {
         >
           <span
             v-if="store.overlayState.showLabels"
-            class="absolute -top-5 left-0 text-[9px] px-1 rounded-sm text-white whitespace-nowrap"
+            class="absolute -top-4 left-0 text-[8px] px-1 rounded-sm text-white whitespace-nowrap"
             :style="{ backgroundColor: box.color }"
           >
             {{ box.label }} {{ (box.confidence * 100).toFixed(0) }}%
@@ -136,24 +161,24 @@ function detColor(idx: number): string {
       </template>
 
       <!-- Global overlay controls -->
-      <div class="absolute top-2 left-2 flex gap-1">
+      <div class="absolute top-1 left-1 flex gap-0.5">
         <button
           @click="store.toggleOverlay('showBbox')"
-          class="text-[10px] px-1.5 py-0.5 rounded transition-colors"
+          class="text-[9px] px-1 py-0.5 rounded transition-colors"
           :class="store.overlayState.showBbox ? 'bg-primary/80 text-white' : 'bg-black/30 text-white/60'"
         >
           BBox
         </button>
         <button
           @click="store.toggleOverlay('showLabels')"
-          class="text-[10px] px-1.5 py-0.5 rounded transition-colors"
+          class="text-[9px] px-1 py-0.5 rounded transition-colors"
           :class="store.overlayState.showLabels ? 'bg-primary/80 text-white' : 'bg-black/30 text-white/60'"
         >
           Labels
         </button>
         <button
           @click="store.toggleOverlay('showMasks')"
-          class="text-[10px] px-1.5 py-0.5 rounded transition-colors"
+          class="text-[9px] px-1 py-0.5 rounded transition-colors"
           :class="store.overlayState.showMasks ? 'bg-primary/80 text-white' : 'bg-black/30 text-white/60'"
         >
           Mask
@@ -162,60 +187,56 @@ function detColor(idx: number): string {
     </div>
 
     <!-- Class filters -->
-    <div v-if="classes.length > 0" class="px-3 py-2 border-b border-hairline bg-ink/[0.02]">
-      <div class="text-[10px] text-ink-faint uppercase tracking-wide mb-1.5">Class Filters</div>
-      <div class="flex flex-wrap gap-1.5">
+    <div v-if="classes.length > 0" class="px-2 py-1.5 border-b border-hairline bg-ink/[0.02]">
+      <div class="flex flex-wrap gap-1">
         <button
           v-for="([cls, count], i) in classes"
           :key="cls"
           @click="toggleClassVis(cls)"
-          class="flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-opacity"
+          class="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] transition-opacity"
           :style="{ opacity: isClassHidden(cls) ? 0.35 : 1 }"
         >
-          <span>{{ isClassHidden(cls) ? '👁‍🗨' : '👁' }}</span>
+          <span class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: detColor(i) }" />
           <span class="font-medium" :style="{ color: detColor(i) }">{{ cls }}</span>
-          <span class="text-ink-faint">({{ count }})</span>
+          <span class="text-ink-faint">{{ count }}</span>
         </button>
       </div>
     </div>
 
     <!-- Detection list -->
-    <div class="flex-1 overflow-y-auto max-h-[240px]">
+    <div class="flex-1 overflow-y-auto max-h-[200px]">
       <div
         v-for="det in detections"
         :key="det.id"
-        class="flex items-center gap-2 px-3 py-1.5 border-b border-hairline/50 transition-opacity"
+        class="flex items-center gap-1.5 px-2 py-1 border-b border-hairline/50 transition-opacity"
         :class="{ 'opacity-40': !det.accepted }"
       >
         <!-- Per-object visibility toggle -->
-        <button @click="toggleDetVis(det.id)" class="text-[12px]">
-          {{ isVisible(det) ? '👁' : '👁‍🗨' }}
+        <button @click="toggleDetVis(det.id)" class="text-[10px] text-ink-faint hover:text-ink">
+          <svg v-if="isVisible(det)" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+          <svg v-else class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
         </button>
 
         <!-- Color dot -->
         <span
-          class="w-2 h-2 rounded-full flex-shrink-0"
+          class="w-1.5 h-1.5 rounded-full shrink-0"
           :style="{ backgroundColor: detColor(det.id) }"
         />
 
         <!-- Detection info -->
-        <div class="flex-1 min-w-0">
-          <div class="flex justify-between items-center">
-            <span
-              class="text-[12px] font-medium"
-              :class="det.accepted ? '' : 'line-through text-ink-faint'"
-              :style="{ color: det.accepted ? detColor(det.id) : undefined }"
-            >
-              {{ det.label }}
-            </span>
-            <span class="text-[11px] text-ink-faint">{{ (det.confidence * 100).toFixed(1) }}%</span>
-          </div>
-        </div>
+        <span
+          class="flex-1 min-w-0 text-[11px] font-medium truncate"
+          :class="det.accepted ? '' : 'line-through text-ink-faint'"
+          :style="{ color: det.accepted ? detColor(det.id) : undefined }"
+        >
+          {{ det.label }}
+        </span>
+        <span class="text-[10px] text-ink-faint tabular-nums">{{ (det.confidence * 100).toFixed(0) }}%</span>
 
         <!-- Accept/reject -->
         <button
           @click="toggleAccept(det)"
-          class="text-[10px] px-1.5 py-0.5 rounded transition-colors"
+          class="text-[9px] w-4 h-4 rounded flex items-center justify-center transition-colors"
           :class="det.accepted ? 'bg-primary/15 text-primary' : 'bg-red-500/15 text-red-400'"
         >
           {{ det.accepted ? '✓' : '✗' }}
@@ -224,12 +245,14 @@ function detColor(idx: number): string {
     </div>
 
     <!-- Summary bar -->
-    <div class="flex items-center justify-between px-3 py-2 border-t border-hairline bg-ink/[0.02] text-[11px]">
-      <span class="text-primary">{{ acceptedCount }} accepted</span>
-      <span class="text-red-400">{{ rejectedCount }} rejected</span>
-      <div class="flex gap-1">
-        <button @click="navigatePrev" class="text-ink-faint hover:text-ink">&larr;</button>
-        <button @click="navigateNext" class="text-ink-faint hover:text-ink">&rarr;</button>
+    <div class="flex items-center justify-between px-2 py-1.5 border-t border-hairline bg-ink/[0.02] text-[10px]">
+      <div class="flex gap-2">
+        <span class="text-primary">{{ acceptedCount }} ok</span>
+        <span v-if="rejectedCount" class="text-red-400">{{ rejectedCount }} rej</span>
+      </div>
+      <div class="flex gap-0.5">
+        <button @click="navigatePrev" class="px-1 text-ink-faint hover:text-ink">&larr;</button>
+        <button @click="navigateNext" class="px-1 text-ink-faint hover:text-ink">&rarr;</button>
       </div>
     </div>
   </div>

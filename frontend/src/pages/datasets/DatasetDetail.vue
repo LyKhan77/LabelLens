@@ -30,30 +30,30 @@ async function changePage(page: number) {
 </script>
 
 <template>
-  <div v-if="project" class="w-full max-w-[1200px] px-(--spacing-xl)">
+  <div v-if="project" class="w-full max-w-[1200px] px-(--spacing-md)">
     <!-- Header -->
-    <div class="flex items-center justify-between mb-(--spacing-lg)">
-      <div class="flex items-center gap-3">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
         <button @click="goBack" class="text-ink-faint hover:text-ink transition-colors">
-          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <h2 class="text-[18px] font-medium text-ink tracking-[-0.42px]">{{ project.name }}</h2>
-        <span class="text-[11px] px-2 py-0.5 rounded-(--radius-md) bg-ink/5 text-ink-mute">
-          {{ project.stats.total_images }} images
+        <h2 class="text-[15px] font-medium text-ink tracking-[-0.3px]">{{ project.name }}</h2>
+        <span class="text-[10px] px-1.5 py-0.5 rounded bg-ink/5 text-ink-mute">
+          {{ project.stats.total_images }} img &middot; {{ project.stats.total_annotations }} ann
         </span>
       </div>
-      <div class="flex gap-2">
+      <div class="flex gap-1.5">
         <button
           @click="showBatch = true"
-          class="px-3 py-1.5 text-[12px] font-medium text-ink-mute bg-ink/5 rounded-(--radius-md) hover:bg-ink/10 transition-colors"
+          class="px-2.5 py-1 text-[11px] font-medium text-ink-mute bg-ink/5 rounded hover:bg-ink/10 transition-colors"
         >
-          Batch Upload
+          Upload
         </button>
         <button
           @click="showExport = true"
-          class="px-3 py-1.5 text-[12px] font-medium text-white bg-primary rounded-(--radius-md) hover:opacity-90 transition-colors"
+          class="px-2.5 py-1 text-[11px] font-medium text-white bg-primary rounded hover:opacity-90 transition-colors"
         >
           Export
         </button>
@@ -61,38 +61,38 @@ async function changePage(page: number) {
     </div>
 
     <!-- Split view -->
-    <div class="flex gap-(--spacing-lg)">
+    <div class="flex gap-3">
       <!-- Image gallery -->
-      <div class="flex-1">
-        <div class="grid grid-cols-4 gap-2">
+      <div class="flex-1 min-w-0">
+        <div class="grid grid-cols-5 gap-1.5">
           <button
             v-for="img in store.images"
             :key="img.img_id"
             @click="selectImage(img.img_id)"
-            class="aspect-square rounded-(--radius-md) border transition-colors relative overflow-hidden flex items-center justify-center text-[10px]"
+            class="aspect-square rounded border transition-colors relative overflow-hidden flex items-center justify-center text-[9px]"
             :class="[
               store.selectedImage === img.img_id
-                ? 'border-primary'
+                ? 'border-primary ring-1 ring-primary/30'
                 : 'border-hairline hover:border-hairline-strong',
-              img.status === 'accepted' ? 'bg-primary/5' : img.status === 'review' ? 'bg-yellow-500/5' : 'bg-ink/5',
+              img.status === 'accepted' ? 'bg-primary/5' : img.status === 'review' ? 'bg-yellow-500/5' : img.status === 'unlabeled' ? 'bg-ink/[0.03]' : 'bg-ink/5',
             ]"
           >
             <span :class="img.status === 'accepted' ? 'text-primary' : img.status === 'review' ? 'text-yellow-500' : 'text-ink-faint'">
-              {{ img.status === 'accepted' ? '✓' : img.status === 'review' ? '⚠' : '○' }} {{ img.img_id }}
+              {{ img.status === 'accepted' ? '✓' : img.status === 'review' ? '⚠' : img.status === 'unlabeled' ? '—' : '○' }}
             </span>
-            <span class="absolute bottom-1 right-1 text-[9px] text-ink-faint">
+            <span class="absolute bottom-0.5 right-1 text-[8px] text-ink-faint">
               {{ img.accepted + img.rejected }}
             </span>
           </button>
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-center gap-2 mt-(--spacing-md)">
+        <div v-if="totalPages > 1" class="flex items-center justify-center gap-1 mt-2">
           <button
             v-for="p in totalPages"
             :key="p"
             @click="changePage(p)"
-            class="w-7 h-7 text-[11px] rounded-(--radius-md) transition-colors"
+            class="w-6 h-6 text-[10px] rounded transition-colors"
             :class="p === store.imagesPage ? 'bg-primary text-white' : 'text-ink-mute hover:bg-ink/5'"
           >
             {{ p }}
@@ -101,8 +101,8 @@ async function changePage(page: number) {
       </div>
 
       <!-- Review panel -->
-      <ReviewPanel v-if="store.selectedImage" class="w-[320px] flex-shrink-0" />
-      <div v-else class="w-[320px] flex-shrink-0 flex items-center justify-center text-[12px] text-ink-faint">
+      <ReviewPanel v-if="store.selectedImage" class="w-[280px] flex-shrink-0" @close="store.clearSelection()" />
+      <div v-else class="w-[280px] flex-shrink-0 flex items-center justify-center text-[11px] text-ink-faint border border-dashed border-hairline rounded">
         Select an image to review
       </div>
     </div>
