@@ -21,9 +21,22 @@ const labels = ref('')
 const labeling = ref(false)
 const labelResult = ref<{ labeled: number; total_unlabeled: number } | null>(null)
 
+// Model loading
+const loadingModel = ref(false)
+const selectedMode = ref<'free' | 'prompt'>('free')
+
 const modelReady = computed(() => inferenceStore.modelLoaded)
 const promptMode = computed(() => inferenceStore.promptMode)
 const isDragging = ref(false)
+
+async function loadModel(mode: 'free' | 'prompt') {
+  loadingModel.value = true
+  try {
+    await inferenceStore.selectMode(mode)
+  } finally {
+    loadingModel.value = false
+  }
+}
 
 function onDrop(e: DragEvent) {
   isDragging.value = false
@@ -187,16 +200,66 @@ function close() {
         <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Auto-Label Images</h3>
 
         <!-- Model status -->
-        <div class="mb-(--spacing-md) p-3 rounded-(--radius-md) text-[12px]" :class="modelReady ? 'bg-primary/10 text-primary' : 'bg-red-500/10 text-red-400'">
-          <template v-if="modelReady">
-            Model ready ({{ inferenceStore.inferenceMode }} mode)
-          </template>
-          <template v-else>
-            No model loaded — go to Inference tab, select a mode to load the model, then come back.
-          </template>
+        <div v-if="modelReady" class="mb-(--spacing-md) p-3 rounded-(--radius-md) bg-primary/10 text-primary text-[12px]">
+          Model ready ({{ inferenceStore.inferenceMode }} mode)
         </div>
 
-        <!-- Prompt config -->
+        <!-- Model loader (shown when no model) -->
+        <div v-else class="mb-(--spacing-md) p-4 rounded-(--radius-md) bg-ink/[0.03] border border-hairline">
+          <p class="text-[12px] text-ink-mute mb-3">Load a model to start labeling:</p>
+          <div class="flex gap-2">
+            <button
+              @click="loadModel('free')"
+              :disabled="loadingModel"
+              class="flex-1 flex flex-col items-center p-3 rounded-(--radius-md) border transition-colors cursor-pointer"
+              :class="[
+                loadingModel ? 'opacity-50' : '',
+                selectedMode === 'free' && !loadingModel
+                  ? 'border-primary bg-primary/5 text-primary'
+                  : 'border-hairline hover:border-hairline-strong text-ink-mute'
+              ]"
+              @mouseenter="() => { if (!loadingModel) selectedMode = 'free' }"
+            >
+              <svg class="w-5 h-5 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <span class="text-[12px] font-medium">Free Inference</span>
+              <span class="text-[10px] text-ink-faint">1200+ classes</span>
+            </button>
+            <button
+              @click="loadModel('prompt')"
+              :disabled="loadingModel"
+              class="flex-1 flex flex-col items-center p-3 rounded-(--radius-md) border transition-colors cursor-pointer"
+              :class="[
+                loadingModel ? 'opacity-50' : '',
+                selectedMode === 'prompt' && !loadingModel
+                  ? 'border-primary bg-primary/5 text-primary'
+                  : 'border-hairline hover:border-hairline-strong text-ink-mute'
+              ]"
+              @mouseenter="() => { if (!loadingModel) selectedMode = 'prompt' }"
+            >
+              <svg class="w-5 h-5 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="6" />
+                <circle cx="12" cy="12" r="2" />
+              </svg>
+              <span class="text-[12px] font-medium">Prompt Inference</span>
+              <span class="text-[10px] text-ink-faint">Text / Visual</span>
+            </button>
+          </div>
+          <!-- Loading indicator -->
+          <div v-if="loadingModel" class="mt-3 flex items-center justify-center gap-2">
+            <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            <span class="text-[11px] text-ink-mute">Loading model...</span>
+          </div>
+          <!-- Error -->
+          <p v-if="inferenceStore.modelError && !loadingModel" class="mt-2 text-[11px] text-red-400 text-center">
+            {{ inferenceStore.modelError }}
+          </p>
+        </div>
+
+        <!-- Prompt config (when model loaded in prompt mode) -->
         <div v-if="modelReady && inferenceStore.inferenceMode === 'prompt'" class="mb-(--spacing-md)">
           <div class="p-3 rounded-(--radius-md) bg-ink/[0.03] text-[12px] mb-(--spacing-sm)">
             <span class="text-ink-mute">Current mode:</span>
