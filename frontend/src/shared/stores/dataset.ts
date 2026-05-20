@@ -113,6 +113,38 @@ export const useDatasetStore = defineStore('dataset', () => {
     await fetchImages(imagesPage.value)
   }
 
+  async function uploadRaw(files: File[]) {
+    if (!currentProject.value) return
+    const result = await api.uploadRaw(currentProject.value, files)
+    await fetchImages(imagesPage.value)
+    return result
+  }
+
+  async function uploadStream(
+    params: { file?: File; rtspUrl?: string; sampleFps?: number },
+  ) {
+    if (!currentProject.value) return
+    const result = await api.uploadStream(currentProject.value, params)
+    await fetchImages(imagesPage.value)
+    return result
+  }
+
+  async function labelImages(
+    promptType: string,
+    labels: string[] = [],
+    confidence = 0.5,
+  ) {
+    if (!currentProject.value) return
+    const result = await api.labelImages(
+      currentProject.value,
+      promptType,
+      labels,
+      confidence,
+    )
+    await fetchImages(imagesPage.value)
+    return result
+  }
+
   async function batchUpload(
     files: File[],
     promptType: string,
@@ -210,6 +242,9 @@ export const useDatasetStore = defineStore('dataset', () => {
     reviewDetection,
     saveToDataset,
     removeImage,
+    uploadRaw,
+    uploadStream,
+    labelImages,
     batchUpload,
     exportDataset,
     toggleAutoLabel,

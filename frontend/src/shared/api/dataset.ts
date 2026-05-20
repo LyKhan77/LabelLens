@@ -91,6 +91,50 @@ export async function saveToDataset(
   return res.data
 }
 
+export async function uploadRaw(
+  name: string,
+  files: File[],
+): Promise<{ uploaded: number; results: unknown[] }> {
+  const form = new FormData()
+  for (const f of files) {
+    form.append('files', f)
+  }
+  const res = await api.post(`/datasets/${name}/upload`, form)
+  return res.data
+}
+
+export async function uploadStream(
+  name: string,
+  params: {
+    file?: File
+    rtspUrl?: string
+    sampleFps?: number
+  },
+): Promise<{ uploaded: number; results: unknown[] }> {
+  const form = new FormData()
+  if (params.file) form.append('file', params.file)
+  if (params.rtspUrl) form.append('rtsp_url', params.rtspUrl)
+  form.append('sample_fps', String(params.sampleFps ?? 1))
+  const res = await api.post(`/datasets/${name}/upload-stream`, form, {
+    timeout: 300_000,
+  })
+  return res.data
+}
+
+export async function labelImages(
+  name: string,
+  promptType: string,
+  labels: string[] = [],
+  confidence = 0.5,
+): Promise<{ labeled: number; total_unlabeled: number; results: unknown[] }> {
+  const form = new FormData()
+  form.append('prompt_type', promptType)
+  form.append('labels', JSON.stringify(labels))
+  form.append('confidence', String(confidence))
+  const res = await api.post(`/datasets/${name}/label`, form)
+  return res.data
+}
+
 export async function batchUpload(
   name: string,
   files: File[],

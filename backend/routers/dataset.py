@@ -91,7 +91,139 @@ async def save_to_dataset(
     return result
 
 
-@router.post("/datasets/{name}/batch")
+@router.post("/datasets/{name}/upload")
+async def upload_raw_images(
+    name: str,
+    files: list[UploadFile] = File(...),
+):
+    """Upload images without inference. Stored as unlabeled for later batch labeling."""
+    results = []
+    for f in files:
+        image_bytes = await f.read()
+        try:
+            result = dataset_service.upload_raw(name, image_bytes, "upload")
+            results.append(result)
+        except (FileNotFoundError, ValueError):
+            continue
+    return {"uploaded": len(results), "results": results}
+
+
+@router.post("/datasets/{name}/upload-stream")
+async def upload_stream(
+    name: str,
+    file: UploadFile = File(None),
+    rtsp_url: str = Form(None),
+    sample_fps: float = Form(1.0),
+):
+    """Upload frames from video or RTSP as raw images (no inference)."""
+    import tempfile
+    import cv2
+
+    results = []
+
+    if file is not None:
+        video_bytes = await file.read()
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
+        tmp.write(video_bytes)
+        tmp.close()
+
+        cap = cv2.VideoCapture(tmp.name)
+        src_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+        frame_interval = max(1, int(src_fps / sample_fps)) if sample_fps > 0 else 1
+        frame_idx = 0
+
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if frame_idx % frame_interval == 0:
+                _, buf = cv2.imencode(".jpg", frame)
+                try:
+                    result = dataset_service.upload_raw(name, buf.tobytes(), "video")
+                    results.append(result)
+                except (FileNotFoundError, ValueError):
+                    pass
+            frame_idx += 1
+
+        cap.release()
+        import os
+        os.unlink(tmp.name)
+
+    elif rtsp_url:
+        cap = cv2.VideoCapture(rtsp_url)
+        if not cap.isOpened():
+            raise HTTPException(400, f"Cannot open RTSP stream: {rtsp_url}")
+
+        frame_interval = max(1, int(30 / sample_fps)) if sample_fps > 0 else 30
+        frame_idx = 0
+        max_frames = 300
+
+        while frame_idx < max_frames:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if frame_idx % frame_interval == 0:
+                _, buf = cv2.imencode(".jpg", frame)
+                try:
+                    result = dataset_service.upload_raw(name, buf.tobytes(), "rtsp")
+                    results.append(result)
+                except (FileNotFoundError, ValueError):
+                    pass
+            frame_idx += 1
+
+        cap.release()
+    else:
+        raise HTTPException(400, "Provide either file (video) or rtsp_url")
+
+    return {"uploaded": len(results), "results": results}
+
+
+@router.post("/datasets/{name}/label")
+async def label_images(
+    name: str,
+    prompt_type: str = Form("free"),
+    labels: str = Form("[]"),
+    confidence: float = Form(0.5),
+):
+    """Run inference on all unlabeled images in dataset. Requires loaded model."""
+    if model_service.model is None:
+        raise HTTPException(400, "No model loaded. Load a model first.")
+
+    try:
+        label_list = json.loads(labels)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Invalid labels JSON")
+
+    # Setup text prompt once if needed
+    if prompt_type == "text" and label_list:
+        model_service.predict_text.__wrapped__(model_service, np.zeros((1, 1, 3), np.uint8), label_list, 0.01) if hasattr(model_service.predict_text, '__wrapped__') else None
+
+    unlabeled = dataset_service.get_unlabeled_images(name)
+    results = []
+
+    for img_id in unlabeled:
+        image_data = dataset_service.get_image(name, img_id)
+        if image_data is None or image_data["image_path"] is None:
+            continue
+
+        image = cv2.imread(image_data["image_path"])
+        if image is None:
+            continue
+
+        if prompt_type == "free":
+            det_result = model_service.predict_free(image, confidence)
+        elif prompt_type == "text":
+            det_result = model_service.predict_text(image, label_list, confidence)
+        elif prompt_type == "visual":
+            det_result = model_service.predict_with_vpe(image, confidence)
+        else:
+            continue
+
+        labeled = dataset_service.label_image(name, img_id, det_result["detections"])
+        if labeled:
+            results.append(labeled)
+
+    return {"labeled": len(results), "total_unlabeled": len(unlabeled), "results": results}
 async def batch_upload(
     name: str,
     files: list[UploadFile] = File(...),

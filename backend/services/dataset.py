@@ -181,6 +181,110 @@ class DatasetService:
             "detections_count": len(annotated_dets),
         }
 
+    def upload_raw(self, name: str, image_bytes: bytes, source: str = "upload") -> dict:
+        """Upload image without inference. Creates empty annotation placeholder."""
+        pdir = self._project_dir(name)
+        if not os.path.isdir(pdir):
+            raise FileNotFoundError(f"Dataset '{name}' not found")
+
+        meta = self._read_meta(name)
+        img_id = self._next_img_id(meta)
+
+        arr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Invalid image data")
+        h, w = img.shape[:2]
+
+        ext = ".jpg"
+        if image_bytes[:4] == b"\x89PNG":
+            ext = ".png"
+
+        img_filename = f"{img_id}{ext}"
+        img_path = os.path.join(pdir, "images", img_filename)
+        with open(img_path, "wb") as f:
+            f.write(image_bytes)
+
+        # Save empty annotation (no detections, labeled=false)
+        ann = {
+            "image": img_filename,
+            "width": w,
+            "height": h,
+            "source": source,
+            "created": datetime.now().isoformat(),
+            "labeled": False,
+            "detections": [],
+        }
+        ann_path = os.path.join(pdir, "annotations", f"{img_id}.json")
+        with open(ann_path, "w") as f:
+            json.dump(ann, f, indent=2)
+
+        meta["next_id"] = meta.get("next_id", 1) + 1
+        self._write_meta(name, meta)
+
+        return {"img_id": img_id, "image": img_filename}
+
+    def get_unlabeled_images(self, name: str) -> list[str]:
+        """Return list of img_ids that have no detections (labeled=false)."""
+        pdir = self._project_dir(name)
+        ann_dir = os.path.join(pdir, "annotations")
+        if not os.path.isdir(ann_dir):
+            return []
+
+        unlabeled = []
+        for fname in sorted(os.listdir(ann_dir)):
+            if not fname.endswith(".json"):
+                continue
+            with open(os.path.join(ann_dir, fname)) as f:
+                ann = json.load(f)
+            if not ann.get("labeled", True):
+                img_id = os.path.splitext(fname)[0]
+                unlabeled.append(img_id)
+        return unlabeled
+
+    def label_image(self, name: str, img_id: str, detections: list[dict]) -> dict | None:
+        """Add detection results to an existing unlabeled image."""
+        pdir = self._project_dir(name)
+        ann_path = os.path.join(pdir, "annotations", f"{img_id}.json")
+        if not os.path.isfile(ann_path):
+            return None
+
+        with open(ann_path) as f:
+            ann = json.load(f)
+
+        meta = self._read_meta(name)
+        class_to_id = meta.get("class_to_id", {})
+
+        annotated_dets = []
+        for i, det in enumerate(detections):
+            label = det.get("label", "")
+            if label and label not in class_to_id:
+                class_to_id[label] = len(class_to_id)
+            annotated_dets.append({
+                "id": i,
+                "box": det.get("box", []),
+                "label": label,
+                "confidence": det.get("confidence", 0),
+                "cls_id": class_to_id.get(label, -1),
+                "accepted": True,
+                **({"mask": det["mask"]} if "mask" in det else {}),
+                **({"mask_rle": det["mask_rle"]} if "mask_rle" in det else {}),
+            })
+
+        ann["labeled"] = True
+        ann["detections"] = annotated_dets
+
+        meta["class_to_id"] = class_to_id
+        self._write_meta(name, meta)
+
+        with open(ann_path, "w") as f:
+            json.dump(ann, f, indent=2)
+
+        return {
+            "img_id": img_id,
+            "detections_count": len(annotated_dets),
+        }
+
     def list_images(self, name: str, page: int = 1, limit: int = 20) -> dict:
         pdir = self._project_dir(name)
         if not os.path.isdir(pdir):
@@ -202,12 +306,15 @@ class DatasetService:
             if os.path.isfile(ann_path):
                 with open(ann_path) as f:
                     ann = json.load(f)
-                for det in ann.get("detections", []):
-                    if det.get("accepted", True):
-                        accepted_count += 1
-                    else:
-                        rejected_count += 1
-                status = "accepted" if rejected_count == 0 else "review"
+                if not ann.get("labeled", True) and len(ann.get("detections", [])) == 0:
+                    status = "unlabeled"
+                else:
+                    for det in ann.get("detections", []):
+                        if det.get("accepted", True):
+                            accepted_count += 1
+                        else:
+                            rejected_count += 1
+                    status = "accepted" if rejected_count == 0 else "review"
 
             all_images.append({
                 "img_id": img_id,
