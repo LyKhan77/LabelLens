@@ -54,11 +54,14 @@ async function deleteProject(name: string) {
     </div>
 
     <div v-if="store.projects.length" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      <button
+      <div
         v-for="p in store.projects"
         :key="p.name"
-        class="group relative text-left p-6 rounded-(--radius-lg) border border-hairline bg-canvas hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all cursor-pointer"
+        class="group relative text-left p-6 rounded-(--radius-lg) border border-hairline bg-canvas hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] transition-all cursor-pointer"
+        tabindex="0"
+        role="button"
         @click="openProject(p.name)"
+        @keydown.enter="openProject(p.name)"
       >
         <button
           class="absolute top-4 right-4 p-1.5 rounded-(--radius-sm) opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-ink-faint hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
@@ -81,7 +84,7 @@ async function deleteProject(name: string) {
           <span v-if="p.stats.rejected" class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-red-500/10 text-red-400">{{ p.stats.rejected }} rejected</span>
           <span v-if="p.stats.classes.length" class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-canvas-soft text-ink-mute">{{ p.stats.classes.length }} classes</span>
         </div>
-      </button>
+      </div>
     </div>
 
     <div v-else class="min-h-[360px] border border-dashed border-hairline rounded-(--radius-lg) flex flex-col items-center justify-center text-center px-4">
