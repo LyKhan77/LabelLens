@@ -165,6 +165,7 @@ class DatasetService:
             "height": h,
             "source": source,
             "created": datetime.now().isoformat(),
+            "labeled": True,
             "detections": annotated_dets,
         }
         ann_path = os.path.join(pdir, "annotations", f"{img_id}.json")
@@ -319,9 +320,13 @@ class DatasetService:
             all_images.append({
                 "img_id": img_id,
                 "filename": fname,
+                "image_url": f"/api/datasets/{name}/images/{img_id}/file",
                 "status": status,
                 "accepted": accepted_count,
                 "rejected": rejected_count,
+                "source": ann.get("source") if os.path.isfile(ann_path) else None,
+                "width": ann.get("width") if os.path.isfile(ann_path) else None,
+                "height": ann.get("height") if os.path.isfile(ann_path) else None,
             })
 
         total = len(all_images)
