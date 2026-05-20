@@ -133,7 +133,7 @@ function detColor(idx: number): string {
     </div>
 
     <!-- Image viewer -->
-    <div class="relative bg-black/5 aspect-video overflow-hidden">
+    <div class="relative bg-black/5 overflow-hidden" style="max-height: 160px">
       <img v-if="imageSrc" :src="imageSrc" class="w-full h-full object-contain" />
 
       <!-- BBox overlays -->

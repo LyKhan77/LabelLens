@@ -77,10 +77,13 @@ async function changePage(page: number) {
               img.status === 'accepted' ? 'bg-primary/5' : img.status === 'review' ? 'bg-yellow-500/5' : img.status === 'unlabeled' ? 'bg-ink/[0.03]' : 'bg-ink/5',
             ]"
           >
-            <span :class="img.status === 'accepted' ? 'text-primary' : img.status === 'review' ? 'text-yellow-500' : 'text-ink-faint'">
-              {{ img.status === 'accepted' ? '✓' : img.status === 'review' ? '⚠' : img.status === 'unlabeled' ? '—' : '○' }}
+            <span class="text-[10px] text-ink-mute truncate w-full text-center px-0.5">
+              {{ img.filename || img.img_id }}
             </span>
-            <span class="absolute bottom-0.5 right-1 text-[8px] text-ink-faint">
+            <span class="absolute top-0.5 right-0.5 text-[8px] leading-none" :class="img.status === 'accepted' ? 'text-primary' : img.status === 'review' ? 'text-yellow-500' : 'text-ink-faint'">
+              {{ img.status === 'accepted' ? '✓' : img.status === 'review' ? '⚠' : '·' }}
+            </span>
+            <span class="absolute bottom-0.5 left-0.5 text-[7px] text-ink-faint tabular-nums">
               {{ img.accepted + img.rejected }}
             </span>
           </button>
