@@ -207,6 +207,7 @@ export const useInferenceStore = defineStore('inference', () => {
         detections.value = videoDetections.value[0] ?? []
         stats.value = resp.stats as unknown as Stats
         viewerState.value = 'video'
+        await autoSaveToDataset()
         playVideo()
       } else if (mediaMode.value === 'rtsp') {
         await startRtsp()
@@ -251,6 +252,8 @@ export const useInferenceStore = defineStore('inference', () => {
       show_bbox: showBbox.value,
       show_masks: showMasks.value,
     })
+
+    void autoSaveToDataset()
   }
 
   async function fileToBase64(f: File): Promise<string> {
@@ -310,16 +313,39 @@ export const useInferenceStore = defineStore('inference', () => {
 
   async function autoSaveToDataset() {
     const ds = useDatasetStore()
-    if (!ds.autoLabelActive || !ds.autoLabelDataset || !file.value) return
-    if (detections.value.length === 0) return
+    if (!ds.autoLabelActive || !ds.autoLabelDataset) return
+
+    const params = buildPromptParams()
+    const streamParams = {
+      promptType: params.promptType,
+      labels: params.labels,
+      confidence: params.confidence,
+      sampleFps: ds.autoLabelFps,
+      referImage: params.referImage,
+      bboxes: params.bboxes,
+      vcls: params.vcls,
+    }
 
     try {
-      await ds.saveToDataset(
-        ds.autoLabelDataset,
-        file.value,
-        detections.value,
-        mediaMode.value,
-      )
+      if (mediaMode.value === 'image' && file.value) {
+        if (detections.value.length === 0) return
+        await ds.saveToDataset(
+          ds.autoLabelDataset,
+          file.value,
+          detections.value,
+          mediaMode.value,
+        )
+      } else if (mediaMode.value === 'video' && file.value) {
+        await ds.saveStream(ds.autoLabelDataset, {
+          file: file.value,
+          ...streamParams,
+        })
+      } else if (mediaMode.value === 'rtsp' && rtspUrl.value.trim()) {
+        await ds.saveStream(ds.autoLabelDataset, {
+          rtspUrl: rtspUrl.value,
+          ...streamParams,
+        })
+      }
     } catch {
       // Auto-save failure should not block inference
     }

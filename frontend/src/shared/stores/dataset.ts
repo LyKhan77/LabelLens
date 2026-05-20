@@ -20,7 +20,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const images = ref<DatasetImage[]>([])
   const imagesTotal = ref(0)
   const imagesPage = ref(1)
-  const imagesLimit = ref(20)
+  const imagesLimit = ref(48)
 
   // Review
   const selectedImage = ref<string | null>(null)
@@ -133,6 +133,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     promptType: string,
     labels: string[] = [],
     confidence = 0.5,
+    visual?: { referImage?: File; bboxes?: [number, number, number, number][]; vcls?: string[] },
   ) {
     if (!currentProject.value) return
     const result = await api.labelImages(
@@ -140,8 +141,31 @@ export const useDatasetStore = defineStore('dataset', () => {
       promptType,
       labels,
       confidence,
+      visual,
     )
     await fetchImages(imagesPage.value)
+    return result
+  }
+
+  async function createLabelJob(params: {
+    promptType: string
+    labels?: string[]
+    confidence?: number
+    referImage?: File
+    bboxes?: [number, number, number, number][]
+    vcls?: string[]
+  }) {
+    if (!currentProject.value) return
+    return api.createLabelJob(currentProject.value, params)
+  }
+
+  async function getLabelJob(jobId: string) {
+    if (!currentProject.value) return
+    const result = await api.getLabelJob(currentProject.value, jobId)
+    if (result.state === 'done') {
+      await fetchImages(imagesPage.value)
+      await fetchProjects()
+    }
     return result
   }
 
@@ -161,6 +185,23 @@ export const useDatasetStore = defineStore('dataset', () => {
     )
     await fetchImages(imagesPage.value)
     return result
+  }
+
+  async function saveStream(
+    name: string,
+    params: {
+      file?: File
+      rtspUrl?: string
+      promptType: string
+      labels?: string[]
+      confidence?: number
+      sampleFps?: number
+      referImage?: File
+      bboxes?: [number, number, number, number][]
+      vcls?: string[]
+    },
+  ) {
+    return api.saveStream(name, params)
   }
 
   async function exportDataset(format: 'yolo' | 'coco', split = 0.8) {
@@ -245,7 +286,10 @@ export const useDatasetStore = defineStore('dataset', () => {
     uploadRaw,
     uploadStream,
     labelImages,
+    createLabelJob,
+    getLabelJob,
     batchUpload,
+    saveStream,
     exportDataset,
     toggleAutoLabel,
     disableAutoLabel,

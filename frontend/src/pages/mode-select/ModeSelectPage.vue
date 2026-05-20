@@ -1,16 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
 import { useInferenceStore } from '../../shared/stores/inference'
-import { useDatasetStore } from '../../shared/stores/dataset'
 import type { InferenceMode } from '../../shared/types'
-import DatasetList from '../datasets/DatasetList.vue'
-import DatasetDetail from '../datasets/DatasetDetail.vue'
 
 const store = useInferenceStore()
-const datasetStore = useDatasetStore()
-
-const activeTab = ref<'inference' | 'datasets'>('inference')
-
 interface ModeCard {
   mode: InferenceMode
   title: string
@@ -42,18 +34,10 @@ function isLoading(m: ModeCard) {
   return store.modelLoading && store.loadingMode === m.mode
 }
 
-function switchTab(tab: 'inference' | 'datasets') {
-  activeTab.value = tab
-  if (tab === 'datasets') {
-    datasetStore.fetchProjects()
-    datasetStore.currentProject = null
-    datasetStore.clearSelection()
-  }
+function openDatasets() {
+  window.history.pushState({}, '', '/datasets')
+  window.dispatchEvent(new PopStateEvent('popstate'))
 }
-
-onMounted(() => {
-  datasetStore.fetchProjects()
-})
 </script>
 
 <template>
@@ -69,31 +53,17 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Tabs -->
-      <div class="flex justify-center gap-0 mb-(--spacing-lg) border-b border-hairline">
+      <div class="flex justify-center mb-(--spacing-lg)">
         <button
-          @click="switchTab('inference')"
-          class="px-6 py-3 text-[14px] font-medium transition-colors relative"
-          :class="activeTab === 'inference' ? 'text-primary' : 'text-ink-faint hover:text-ink-mute'"
+          class="px-3 py-1.5 text-[13px] rounded-(--radius-sm) border border-hairline text-ink-mute hover:text-ink hover:bg-canvas-soft transition-colors cursor-pointer"
+          @click="openDatasets"
         >
-          Inference
-          <span v-if="activeTab === 'inference'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
-        </button>
-        <button
-          @click="switchTab('datasets')"
-          class="px-6 py-3 text-[14px] font-medium transition-colors relative"
-          :class="activeTab === 'datasets' ? 'text-primary' : 'text-ink-faint hover:text-ink-mute'"
-        >
-          Datasets
-          <span v-if="activeTab === 'datasets'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
+          Open Dataset Manager
         </button>
       </div>
 
-      <!-- Tab content -->
       <div class="flex justify-center">
-        <!-- Inference tab -->
-        <template v-if="activeTab === 'inference'">
-          <div class="w-full max-w-[680px]">
+        <div class="w-full max-w-[680px]">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-(--spacing-lg)">
               <button
                 v-for="m in MODES"
@@ -162,14 +132,7 @@ onMounted(() => {
             <p class="text-center text-[12px] text-ink-faint mt-(--spacing-xxl) leading-[1.45]">
               Model loads into GPU memory. Switch modes anytime via the header.
             </p>
-          </div>
-        </template>
-
-        <!-- Datasets tab -->
-        <template v-if="activeTab === 'datasets'">
-          <DatasetDetail v-if="datasetStore.currentProject" />
-          <DatasetList v-else />
-        </template>
+        </div>
       </div>
     </div>
   </div>

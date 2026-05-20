@@ -38,116 +38,84 @@ async function deleteProject(name: string) {
 </script>
 
 <template>
-  <div class="w-full max-w-[680px] px-(--spacing-md)">
-    <div class="text-center mb-4">
-      <h2 class="text-[15px] font-medium text-ink tracking-[-0.3px] mb-1">
-        Dataset Manager
-      </h2>
-      <p class="text-[11px] text-ink-mute">
-        Create and manage labeled datasets for YOLO fine-tuning
-      </p>
+  <section class="w-full max-w-[1180px] mx-auto">
+    <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mb-(--spacing-xl)">
+      <div>
+        <p class="text-[12px] uppercase tracking-wide text-ink-faint mb-2">Dataset Manager</p>
+        <h1 class="text-[32px] leading-tight font-medium tracking-[-0.72px] text-ink">Review-ready datasets for YOLO fine-tuning</h1>
+        <p class="text-[13px] text-ink-mute mt-2 max-w-[620px]">Upload images or sampled video frames, auto-label with YOLOE grounding, review detections, then export YOLO or COCO.</p>
+      </div>
+      <button
+        class="px-3 py-2 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep transition-colors cursor-pointer"
+        @click="showCreate = true"
+      >
+        New Dataset
+      </button>
     </div>
 
-    <!-- Project cards -->
-    <div class="grid grid-cols-2 gap-2">
+    <div v-if="store.projects.length" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
       <button
         v-for="p in store.projects"
         :key="p.name"
+        class="group relative text-left p-4 rounded-(--radius-lg) border border-hairline bg-canvas hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all cursor-pointer"
         @click="openProject(p.name)"
-        class="group relative flex flex-col items-start p-3 rounded border border-hairline bg-canvas transition-colors text-left cursor-pointer hover:border-hairline-strong"
       >
-        <!-- Delete button -->
         <button
+          class="absolute top-3 right-3 p-1.5 rounded-(--radius-sm) opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-ink-faint hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
           @click.stop="deleteProject(p.name)"
-          class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-ink-faint hover:text-red-400"
+          title="Delete dataset"
         >
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
           </svg>
         </button>
 
-        <h3 class="text-[13px] font-medium text-ink mb-0.5 truncate w-full">{{ p.name }}</h3>
-        <p class="text-[10px] text-ink-mute">
-          {{ p.stats.total_images }} img &middot; {{ p.stats.total_annotations }} ann
-        </p>
-        <div class="flex gap-1.5 mt-1">
-          <span
-            v-if="p.stats.accepted > 0"
-            class="text-[9px] px-1 py-px rounded bg-primary/10 text-primary"
-          >
-            {{ p.stats.accepted }} ok
-          </span>
-          <span
-            v-if="p.stats.rejected > 0"
-            class="text-[9px] px-1 py-px rounded bg-red-500/10 text-red-400"
-          >
-            {{ p.stats.rejected }} rej
-          </span>
+        <div class="w-9 h-9 rounded-(--radius-md) border border-hairline bg-canvas-soft flex items-center justify-center mb-4">
+          <svg class="w-5 h-5 text-ink-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></svg>
+        </div>
+        <h2 class="text-[16px] font-medium text-ink truncate pr-8">{{ p.name }}</h2>
+        <p class="text-[12px] text-ink-mute mt-1">{{ p.stats.total_images }} images · {{ p.stats.total_annotations }} annotations</p>
+        <div class="flex flex-wrap gap-1.5 mt-4">
+          <span class="text-[11px] px-2 py-1 rounded-(--radius-sm) bg-primary/10 text-primary">{{ p.stats.accepted }} accepted</span>
+          <span v-if="p.stats.rejected" class="text-[11px] px-2 py-1 rounded-(--radius-sm) bg-red-500/10 text-red-400">{{ p.stats.rejected }} rejected</span>
+          <span v-if="p.stats.classes.length" class="text-[11px] px-2 py-1 rounded-(--radius-sm) bg-canvas-soft text-ink-mute">{{ p.stats.classes.length }} classes</span>
         </div>
       </button>
+    </div>
 
-      <!-- New dataset card -->
-      <button
-        @click="showCreate = true"
-        class="flex flex-col items-center justify-center p-3 rounded border-2 border-dashed border-hairline bg-canvas transition-colors cursor-pointer hover:border-primary/30"
-      >
-        <svg class="w-5 h-5 text-ink-faint mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        <span class="text-[11px] text-ink-faint">New Dataset</span>
+    <div v-else class="min-h-[360px] border border-dashed border-hairline rounded-(--radius-lg) flex flex-col items-center justify-center text-center px-4">
+      <div class="w-11 h-11 rounded-(--radius-lg) border border-hairline bg-canvas-soft flex items-center justify-center mb-3">
+        <svg class="w-6 h-6 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+      </div>
+      <p class="text-[15px] font-medium text-ink mb-1">No datasets yet</p>
+      <p class="text-[12px] text-ink-mute mb-4">Create a dataset to start collecting labeled images.</p>
+      <button class="px-3 py-2 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep transition-colors cursor-pointer" @click="showCreate = true">
+        New Dataset
       </button>
     </div>
 
-    <!-- Empty state -->
-    <div v-if="!store.projectsLoading && store.projects.length === 0" class="text-center mt-4">
-      <p class="text-[11px] text-ink-faint">No datasets yet. Create one to start labeling.</p>
-    </div>
-
-    <!-- Create dialog -->
-    <div
-      v-if="showCreate"
-      class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-      @click.self="showCreate = false"
-    >
-      <div class="bg-canvas rounded-(--radius-lg) p-5 w-full max-w-[380px] border border-hairline">
-        <h3 class="text-[14px] font-medium text-ink mb-3">New Dataset</h3>
-
-        <label class="block mb-2">
-          <span class="text-[10px] text-ink-mute uppercase tracking-wide">Name</span>
-          <input
-            v-model="newName"
-            placeholder="e.g. product-defects"
-            class="block w-full mt-1 px-2.5 py-1.5 text-[12px] bg-canvas border border-hairline rounded text-ink focus:outline-none focus:border-primary"
-          />
-        </label>
+    <div v-if="showCreate" class="fixed inset-0 bg-black/45 flex items-center justify-center z-50 p-3" @click.self="showCreate = false">
+      <div class="bg-canvas rounded-(--radius-xl) p-5 w-full max-w-[420px] border border-hairline shadow-[0_16px_48px_rgba(0,0,0,0.16)]">
+        <h3 class="text-[16px] font-medium text-ink mb-4">New Dataset</h3>
 
         <label class="block mb-3">
-          <span class="text-[10px] text-ink-mute uppercase tracking-wide">Classes (optional, comma-separated)</span>
-          <input
-            v-model="newClasses"
-            placeholder="defect, scratch, dent"
-            class="block w-full mt-1 px-2.5 py-1.5 text-[12px] bg-canvas border border-hairline rounded text-ink focus:outline-none focus:border-primary"
-          />
+          <span class="text-[11px] text-ink-mute uppercase tracking-wide">Name</span>
+          <input v-model="newName" placeholder="product-defects" class="block w-full mt-1 px-3 py-2 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary" />
+        </label>
+
+        <label class="block mb-4">
+          <span class="text-[11px] text-ink-mute uppercase tracking-wide">Classes (optional)</span>
+          <input v-model="newClasses" placeholder="scratch, dent, crack" class="block w-full mt-1 px-3 py-2 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary" />
         </label>
 
         <div class="flex gap-2 justify-end">
-          <button
-            @click="showCreate = false"
-            class="px-3 py-1.5 text-[11px] text-ink-mute rounded hover:bg-ink/5"
-          >
-            Cancel
-          </button>
-          <button
-            @click="createProject"
-            :disabled="creating || !newName.trim()"
-            class="px-3 py-1.5 text-[11px] font-medium text-white bg-primary rounded hover:opacity-90 disabled:opacity-50"
-          >
+          <button class="px-3 py-2 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft cursor-pointer" @click="showCreate = false">Cancel</button>
+          <button class="px-3 py-2 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep disabled:opacity-50 cursor-pointer" :disabled="creating || !newName.trim()" @click="createProject">
             {{ creating ? 'Creating...' : 'Create' }}
           </button>
         </div>
       </div>
     </div>
-  </div>
+  </section>
 </template>

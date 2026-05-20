@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useInferenceStore } from '../../../../shared/stores/inference'
-import BBoxAnnotation from './BBoxAnnotation.vue'
+import BBoxAnnotation from '../../../../shared/components/BBoxAnnotation.vue'
 
 const store = useInferenceStore()
 const imageSrc = ref('')

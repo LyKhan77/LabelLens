@@ -16,9 +16,26 @@ export interface DatasetProject {
 export interface DatasetImage {
   img_id: string
   filename: string
-  status: 'new' | 'accepted' | 'review'
+  status: 'unlabeled' | 'new' | 'accepted' | 'review'
   accepted: number
   rejected: number
+  image_url: string
+  source?: string | null
+  width?: number | null
+  height?: number | null
+}
+
+export interface DatasetLabelJobStatus {
+  job_id: string
+  dataset: string
+  state: 'queued' | 'running' | 'done' | 'failed'
+  processed: number
+  total: number
+  current_image_url: string | null
+  current_filename: string | null
+  detections_count: number
+  error: string | null
+  results: unknown[]
 }
 
 export interface ImageAnnotation {
@@ -126,12 +143,47 @@ export async function labelImages(
   promptType: string,
   labels: string[] = [],
   confidence = 0.5,
+  visual?: { referImage?: File; bboxes?: [number, number, number, number][]; vcls?: string[] },
 ): Promise<{ labeled: number; total_unlabeled: number; results: unknown[] }> {
   const form = new FormData()
   form.append('prompt_type', promptType)
   form.append('labels', JSON.stringify(labels))
   form.append('confidence', String(confidence))
+  if (visual?.referImage) form.append('refer_image', visual.referImage)
+  form.append('bboxes', JSON.stringify(visual?.bboxes ?? []))
+  form.append('vcls', JSON.stringify(visual?.vcls ?? []))
   const res = await api.post(`/datasets/${name}/label`, form)
+  return res.data
+}
+
+
+export async function createLabelJob(
+  name: string,
+  params: {
+    promptType: string
+    labels?: string[]
+    confidence?: number
+    referImage?: File
+    bboxes?: [number, number, number, number][]
+    vcls?: string[]
+  },
+): Promise<DatasetLabelJobStatus> {
+  const form = new FormData()
+  form.append('prompt_type', params.promptType)
+  form.append('labels', JSON.stringify(params.labels ?? []))
+  form.append('confidence', String(params.confidence ?? 0.5))
+  if (params.referImage) form.append('refer_image', params.referImage)
+  form.append('bboxes', JSON.stringify(params.bboxes ?? []))
+  form.append('vcls', JSON.stringify(params.vcls ?? []))
+  const res = await api.post(`/datasets/${name}/label-jobs`, form)
+  return res.data
+}
+
+export async function getLabelJob(
+  name: string,
+  jobId: string,
+): Promise<DatasetLabelJobStatus> {
+  const res = await api.get(`/datasets/${name}/label-jobs/${jobId}`)
   return res.data
 }
 
@@ -190,6 +242,9 @@ export async function saveStream(
     labels?: string[]
     confidence?: number
     sampleFps?: number
+    referImage?: File
+    bboxes?: [number, number, number, number][]
+    vcls?: string[]
   },
 ): Promise<{ processed: number; results: unknown[] }> {
   const form = new FormData()
@@ -199,6 +254,9 @@ export async function saveStream(
   form.append('labels', JSON.stringify(params.labels ?? []))
   form.append('confidence', String(params.confidence ?? 0.5))
   form.append('sample_fps', String(params.sampleFps ?? 1))
+  if (params.referImage) form.append('refer_image', params.referImage)
+  form.append('bboxes', JSON.stringify(params.bboxes ?? []))
+  form.append('vcls', JSON.stringify(params.vcls ?? []))
   const res = await api.post(`/datasets/${name}/save-stream`, form, {
     timeout: 300_000,
   })
