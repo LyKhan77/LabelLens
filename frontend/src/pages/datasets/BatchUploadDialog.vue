@@ -162,153 +162,175 @@ onUnmounted(stopPolling)
     leave-to-class="opacity-0 scale-[0.98]"
   >
     <div class="dataset-dialog-backdrop" @click.self="close">
-    <section class="dataset-upload-dialog">
-      <header class="px-5 md:px-6 py-5 border-b border-hairline flex items-center justify-between shrink-0 bg-canvas">
-        <div>
-          <h3 class="text-[18px] font-medium text-ink tracking-[-0.3px]">Upload + Auto-Label</h3>
-          <p class="text-[12px] text-ink-mute">Upload data, configure YOLOE grounding, then review results.</p>
-        </div>
-        <button class="w-8 h-8 rounded-(--radius-sm) flex items-center justify-center text-ink-faint hover:bg-canvas-soft hover:text-ink transition-colors cursor-pointer" @click="close">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
-      </header>
-
-      <div class="px-5 md:px-6 py-4 border-b border-hairline flex items-center gap-2 text-[11px] text-ink-mute shrink-0 overflow-x-auto bg-canvas-soft">
-        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'upload' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">1 Upload</span>
-        <span class="h-px w-6 bg-hairline" />
-        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'configure' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">2 Auto-Label</span>
-        <span class="h-px w-6 bg-hairline" />
-        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'progress' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">3 Batch Inference</span>
-        <span class="h-px w-6 bg-hairline" />
-        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'done' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">4 Review</span>
-      </div>
-
-      <div class="min-h-0 overflow-y-auto p-5 md:p-6">
-        <template v-if="phase === 'upload'">
-          <div
-            class="border-2 border-dashed rounded-(--radius-lg) p-8 md:p-10 text-center transition-all duration-200 cursor-pointer bg-canvas"
-            :class="isDragging ? 'border-primary bg-primary/5' : 'border-hairline hover:border-hairline-strong'"
-            @dragover.prevent="isDragging = true"
-            @dragleave="isDragging = false"
-            @drop.prevent="onDrop"
-            @click="($refs.fileInput as HTMLInputElement)?.click()"
-          >
-            <input ref="fileInput" type="file" multiple accept="image/*,video/*" class="hidden" @change="(e) => files.push(...Array.from((e.target as HTMLInputElement).files ?? []))" />
-            <svg class="w-10 h-10 mx-auto mb-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-            <p class="text-[14px] text-ink font-medium">Drop images or one video here</p>
-            <p class="text-[12px] text-ink-mute mt-1">Images are stored raw first. Video is sampled once until EOF.</p>
+      <section class="dataset-upload-dialog">
+        <header class="dataset-modal-header">
+          <div>
+            <h3 class="dataset-modal-title">Upload + Auto-Label</h3>
+            <p class="dataset-modal-copy">Upload data, configure YOLOE grounding, then review results.</p>
           </div>
+          <button class="dataset-modal-close" @click="close" aria-label="Close upload dialog">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </header>
 
-          <div v-if="files.length" class="mt-4 border border-hairline rounded-(--radius-md) divide-y divide-hairline max-h-[180px] overflow-y-auto bg-canvas">
-            <div v-for="(f, i) in files" :key="f.name + i" class="flex items-center justify-between px-3 py-2 text-[12px]">
-              <span class="text-ink-mute truncate">{{ f.name }}</span>
-              <button class="text-ink-faint hover:text-red-500 cursor-pointer" @click="removeFile(i)">Remove</button>
+        <nav class="dataset-upload-steps" aria-label="Auto-label workflow">
+          <span :class="['dataset-upload-step', { 'is-active': phase === 'upload', 'is-done': phase !== 'upload' }]">1 Upload</span>
+          <span :class="['dataset-upload-step', { 'is-active': phase === 'configure', 'is-done': phase === 'progress' || phase === 'done' }]">2 Auto-Label</span>
+          <span :class="['dataset-upload-step', { 'is-active': phase === 'progress', 'is-done': phase === 'done' }]">3 Batch Inference</span>
+          <span :class="['dataset-upload-step', { 'is-active': phase === 'done' }]">4 Review</span>
+        </nav>
+
+        <div class="dataset-modal-body dataset-upload-body">
+          <template v-if="phase === 'upload'">
+            <div
+              class="dataset-dropzone"
+              :class="{ 'is-active': isDragging }"
+              @dragover.prevent="isDragging = true"
+              @dragleave="isDragging = false"
+              @drop.prevent="onDrop"
+              @click="($refs.fileInput as HTMLInputElement)?.click()"
+            >
+              <input ref="fileInput" type="file" multiple accept="image/*,video/*" class="hidden" @change="(e) => files.push(...Array.from((e.target as HTMLInputElement).files ?? []))" />
+              <svg class="w-9 h-9 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+              <div>
+                <p>Drop images or one video here</p>
+                <small>Images are stored raw first. Video is sampled once until EOF.</small>
+              </div>
             </div>
-          </div>
 
-          <label v-if="videoFiles.length" class="block mt-4">
-            <div class="flex justify-between text-[12px] mb-1">
-              <span class="text-ink-mute uppercase tracking-wide">Frame sampling</span>
-              <span class="font-mono text-ink">{{ sampleFps }} fps</span>
-            </div>
-            <input v-model.number="sampleFps" type="range" min="0.5" max="10" step="0.5" class="w-full accent-primary" />
-          </label>
-        </template>
-
-        <template v-else-if="phase === 'configure'">
-          <div class="grid grid-cols-3 gap-2 mb-5 rounded-(--radius-md) border border-hairline bg-canvas-soft p-1">
-            <button v-for="mode in ['free', 'text', 'visual']" :key="mode" class="px-3 py-2 rounded-(--radius-sm) border text-[13px] font-medium capitalize cursor-pointer transition-colors" :class="promptType === mode ? 'border-primary bg-primary text-on-primary shadow-[0_1px_3px_rgba(0,0,0,0.06)]' : 'border-transparent text-ink-mute hover:text-ink hover:bg-canvas'" @click="promptType = mode as 'free' | 'text' | 'visual'">
-              {{ mode }}
-            </button>
-          </div>
-
-          <label v-if="promptType === 'text'" class="block mb-4">
-            <span class="text-[12px] text-ink-mute uppercase tracking-wide">Labels</span>
-            <input v-model="labelsText" class="block w-full mt-1.5 px-3.5 py-2.5 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)] transition-all" placeholder="person, vehicle, defect" />
-          </label>
-
-          <div v-if="promptType === 'visual'" class="mb-4">
-            <div v-if="!referPreview" class="border-2 border-dashed border-hairline rounded-(--radius-lg) p-8 text-center bg-canvas">
-              <p class="text-[13px] text-ink-mute mb-2">Upload reference image for SAVPE visual prompt.</p>
-              <label class="inline-flex px-3 py-2 rounded-(--radius-sm) bg-primary text-on-primary text-[13px] font-medium cursor-pointer hover:bg-primary-deep transition-colors">
-                Browse Reference
-                <input type="file" accept="image/*" class="hidden" @change="(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleReference(f) }" />
-              </label>
-            </div>
-            <div v-else class="flex flex-col lg:flex-row gap-4 items-start">
-              <BBoxAnnotationCanvas :image-src="referPreview" :annotations="visualAnnotations" :max-width="480" @add="visualAnnotations.push($event)" @remove="visualAnnotations.splice($event, 1)" />
-              <div class="w-full lg:flex-1 lg:min-w-[220px] bg-canvas-soft border border-hairline rounded-(--radius-md) p-4">
-                <p class="text-[11px] uppercase tracking-wide text-ink-faint mb-2.5">Annotations ({{ visualAnnotations.length }})</p>
-                <div v-if="!visualAnnotations.length" class="text-[12px] text-ink-faint py-2">Draw bboxes on the image to add annotations.</div>
-                <div v-for="(ann, idx) in visualAnnotations" :key="idx" class="flex items-center gap-2 py-2 border-b border-hairline/50 last:border-b-0">
-                  <span class="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
-                  <span class="text-[12px] font-medium text-ink flex-1">{{ ann.label }}</span>
-                  <button class="text-[11px] text-ink-faint hover:text-ink bg-none border-none cursor-pointer" @click="visualAnnotations.splice(idx, 1)">Remove</button>
+            <div v-if="files.length" class="dataset-upload-files">
+              <div class="dataset-upload-files-header">
+                <span>{{ files.length }} selected</span>
+                <small v-if="hasMixedMedia">Mixed image and video batches are not supported.</small>
+                <small v-else-if="hasTooManyVideos">Only one video can be uploaded per batch.</small>
+                <small v-else>Ready to upload.</small>
+              </div>
+              <div class="dataset-file-list">
+                <div v-for="(f, i) in files" :key="f.name + i" class="dataset-file-row">
+                  <span>{{ f.name }}</span>
+                  <button @click="removeFile(i)">Remove</button>
                 </div>
-                <label class="mt-3 pt-3 border-t border-hairline/50 inline-flex text-[12px] text-primary hover:text-primary-deep cursor-pointer font-medium">
-                  Change reference
+              </div>
+            </div>
+
+            <div v-if="videoFiles.length" class="dataset-panel-block">
+              <div class="dataset-field-row">
+                <span class="dataset-field-label">Frame Sampling</span>
+                <span class="dataset-field-value">{{ sampleFps }} fps</span>
+              </div>
+              <input v-model.number="sampleFps" type="range" min="0.5" max="10" step="0.5" class="dataset-range" />
+            </div>
+          </template>
+
+          <template v-else-if="phase === 'configure'">
+            <div class="dataset-mode-tabs">
+              <button :class="{ 'is-active': promptType === 'free' }" @click="promptType = 'free'">
+                <strong>Free</strong>
+                <small>LRPC vocabulary</small>
+              </button>
+              <button :class="{ 'is-active': promptType === 'text' }" @click="promptType = 'text'">
+                <strong>Text</strong>
+                <small>Comma labels</small>
+              </button>
+              <button :class="{ 'is-active': promptType === 'visual' }" @click="promptType = 'visual'">
+                <strong>Visual</strong>
+                <small>Reference bbox</small>
+              </button>
+            </div>
+
+            <label v-if="promptType === 'text'" class="dataset-field-block">
+              <span class="dataset-field-label">Labels</span>
+              <input v-model="labelsText" class="dataset-text-input" placeholder="person, vehicle, defect" />
+            </label>
+
+            <div v-if="promptType === 'visual'" class="dataset-visual-prompt">
+              <div v-if="!referPreview" class="dataset-reference-empty">
+                <p>Upload a reference image for SAVPE visual prompt.</p>
+                <label class="dataset-primary-button">
+                  Browse Reference
                   <input type="file" accept="image/*" class="hidden" @change="(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleReference(f) }" />
                 </label>
               </div>
+              <div v-else class="dataset-reference-editor">
+                <BBoxAnnotationCanvas :image-src="referPreview" :annotations="visualAnnotations" :max-width="480" @add="visualAnnotations.push($event)" @remove="visualAnnotations.splice($event, 1)" />
+                <aside class="dataset-reference-panel">
+                  <div class="dataset-field-row">
+                    <span class="dataset-field-label">Annotations</span>
+                    <span class="dataset-field-value">{{ visualAnnotations.length }}</span>
+                  </div>
+                  <div v-if="!visualAnnotations.length" class="dataset-empty-note">Draw bboxes on the image to add annotations.</div>
+                  <div v-for="(ann, idx) in visualAnnotations" :key="idx" class="dataset-reference-row">
+                    <span class="dataset-reference-dot" />
+                    <strong>{{ ann.label }}</strong>
+                    <button @click="visualAnnotations.splice(idx, 1)">Remove</button>
+                  </div>
+                  <label class="dataset-reference-change">
+                    Change reference
+                    <input type="file" accept="image/*" class="hidden" @change="(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleReference(f) }" />
+                  </label>
+                </aside>
+              </div>
             </div>
-          </div>
 
-          <label class="block mb-4">
-            <div class="flex justify-between text-[12px] mb-1">
-              <span class="text-ink-mute uppercase tracking-wide">Confidence</span>
-              <span class="font-mono text-ink">{{ Math.round(confidence * 100) }}%</span>
+            <div class="dataset-panel-block">
+              <div class="dataset-field-row">
+                <span class="dataset-field-label">Confidence</span>
+                <span class="dataset-field-value">{{ Math.round(confidence * 100) }}%</span>
+              </div>
+              <input v-model.number="confidence" type="range" min="0.05" max="0.95" step="0.05" class="dataset-range" />
             </div>
-            <input v-model.number="confidence" type="range" min="0.05" max="0.95" step="0.05" class="w-full accent-primary" />
-          </label>
 
-          <div class="rounded-(--radius-md) border border-hairline bg-canvas-soft p-3 text-[12px] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <span class="text-ink-mute">Required model: <span class="text-ink font-medium">{{ requiredModel }}</span></span>
-            <button class="px-3 py-1.5 rounded-(--radius-sm) text-[12px] font-medium cursor-pointer transition-colors" :class="modelReady ? 'bg-primary/15 text-primary' : 'bg-primary text-on-primary hover:bg-primary-deep'" :disabled="loadingModel" @click="loadSelectedModel">
-              {{ modelReady ? 'Model Ready' : loadingModel ? 'Loading...' : 'Load Model' }}
+            <div class="dataset-model-row">
+              <div>
+                <span class="dataset-field-label">Required Model</span>
+                <strong>{{ requiredModel }}</strong>
+              </div>
+              <button class="dataset-secondary-button" :class="{ 'is-ready': modelReady }" :disabled="loadingModel" @click="loadSelectedModel">
+                {{ modelReady ? 'Model Ready' : loadingModel ? 'Loading...' : 'Load Model' }}
+              </button>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="dataset-progress-card">
+              <div class="dataset-progress-preview">
+                <img v-if="job?.current_image_url" :src="job.current_image_url" :alt="job.current_filename || 'Current image'" />
+                <span v-else>Waiting for first frame</span>
+              </div>
+              <div class="dataset-progress-meta">
+                <div class="dataset-progress-bar">
+                  <div :style="{ width: `${progressPercent}%` }" />
+                </div>
+                <div class="dataset-progress-stats">
+                  <span>{{ job?.state || 'queued' }} · {{ job?.processed ?? 0 }} / {{ job?.total ?? 0 }} images</span>
+                  <strong>{{ job?.detections_count ?? 0 }} detections</strong>
+                </div>
+                <p v-if="job?.current_filename">{{ job.current_filename }}</p>
+              </div>
+            </div>
+          </template>
+
+          <p v-if="uploadMessage && phase !== 'upload'" class="dataset-success-message">{{ uploadMessage }}</p>
+          <p v-if="error || inferenceStore.modelError" class="dataset-error-message">{{ error || inferenceStore.modelError }}</p>
+        </div>
+
+        <footer class="dataset-modal-footer is-split">
+          <button class="dataset-secondary-button" @click="phase === 'upload' || phase === 'done' ? close() : phase = 'upload'">
+            {{ phase === 'upload' || phase === 'done' ? 'Close' : 'Back' }}
+          </button>
+          <div class="dataset-footer-actions">
+            <button v-if="phase === 'upload'" class="dataset-primary-button" :disabled="uploading || !files.length" @click="startUpload">
+              {{ uploading ? 'Uploading...' : 'Upload' }}
+            </button>
+            <button v-else-if="phase === 'configure'" class="dataset-primary-button" :disabled="!canStart" @click="startLabeling">
+              Start Labeling
+            </button>
+            <button v-else-if="phase === 'done'" class="dataset-primary-button" @click="close">
+              Review Gallery
             </button>
           </div>
-        </template>
-
-        <template v-else>
-          <div class="rounded-(--radius-lg) border border-hairline overflow-hidden bg-canvas shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-            <div class="aspect-video bg-black flex items-center justify-center overflow-hidden">
-              <img v-if="job?.current_image_url" :src="job.current_image_url" :alt="job.current_filename || 'Current image'" class="w-full h-full object-contain" />
-              <span v-else class="text-[12px] text-white/50">Waiting for first frame</span>
-            </div>
-            <div class="p-4">
-              <div class="h-2 rounded-full bg-ink/10 overflow-hidden mb-3">
-                <div class="h-full bg-primary transition-all" :style="{ width: `${progressPercent}%` }" />
-              </div>
-              <div class="flex flex-wrap items-center justify-between gap-2 text-[12px]">
-                <span class="text-ink-mute">{{ job?.state || 'queued' }} · {{ job?.processed ?? 0 }} / {{ job?.total ?? 0 }} images</span>
-                <span class="font-mono text-ink">{{ job?.detections_count ?? 0 }} detections</span>
-              </div>
-              <p v-if="job?.current_filename" class="mt-2 text-[12px] text-ink-faint truncate">{{ job.current_filename }}</p>
-            </div>
-          </div>
-        </template>
-
-        <p v-if="uploadMessage && phase !== 'upload'" class="mt-4 text-[12px] text-primary">{{ uploadMessage }}</p>
-        <p v-if="error || inferenceStore.modelError" class="mt-4 text-[12px] text-red-500">{{ error || inferenceStore.modelError }}</p>
-      </div>
-
-      <footer class="px-5 md:px-6 py-4 border-t border-hairline flex items-center justify-between shrink-0 bg-canvas">
-        <button class="px-3 py-2 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft cursor-pointer" @click="phase === 'upload' || phase === 'done' ? close() : phase = 'upload'">
-          {{ phase === 'upload' || phase === 'done' ? 'Close' : 'Back' }}
-        </button>
-        <div class="flex gap-2">
-          <button v-if="phase === 'upload'" class="px-4 py-2 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep disabled:opacity-50 cursor-pointer" :disabled="uploading || !files.length" @click="startUpload">
-            {{ uploading ? 'Uploading...' : 'Upload' }}
-          </button>
-          <button v-else-if="phase === 'configure'" class="px-4 py-2 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep disabled:opacity-50 cursor-pointer" :disabled="!canStart" @click="startLabeling">
-            Start Labeling
-          </button>
-          <button v-else-if="phase === 'done'" class="px-4 py-2 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep cursor-pointer" @click="close">
-            Review Gallery
-          </button>
-        </div>
-      </footer>
-    </section>
-  </div>
+        </footer>
+      </section>
+    </div>
   </Transition>
 </template>

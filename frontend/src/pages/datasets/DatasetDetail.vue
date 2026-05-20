@@ -270,19 +270,19 @@ function statusDotClass(status: string) {
 
     <div v-if="totalPages > 1" class="dataset-pager">
       <button
-        class="h-9 px-3.5 text-[12px] rounded-(--radius-sm) border border-hairline bg-canvas text-ink-mute hover:bg-canvas-soft transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        class="dataset-page-nav-button"
         :disabled="store.imagesPage <= 1"
         @click="changePage(store.imagesPage - 1)"
       >Previous</button>
       <button
         v-for="p in pageButtons"
         :key="p"
-        class="w-9 h-9 text-[12px] rounded-(--radius-sm) transition-colors cursor-pointer"
-        :class="p === store.imagesPage ? 'bg-ink text-canvas font-medium' : 'border border-hairline bg-canvas text-ink-mute hover:bg-canvas-soft'"
+        class="dataset-page-button"
+        :class="{ 'is-active': p === store.imagesPage }"
         @click="changePage(p)"
       >{{ p }}</button>
       <button
-        class="h-9 px-3.5 text-[12px] rounded-(--radius-sm) border border-hairline bg-canvas text-ink-mute hover:bg-canvas-soft transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+        class="dataset-page-nav-button"
         :disabled="store.imagesPage >= totalPages"
         @click="changePage(store.imagesPage + 1)"
       >Next</button>

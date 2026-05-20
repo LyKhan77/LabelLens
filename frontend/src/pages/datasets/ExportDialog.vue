@@ -23,73 +23,71 @@ async function doExport() {
 <template>
   <Transition
     enter-active-class="transition ease-out duration-200"
-    enter-from-class="opacity-0"
-    enter-to-class="opacity-100"
+    enter-from-class="opacity-0 scale-[0.98]"
+    enter-to-class="opacity-100 scale-100"
     leave-active-class="transition ease-in duration-150"
-    leave-to-class="opacity-0"
+    leave-to-class="opacity-0 scale-[0.98]"
   >
-    <div class="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" @click.self="emit('close')">
-      <div class="bg-canvas rounded-(--radius-xl) w-full max-w-[400px] border border-hairline shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)]">
-        <div class="flex items-start justify-between p-6 pb-0">
+    <div class="dataset-dialog-backdrop" @click.self="emit('close')">
+      <section class="dataset-export-dialog">
+        <header class="dataset-modal-header">
           <div>
-            <h3 class="text-[18px] font-medium text-ink tracking-[-0.3px]">Export Dataset</h3>
-            <p class="text-[12px] text-ink-mute mt-1">Download annotations for training</p>
+            <h3 class="dataset-modal-title">Export Dataset</h3>
+            <p class="dataset-modal-copy">Download accepted annotations for training.</p>
           </div>
-          <button class="w-8 h-8 rounded-(--radius-sm) flex items-center justify-center text-ink-faint hover:bg-canvas-soft hover:text-ink transition-colors cursor-pointer" @click="emit('close')">
+          <button class="dataset-modal-close" @click="emit('close')" aria-label="Close export dialog">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
-        </div>
+        </header>
 
-        <div class="p-6">
-          <!-- Format selector -->
-          <div class="mb-5">
-            <div class="text-[11px] text-ink-mute uppercase tracking-wide mb-2.5">Format</div>
-            <div class="flex gap-4">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" v-model="format" value="yolo" class="accent-[#3ecf8e]" />
-                <span class="text-[13px] text-ink">YOLO TXT</span>
+        <div class="dataset-modal-body dataset-form-stack">
+          <div>
+            <div class="dataset-field-label">Format</div>
+            <div class="dataset-export-options">
+              <label :class="['dataset-choice-card', { 'is-active': format === 'yolo' }]">
+                <input v-model="format" type="radio" value="yolo" />
+                <span>
+                  <strong>YOLO TXT</strong>
+                  <small>Images, labels, and train/val split.</small>
+                </span>
               </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="radio" v-model="format" value="coco" class="accent-[#3ecf8e]" />
-                <span class="text-[13px] text-ink">COCO JSON</span>
+              <label :class="['dataset-choice-card', { 'is-active': format === 'coco' }]">
+                <input v-model="format" type="radio" value="coco" />
+                <span>
+                  <strong>COCO JSON</strong>
+                  <small>Single annotation file for COCO tooling.</small>
+                </span>
               </label>
             </div>
           </div>
 
-          <!-- Train/val split -->
-          <div class="mb-0">
-            <div class="flex justify-between mb-2">
-              <span class="text-[11px] text-ink-mute uppercase tracking-wide">Train / Val Split</span>
-              <span class="text-[12px] text-ink font-mono">{{ Math.round(split * 100) }} / {{ Math.round((1 - split) * 100) }}</span>
+          <div>
+            <div class="dataset-field-row">
+              <span class="dataset-field-label">Train / Val Split</span>
+              <span class="dataset-field-value">{{ Math.round(split * 100) }} / {{ Math.round((1 - split) * 100) }}</span>
             </div>
             <input
-              type="range"
               v-model.number="split"
+              type="range"
               min="0.7"
               max="0.95"
               step="0.05"
-              class="w-full accent-[#3ecf8e]"
+              class="dataset-range"
             />
           </div>
         </div>
 
-        <!-- Actions -->
-        <div class="flex justify-between px-6 pb-6">
+        <footer class="dataset-modal-footer">
+          <button class="dataset-secondary-button" @click="emit('close')">Cancel</button>
           <button
-            @click="emit('close')"
-            class="px-4 py-2.5 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft transition-colors cursor-pointer"
-          >
-            Cancel
-          </button>
-          <button
-            @click="doExport"
+            class="dataset-primary-button"
             :disabled="exporting"
-            class="px-5 py-2.5 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep disabled:opacity-50 transition-colors cursor-pointer"
+            @click="doExport"
           >
             {{ exporting ? 'Exporting...' : 'Download ZIP' }}
           </button>
-        </div>
-      </div>
+        </footer>
+      </section>
     </div>
   </Transition>
 </template>

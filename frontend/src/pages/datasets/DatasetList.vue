@@ -148,36 +148,36 @@ async function deleteProject(name: string) {
       leave-to-class="opacity-0 scale-[0.98]"
     >
       <div v-if="showCreate" class="dataset-dialog-backdrop" @click.self="showCreate = false">
-        <div class="dataset-create-dialog">
-          <div class="flex items-start justify-between p-6 pb-0">
+        <section class="dataset-create-dialog">
+          <header class="dataset-modal-header">
             <div>
-              <h3 class="text-[18px] font-medium text-ink tracking-[-0.3px]">New Dataset</h3>
-              <p class="text-[12px] text-ink-mute mt-1">Create a new labeling project</p>
+              <h3 class="dataset-modal-title">New Dataset</h3>
+              <p class="dataset-modal-copy">Create a new labeling project.</p>
             </div>
-            <button class="w-8 h-8 rounded-(--radius-sm) flex items-center justify-center text-ink-faint hover:bg-canvas-soft hover:text-ink transition-colors cursor-pointer" @click="showCreate = false">
+            <button class="dataset-modal-close" @click="showCreate = false" aria-label="Close new dataset dialog">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
-          </div>
+          </header>
 
-          <div class="p-6">
-            <label class="block mb-4">
-              <span class="text-[11px] text-ink-mute uppercase tracking-wide">Name</span>
+          <div class="dataset-modal-body dataset-form-stack">
+            <label class="dataset-field-block">
+              <span class="dataset-field-label">Name</span>
               <input v-model="newName" placeholder="product-defects" class="dataset-text-input" />
             </label>
 
-            <label class="block">
-              <span class="text-[11px] text-ink-mute uppercase tracking-wide">Classes (optional)</span>
+            <label class="dataset-field-block">
+              <span class="dataset-field-label">Classes (optional)</span>
               <input v-model="newClasses" placeholder="scratch, dent, crack" class="dataset-text-input" />
             </label>
           </div>
 
-          <div class="flex justify-between px-6 pb-6">
-            <button class="px-4 py-2.5 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft transition-colors cursor-pointer" @click="showCreate = false">Cancel</button>
-            <button class="dataset-primary-button px-5" :disabled="creating || !newName.trim()" @click="createProject">
+          <footer class="dataset-modal-footer">
+            <button class="dataset-secondary-button" @click="showCreate = false">Cancel</button>
+            <button class="dataset-primary-button" :disabled="creating || !newName.trim()" @click="createProject">
               {{ creating ? 'Creating...' : 'Create' }}
             </button>
-          </div>
-        </div>
+          </footer>
+        </section>
       </div>
     </Transition>
   </section>
