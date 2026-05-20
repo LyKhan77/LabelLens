@@ -96,8 +96,15 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-3 md:p-6" @click.self="closePanel">
-    <section class="w-full max-w-[1280px] max-h-[92vh] bg-canvas border border-hairline rounded-(--radius-xl) shadow-[0_16px_48px_rgba(0,0,0,0.18)] overflow-hidden flex flex-col">
+  <Transition
+    enter-active-class="transition ease-out duration-200"
+    enter-from-class="opacity-0"
+    enter-to-class="opacity-100"
+    leave-active-class="transition ease-in duration-150"
+    leave-to-class="opacity-0"
+  >
+    <div v-if="true" class="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 md:p-6" @click.self="closePanel">
+    <section class="w-full max-w-[1280px] max-h-[92vh] bg-canvas border border-hairline rounded-(--radius-xl) shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] overflow-hidden flex flex-col">
       <header class="h-12 px-4 border-b border-hairline flex items-center justify-between shrink-0">
         <div class="min-w-0">
           <p class="text-[13px] font-medium text-ink truncate">{{ store.currentAnnotations?.filename || store.selectedImage }}</p>
@@ -110,7 +117,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
         </button>
       </header>
 
-      <div class="min-h-0 flex-1 grid grid-cols-1 lg:grid-cols-[1fr_340px]">
+      <div class="min-h-0 flex-1 grid grid-cols-1 lg:grid-cols-[1fr_360px]">
         <main class="min-h-0 bg-canvas-soft p-3 md:p-5 flex items-center justify-center overflow-auto">
           <div class="relative w-full max-w-[920px] max-h-full bg-black rounded-(--radius-lg) overflow-hidden" :style="frameStyle">
             <img v-if="imageSrc" :src="imageSrc" :alt="store.currentAnnotations?.filename" class="absolute inset-0 w-full h-full object-contain" />
@@ -154,34 +161,34 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
         </main>
 
         <aside class="min-h-0 border-t lg:border-t-0 lg:border-l border-hairline bg-canvas flex flex-col">
-          <div class="p-3 border-b border-hairline">
-            <div class="grid grid-cols-3 gap-1.5">
+          <div class="p-4 border-b border-hairline">
+            <div class="grid grid-cols-3 gap-2">
               <button
-                class="px-2 py-1.5 text-[11px] rounded-(--radius-sm) transition-colors cursor-pointer"
+                class="px-3 py-2 text-[11px] font-medium rounded-(--radius-sm) transition-colors cursor-pointer"
                 :class="store.overlayState.showBbox ? 'bg-primary text-on-primary' : 'bg-canvas-soft text-ink-mute'"
                 @click="store.toggleOverlay('showBbox')"
-              >BBox</button>
+              >BBoxes</button>
               <button
-                class="px-2 py-1.5 text-[11px] rounded-(--radius-sm) transition-colors cursor-pointer"
+                class="px-3 py-2 text-[11px] font-medium rounded-(--radius-sm) transition-colors cursor-pointer"
                 :class="store.overlayState.showLabels ? 'bg-primary text-on-primary' : 'bg-canvas-soft text-ink-mute'"
                 @click="store.toggleOverlay('showLabels')"
               >Labels</button>
               <button
-                class="px-2 py-1.5 text-[11px] rounded-(--radius-sm) transition-colors cursor-pointer"
+                class="px-3 py-2 text-[11px] font-medium rounded-(--radius-sm) transition-colors cursor-pointer"
                 :class="store.overlayState.showMasks ? 'bg-primary text-on-primary' : 'bg-canvas-soft text-ink-mute'"
                 @click="store.toggleOverlay('showMasks')"
               >Masks</button>
             </div>
           </div>
 
-          <div v-if="classes.length" class="p-3 border-b border-hairline">
-            <p class="text-[11px] uppercase tracking-wide text-ink-faint mb-2">Classes</p>
-            <div class="flex flex-wrap gap-1.5">
+          <div v-if="classes.length" class="p-4 border-b border-hairline">
+            <p class="text-[11px] uppercase tracking-wide text-ink-faint mb-2.5">Classes</p>
+            <div class="flex flex-wrap gap-2">
               <button
                 v-for="([cls, count], i) in classes"
                 :key="cls"
-                class="inline-flex items-center gap-1.5 px-2 py-1 rounded-(--radius-sm) bg-canvas-soft text-[11px] transition-opacity cursor-pointer"
-                :style="{ opacity: isClassHidden(cls) ? 0.38 : 1 }"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-canvas-soft text-[11px] transition-opacity cursor-pointer"
+                :style="{ opacity: isClassHidden(cls) ? 0.35 : 1 }"
                 @click="store.toggleClassVisibility(cls)"
               >
                 <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: detColor(i) }" />
@@ -195,24 +202,24 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
             <div
               v-for="det in detections"
               :key="det.id"
-              class="grid grid-cols-[24px_1fr_auto_auto] items-center gap-2 px-3 py-2 border-b border-hairline/60"
-              :class="{ 'opacity-45': !det.accepted }"
+              class="grid grid-cols-[28px_1fr_auto_auto] items-center gap-3 px-4 py-3 border-b border-hairline/50"
+              :class="{ 'opacity-40': !det.accepted }"
             >
               <button class="p-1 rounded hover:bg-canvas-soft cursor-pointer" @click="store.toggleDetectionVisibility(det.id)">
                 <svg v-if="isVisible(det)" class="w-3.5 h-3.5 text-ink-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                 <svg v-else class="w-3.5 h-3.5 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
               </button>
               <div class="min-w-0">
-                <p class="text-[12px] font-medium truncate" :class="det.accepted ? 'text-ink' : 'text-ink-faint line-through'">{{ det.label }}</p>
+                <p class="text-[13px] font-medium truncate" :class="det.accepted ? 'text-ink' : 'text-ink-faint line-through'">{{ det.label }}</p>
                 <p class="text-[10px] text-ink-faint font-mono truncate">{{ det.box.map((v) => Math.round(v)).join(', ') }}</p>
               </div>
               <span class="text-[11px] text-ink-mute font-mono">{{ (det.confidence * 100).toFixed(0) }}%</span>
               <button
-                class="w-7 h-7 rounded-(--radius-sm) text-[12px] font-medium transition-colors cursor-pointer"
-                :class="det.accepted ? 'bg-primary/15 text-primary' : 'bg-red-500/15 text-red-400'"
+                class="w-8 h-8 rounded-(--radius-sm) text-[12px] font-semibold transition-colors cursor-pointer"
+                :class="det.accepted ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'bg-red-500/15 text-red-400 hover:bg-red-500/25'"
                 @click="toggleAccept(det)"
               >
-                {{ det.accepted ? '✓' : '✕' }}
+                {{ det.accepted ? 'OK' : 'NO' }}
               </button>
             </div>
 
@@ -221,12 +228,14 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
             </div>
           </div>
 
-          <footer class="p-3 border-t border-hairline flex items-center justify-between">
-            <button class="px-2 py-1 text-[12px] text-ink-mute hover:text-ink cursor-pointer" @click="navigatePrev">Previous</button>
-            <button class="px-2 py-1 text-[12px] text-ink-mute hover:text-ink cursor-pointer" @click="navigateNext">Next</button>
+          <footer class="p-4 border-t border-hairline flex items-center justify-between">
+            <button class="px-3 py-1.5 text-[12px] text-ink-mute hover:text-ink rounded-(--radius-sm) hover:bg-canvas-soft transition-colors cursor-pointer" @click="navigatePrev">← Previous</button>
+            <span class="text-[11px] text-ink-faint font-mono hidden sm:inline">Esc close · ← → navigate</span>
+            <button class="px-3 py-1.5 text-[12px] text-ink-mute hover:text-ink rounded-(--radius-sm) hover:bg-canvas-soft transition-colors cursor-pointer" @click="navigateNext">Next →</button>
           </footer>
         </aside>
       </div>
     </section>
   </div>
+  </Transition>
 </template>

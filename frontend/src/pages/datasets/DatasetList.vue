@@ -39,7 +39,7 @@ async function deleteProject(name: string) {
 
 <template>
   <section class="w-full max-w-[1180px] mx-auto">
-    <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mb-(--spacing-xl)">
+    <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between mb-8">
       <div>
         <p class="text-[12px] uppercase tracking-wide text-ink-faint mb-2">Dataset Manager</p>
         <h1 class="text-[32px] leading-tight font-medium tracking-[-0.72px] text-ink">Review-ready datasets for YOLO fine-tuning</h1>
@@ -53,15 +53,15 @@ async function deleteProject(name: string) {
       </button>
     </div>
 
-    <div v-if="store.projects.length" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+    <div v-if="store.projects.length" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
       <button
         v-for="p in store.projects"
         :key="p.name"
-        class="group relative text-left p-4 rounded-(--radius-lg) border border-hairline bg-canvas hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all cursor-pointer"
+        class="group relative text-left p-6 rounded-(--radius-lg) border border-hairline bg-canvas hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all cursor-pointer"
         @click="openProject(p.name)"
       >
         <button
-          class="absolute top-3 right-3 p-1.5 rounded-(--radius-sm) opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-ink-faint hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
+          class="absolute top-4 right-4 p-1.5 rounded-(--radius-sm) opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-ink-faint hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
           @click.stop="deleteProject(p.name)"
           title="Delete dataset"
         >
@@ -71,15 +71,15 @@ async function deleteProject(name: string) {
           </svg>
         </button>
 
-        <div class="w-9 h-9 rounded-(--radius-md) border border-hairline bg-canvas-soft flex items-center justify-center mb-4">
+        <div class="w-10 h-10 rounded-(--radius-md) border border-hairline bg-canvas-soft flex items-center justify-center mb-4">
           <svg class="w-5 h-5 text-ink-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></svg>
         </div>
         <h2 class="text-[16px] font-medium text-ink truncate pr-8">{{ p.name }}</h2>
-        <p class="text-[12px] text-ink-mute mt-1">{{ p.stats.total_images }} images · {{ p.stats.total_annotations }} annotations</p>
-        <div class="flex flex-wrap gap-1.5 mt-4">
-          <span class="text-[11px] px-2 py-1 rounded-(--radius-sm) bg-primary/10 text-primary">{{ p.stats.accepted }} accepted</span>
-          <span v-if="p.stats.rejected" class="text-[11px] px-2 py-1 rounded-(--radius-sm) bg-red-500/10 text-red-400">{{ p.stats.rejected }} rejected</span>
-          <span v-if="p.stats.classes.length" class="text-[11px] px-2 py-1 rounded-(--radius-sm) bg-canvas-soft text-ink-mute">{{ p.stats.classes.length }} classes</span>
+        <p class="text-[13px] text-ink-mute mt-1">{{ p.stats.total_images }} images · {{ p.stats.total_annotations }} annotations</p>
+        <div class="flex flex-wrap gap-2 mt-4">
+          <span class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-primary/10 text-primary">{{ p.stats.accepted }} accepted</span>
+          <span v-if="p.stats.rejected" class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-red-500/10 text-red-400">{{ p.stats.rejected }} rejected</span>
+          <span v-if="p.stats.classes.length" class="text-[11px] px-2.5 py-1 rounded-(--radius-sm) bg-canvas-soft text-ink-mute">{{ p.stats.classes.length }} classes</span>
         </div>
       </button>
     </div>
@@ -95,27 +95,45 @@ async function deleteProject(name: string) {
       </button>
     </div>
 
-    <div v-if="showCreate" class="fixed inset-0 bg-black/45 flex items-center justify-center z-50 p-3" @click.self="showCreate = false">
-      <div class="bg-canvas rounded-(--radius-xl) p-5 w-full max-w-[420px] border border-hairline shadow-[0_16px_48px_rgba(0,0,0,0.16)]">
-        <h3 class="text-[16px] font-medium text-ink mb-4">New Dataset</h3>
+    <Transition
+      enter-active-class="transition ease-out duration-200"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition ease-in duration-150"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="showCreate" class="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" @click.self="showCreate = false">
+        <div class="bg-canvas rounded-(--radius-xl) w-full max-w-[440px] border border-hairline shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)]">
+          <div class="flex items-start justify-between p-6 pb-0">
+            <div>
+              <h3 class="text-[18px] font-medium text-ink tracking-[-0.3px]">New Dataset</h3>
+              <p class="text-[12px] text-ink-mute mt-1">Create a new labeling project</p>
+            </div>
+            <button class="w-8 h-8 rounded-(--radius-sm) flex items-center justify-center text-ink-faint hover:bg-canvas-soft hover:text-ink transition-colors cursor-pointer" @click="showCreate = false">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
 
-        <label class="block mb-3">
-          <span class="text-[11px] text-ink-mute uppercase tracking-wide">Name</span>
-          <input v-model="newName" placeholder="product-defects" class="block w-full mt-1 px-3 py-2 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary" />
-        </label>
+          <div class="p-6">
+            <label class="block mb-4">
+              <span class="text-[11px] text-ink-mute uppercase tracking-wide">Name</span>
+              <input v-model="newName" placeholder="product-defects" class="block w-full mt-1.5 px-3.5 py-2.5 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary transition-colors" />
+            </label>
 
-        <label class="block mb-4">
-          <span class="text-[11px] text-ink-mute uppercase tracking-wide">Classes (optional)</span>
-          <input v-model="newClasses" placeholder="scratch, dent, crack" class="block w-full mt-1 px-3 py-2 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary" />
-        </label>
+            <label class="block">
+              <span class="text-[11px] text-ink-mute uppercase tracking-wide">Classes (optional)</span>
+              <input v-model="newClasses" placeholder="scratch, dent, crack" class="block w-full mt-1.5 px-3.5 py-2.5 text-[13px] bg-canvas border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary transition-colors" />
+            </label>
+          </div>
 
-        <div class="flex gap-2 justify-end">
-          <button class="px-3 py-2 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft cursor-pointer" @click="showCreate = false">Cancel</button>
-          <button class="px-3 py-2 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep disabled:opacity-50 cursor-pointer" :disabled="creating || !newName.trim()" @click="createProject">
-            {{ creating ? 'Creating...' : 'Create' }}
-          </button>
+          <div class="flex justify-between px-6 pb-6">
+            <button class="px-4 py-2.5 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft transition-colors cursor-pointer" @click="showCreate = false">Cancel</button>
+            <button class="px-5 py-2.5 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep disabled:opacity-50 transition-colors cursor-pointer" :disabled="creating || !newName.trim()" @click="createProject">
+              {{ creating ? 'Creating...' : 'Create' }}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
   </section>
 </template>

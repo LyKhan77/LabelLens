@@ -154,29 +154,36 @@ onUnmounted(stopPolling)
 </script>
 
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3" @click.self="close">
-    <section class="bg-canvas rounded-(--radius-xl) w-full max-w-[760px] border border-hairline shadow-[0_16px_48px_rgba(0,0,0,0.18)] max-h-[92vh] overflow-hidden flex flex-col">
-      <header class="px-5 py-4 border-b border-hairline flex items-center justify-between shrink-0">
+  <Transition
+    enter-active-class="transition ease-out duration-200"
+    enter-from-class="opacity-0"
+    enter-to-class="opacity-100"
+    leave-active-class="transition ease-in duration-150"
+    leave-to-class="opacity-0"
+  >
+    <div class="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4" @click.self="close">
+    <section class="bg-canvas rounded-(--radius-xl) w-full max-w-[760px] border border-hairline shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] max-h-[92vh] overflow-hidden flex flex-col">
+      <header class="px-6 py-5 border-b border-hairline flex items-center justify-between shrink-0">
         <div>
           <h3 class="text-[18px] font-medium text-ink tracking-[-0.3px]">Upload + Auto-Label</h3>
           <p class="text-[12px] text-ink-mute">Upload data, configure YOLOE grounding, then review results.</p>
         </div>
-        <button class="p-1.5 rounded-(--radius-sm) hover:bg-canvas-soft cursor-pointer" @click="close">
-          <svg class="w-4 h-4 text-ink-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        <button class="w-8 h-8 rounded-(--radius-sm) flex items-center justify-center text-ink-faint hover:bg-canvas-soft hover:text-ink transition-colors cursor-pointer" @click="close">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
       </header>
 
-      <div class="px-5 py-3 border-b border-hairline flex items-center gap-2 text-[11px] text-ink-mute shrink-0 overflow-x-auto">
-        <span class="px-2 py-1 rounded-(--radius-sm)" :class="phase === 'upload' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">1 Upload</span>
+      <div class="px-6 py-3 border-b border-hairline flex items-center gap-2 text-[11px] text-ink-mute shrink-0 overflow-x-auto">
+        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'upload' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">1 Upload</span>
         <span class="h-px w-6 bg-hairline" />
-        <span class="px-2 py-1 rounded-(--radius-sm)" :class="phase === 'configure' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">2 Auto-Label</span>
+        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'configure' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">2 Auto-Label</span>
         <span class="h-px w-6 bg-hairline" />
-        <span class="px-2 py-1 rounded-(--radius-sm)" :class="phase === 'progress' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">3 Batch Inference</span>
+        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'progress' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">3 Batch Inference</span>
         <span class="h-px w-6 bg-hairline" />
-        <span class="px-2 py-1 rounded-(--radius-sm)" :class="phase === 'done' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">4 Review</span>
+        <span class="px-3 py-1.5 rounded-(--radius-sm)" :class="phase === 'done' ? 'bg-primary text-on-primary' : 'bg-canvas-soft'">4 Review</span>
       </div>
 
-      <div class="min-h-0 overflow-y-auto p-5">
+      <div class="min-h-0 overflow-y-auto p-6">
         <template v-if="phase === 'upload'">
           <div
             class="border-2 border-dashed rounded-(--radius-lg) p-8 text-center transition-colors cursor-pointer"
@@ -228,15 +235,21 @@ onUnmounted(stopPolling)
                 <input type="file" accept="image/*" class="hidden" @change="(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleReference(f) }" />
               </label>
             </div>
-            <div v-else>
-              <BBoxAnnotationCanvas :image-src="referPreview" :annotations="visualAnnotations" @add="visualAnnotations.push($event)" @remove="visualAnnotations.splice($event, 1)" />
-              <div v-if="visualAnnotations.length" class="mt-2 flex flex-wrap gap-1.5">
-                <span v-for="(ann, idx) in visualAnnotations" :key="idx" class="px-2 py-1 rounded-(--radius-sm) bg-canvas-soft text-[11px] text-ink-mute">{{ ann.label }}</span>
+            <div v-else class="flex gap-4 items-start">
+              <BBoxAnnotationCanvas :image-src="referPreview" :annotations="visualAnnotations" :max-width="480" @add="visualAnnotations.push($event)" @remove="visualAnnotations.splice($event, 1)" />
+              <div class="flex-1 min-w-[180px] bg-canvas border border-hairline rounded-(--radius-md) p-4">
+                <p class="text-[11px] uppercase tracking-wide text-ink-faint mb-2.5">Annotations ({{ visualAnnotations.length }})</p>
+                <div v-if="!visualAnnotations.length" class="text-[12px] text-ink-faint py-2">Draw bboxes on the image to add annotations.</div>
+                <div v-for="(ann, idx) in visualAnnotations" :key="idx" class="flex items-center gap-2 py-2 border-b border-hairline/50 last:border-b-0">
+                  <span class="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
+                  <span class="text-[12px] font-medium text-ink flex-1">{{ ann.label }}</span>
+                  <button class="text-[11px] text-red-400 hover:text-red-500 bg-none border-none cursor-pointer" @click="visualAnnotations.splice(idx, 1)">✕</button>
+                </div>
+                <label class="mt-3 pt-3 border-t border-hairline/50 inline-flex text-[12px] text-primary hover:text-primary-deep cursor-pointer font-medium">
+                  Change reference
+                  <input type="file" accept="image/*" class="hidden" @change="(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleReference(f) }" />
+                </label>
               </div>
-              <label class="mt-2 inline-flex text-[12px] text-ink-mute hover:text-ink cursor-pointer">
-                Change reference
-                <input type="file" accept="image/*" class="hidden" @change="(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleReference(f) }" />
-              </label>
             </div>
           </div>
 
@@ -279,7 +292,7 @@ onUnmounted(stopPolling)
         <p v-if="error || inferenceStore.modelError" class="mt-4 text-[12px] text-red-500">{{ error || inferenceStore.modelError }}</p>
       </div>
 
-      <footer class="px-5 py-4 border-t border-hairline flex items-center justify-between shrink-0">
+      <footer class="px-6 py-5 border-t border-hairline flex items-center justify-between shrink-0">
         <button class="px-3 py-2 text-[13px] text-ink-mute rounded-(--radius-sm) hover:bg-canvas-soft cursor-pointer" @click="phase === 'upload' || phase === 'done' ? close() : phase = 'upload'">
           {{ phase === 'upload' || phase === 'done' ? 'Close' : 'Back' }}
         </button>
@@ -297,4 +310,5 @@ onUnmounted(stopPolling)
       </footer>
     </section>
   </div>
+  </Transition>
 </template>

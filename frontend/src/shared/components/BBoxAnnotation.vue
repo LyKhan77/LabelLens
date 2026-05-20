@@ -2,10 +2,13 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import type { BBoxAnnotation } from '../types'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   imageSrc: string
   annotations: BBoxAnnotation[]
-}>()
+  maxWidth?: number
+}>(), {
+  maxWidth: 480,
+})
 
 const emit = defineEmits<{
   add: [annotation: BBoxAnnotation]
@@ -202,7 +205,7 @@ onUnmounted(() => { imageEl = null })
 </script>
 
 <template>
-  <div ref="container" class="relative">
+  <div ref="container" class="relative" :style="{ maxWidth: `${props.maxWidth}px` }">
     <canvas
       ref="canvas"
       class="w-full rounded-(--radius-md) border border-hairline cursor-crosshair"

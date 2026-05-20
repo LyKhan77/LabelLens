@@ -9,9 +9,43 @@ const store = useDatasetStore()
 const showExport = ref(false)
 const showBatch = ref(false)
 const showReview = ref(false)
+const galleryFilter = ref<'all' | 'review' | 'accepted' | 'unlabeled'>('all')
+const gallerySearch = ref('')
 
 const project = computed(() => store.currentProjectData)
 const totalPages = computed(() => Math.ceil(store.imagesTotal / store.imagesLimit))
+
+const filteredImages = computed(() => {
+  let list = store.images
+  if (galleryFilter.value !== 'all') {
+    list = list.filter((img) => img.status === galleryFilter.value)
+  }
+  if (gallerySearch.value.trim()) {
+    const q = gallerySearch.value.trim().toLowerCase()
+    list = list.filter((img) =>
+      img.filename.toLowerCase().includes(q) ||
+      (img.source || '').toLowerCase().includes(q),
+    )
+  }
+  return list
+})
+
+const metrics = computed(() => {
+  const imgs = store.images
+  const totalAnnotations = imgs.reduce((sum, img) => sum + img.accepted + img.rejected, 0)
+  const totalAccepted = imgs.reduce((sum, img) => sum + img.accepted, 0)
+  const reviewCount = imgs.filter((img) => img.status === 'review').length
+  const allClasses = new Set<string>()
+  const p = project.value
+  if (p?.stats.classes) p.stats.classes.forEach((c) => allClasses.add(c))
+  return {
+    totalImages: imgs.length,
+    totalAnnotations,
+    acceptRate: totalAnnotations > 0 ? Math.round((totalAccepted / totalAnnotations) * 100) : 0,
+    reviewQueue: reviewCount,
+    classes: allClasses.size,
+  }
+})
 
 function goBack() {
   store.currentProject = null
@@ -79,21 +113,64 @@ function statusLabel(status: string) {
       </div>
     </div>
 
-    <div v-if="store.images.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
+    <!-- Metrics Row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div class="border border-hairline rounded-(--radius-md) p-5 bg-canvas border-l-3 border-l-primary">
+        <label class="block text-[11px] text-ink-faint uppercase tracking-wide font-medium mb-1">Total Images</label>
+        <strong class="block text-[28px] font-bold tracking-[-0.02em] text-ink">{{ metrics.totalImages }}</strong>
+        <small class="block text-[12px] text-ink-mute mt-1">{{ project?.stats.total_images ?? 0 }} in project</small>
+      </div>
+      <div class="border border-hairline rounded-(--radius-md) p-5 bg-canvas border-l-3 border-l-blue-500">
+        <label class="block text-[11px] text-ink-faint uppercase tracking-wide font-medium mb-1">Annotations</label>
+        <strong class="block text-[28px] font-bold tracking-[-0.02em] text-ink">{{ metrics.totalAnnotations }}</strong>
+        <small class="block text-[12px] text-ink-mute mt-1">{{ metrics.acceptRate }}% approved</small>
+      </div>
+      <div class="border border-hairline rounded-(--radius-md) p-5 bg-canvas border-l-3 border-l-amber-400">
+        <label class="block text-[11px] text-ink-faint uppercase tracking-wide font-medium mb-1">Review Queue</label>
+        <strong class="block text-[28px] font-bold tracking-[-0.02em] text-amber-500">{{ metrics.reviewQueue }}</strong>
+        <small class="block text-[12px] text-ink-mute mt-1">Needs verification</small>
+      </div>
+      <div class="border border-hairline rounded-(--radius-md) p-5 bg-canvas">
+        <label class="block text-[11px] text-ink-faint uppercase tracking-wide font-medium mb-1">Classes</label>
+        <strong class="block text-[28px] font-bold tracking-[-0.02em] text-primary">{{ metrics.classes }}</strong>
+        <small class="block text-[12px] text-ink-mute mt-1">{{ (project?.stats.classes ?? []).join(', ') || '—' }}</small>
+      </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="bg-canvas border border-hairline rounded-(--radius-md) p-3 md:p-4 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center mb-6">
+      <div class="relative flex-1">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+        <input v-model="gallerySearch" type="text" placeholder="Filter by filename..." class="w-full h-9 pl-9 pr-3 text-[13px] bg-canvas-soft border border-hairline rounded-(--radius-sm) text-ink focus:outline-none focus:border-primary transition-colors" />
+      </div>
+      <div class="flex border border-hairline rounded-(--radius-sm) overflow-hidden bg-canvas-soft p-0.5 shrink-0">
+        <button
+          v-for="f in (['all', 'review', 'accepted', 'unlabeled'] as const)"
+          :key="f"
+          class="px-3 py-1.5 text-[12px] font-medium rounded cursor-pointer transition-colors"
+          :class="galleryFilter === f ? 'bg-canvas text-ink shadow-sm' : 'text-ink-mute hover:text-ink'"
+          @click="galleryFilter = f"
+        >
+          {{ f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1) }}
+        </button>
+      </div>
+    </div>
+
+    <div v-if="store.images.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
       <button
-        v-for="img in store.images"
+        v-for="img in filteredImages"
         :key="img.img_id"
-        class="group text-left rounded-(--radius-md) border border-hairline bg-canvas overflow-hidden hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all cursor-pointer"
+        class="group text-left rounded-(--radius-md) border border-hairline bg-canvas overflow-hidden hover:border-hairline-strong hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all cursor-pointer"
         @click="selectImage(img.img_id)"
       >
-        <div class="relative aspect-[4/3] bg-canvas-soft overflow-hidden">
+        <div class="relative aspect-4/3 bg-canvas-soft overflow-hidden">
           <img
             :src="img.image_url"
             :alt="img.filename"
             loading="lazy"
-            class="absolute inset-0 w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+            class="absolute inset-0 w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
           />
-          <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/55 to-transparent" />
+          <div class="absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-black/55 to-transparent" />
           <span
             class="absolute top-2 left-2 px-1.5 py-0.5 rounded-(--radius-xs) text-[10px] font-medium border backdrop-blur-sm"
             :class="[
@@ -109,7 +186,7 @@ function statusLabel(status: string) {
             {{ img.accepted + img.rejected }} ann
           </span>
         </div>
-        <div class="p-2 min-w-0">
+        <div class="p-3 min-w-0">
           <p class="text-[12px] font-medium text-ink truncate">{{ img.filename }}</p>
           <p class="text-[10px] text-ink-faint truncate">
             {{ img.source || 'image' }}<template v-if="img.width && img.height"> · {{ img.width }}×{{ img.height }}</template>
