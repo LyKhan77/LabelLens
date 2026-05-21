@@ -311,14 +311,12 @@
     border-bottom: 1px solid var(--color-hairline);
   }
 
-  .dataset-thumbnail img {
+  .dataset-thumbnail .dataset-media-stage {
     width: 100%;
     height: 100%;
-    object-fit: cover;
-    transition: transform 0.3s ease;
   }
 
-  .dataset-gallery-card:hover .dataset-thumbnail img {
+  .dataset-gallery-card:hover .dataset-thumbnail .dataset-media-plane {
     transform: scale(1.035);
   }
 
@@ -339,6 +337,162 @@
 
   .dataset-card-bbox.secondary {
     border-color: rgba(255, 255, 255, 0.8);
+  }
+
+  .dataset-media-stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--color-canvas-night);
+    isolation: isolate;
+  }
+
+  .dataset-media-plane {
+    position: absolute;
+    overflow: visible;
+    border-radius: inherit;
+    transform-origin: center;
+    transition: transform 0.3s ease;
+  }
+
+  .dataset-media-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+  }
+
+  .dataset-media-mask-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .dataset-media-box {
+    position: absolute;
+    border: 1.5px solid var(--color-primary);
+    border-radius: 2px;
+    pointer-events: none;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .dataset-media-box.is-rejected {
+    opacity: 0.35;
+  }
+
+  .dataset-media-label {
+    position: absolute;
+    left: 0;
+    max-width: min(220px, calc(100% + 140px));
+    overflow: hidden;
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: white;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dataset-card-select,
+  .dataset-card-delete {
+    position: absolute;
+    z-index: 3;
+  }
+
+  .dataset-card-select {
+    top: 10px;
+    right: 44px;
+    width: 26px;
+    height: 26px;
+    cursor: pointer;
+  }
+
+  .dataset-card-select input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .dataset-card-select span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(4px);
+  }
+
+  .dataset-card-select input:checked + span {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    box-shadow: inset 0 0 0 5px var(--color-primary), inset 0 0 0 7px var(--color-on-primary);
+  }
+
+  .dataset-card-delete {
+    top: 10px;
+    right: 10px;
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgba(255, 255, 255, 0.38);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.42);
+    color: white;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+  }
+
+  .dataset-gallery-card:hover .dataset-card-delete,
+  .dataset-gallery-card:focus-within .dataset-card-delete,
+  .dataset-gallery-card.is-selected .dataset-card-delete {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .dataset-card-delete:hover {
+    background: rgba(0, 0, 0, 0.68);
+  }
+
+  .dataset-gallery-card.is-selected {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(62, 207, 142, 0.18), 0 8px 24px rgba(0, 0, 0, 0.08);
+  }
+
+  .dataset-gallery-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .dataset-delete-selected-button {
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .dataset-delete-selected-button:hover:not(:disabled) {
+    border-color: var(--color-hairline-strong);
+    background: var(--color-canvas-soft);
   }
 
   .dataset-status-badge,
@@ -866,6 +1020,22 @@
   .dataset-review-nav button:disabled {
     cursor: not-allowed;
     opacity: 0.42;
+  }
+
+  .dataset-review-delete-button {
+    color: var(--color-ink);
+  }
+
+  .dataset-review-confirm {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.28);
+    backdrop-filter: blur(5px);
   }
 
   .dataset-review-index {
@@ -1596,6 +1766,100 @@
     font-size: 12px;
     font-weight: 400;
     white-space: nowrap;
+  }
+
+  .dataset-progress-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+  }
+
+  .dataset-progress-header div {
+    min-width: 0;
+  }
+
+  .dataset-progress-header strong {
+    display: block;
+    color: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+
+  .dataset-progress-header span {
+    display: block;
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--color-ink-mute);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .dataset-progress-log {
+    max-height: 170px;
+    overflow-y: auto;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+  }
+
+  .dataset-progress-log-row {
+    min-height: 38px;
+    padding: 8px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-hairline) 70%, transparent);
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .dataset-progress-log-row:last-child {
+    border-bottom: 0;
+  }
+
+  .dataset-progress-log-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--color-ink-faint);
+  }
+
+  .dataset-progress-log-row.is-running .dataset-progress-log-dot {
+    background: var(--color-primary);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  .dataset-progress-log-row.is-done .dataset-progress-log-dot {
+    background: var(--color-primary);
+  }
+
+  .dataset-progress-log-row.is-failed .dataset-progress-log-dot {
+    background: var(--color-ink);
+  }
+
+  .dataset-progress-log-row strong,
+  .dataset-progress-log-row small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dataset-progress-log-row strong {
+    color: var(--color-ink);
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .dataset-progress-log-row small,
+  .dataset-progress-log-row em {
+    color: var(--color-ink-mute);
+    font-size: 11px;
+    font-style: normal;
   }
 
   .dataset-success-message,

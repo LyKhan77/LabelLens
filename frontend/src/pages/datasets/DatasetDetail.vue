@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import ReviewPanel from './ReviewPanel.vue'
 import ExportDialog from './ExportDialog.vue'
 import BatchUploadDialog from './BatchUploadDialog.vue'
+import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
 
 const store = useDatasetStore()
 const showExport = ref(false)
@@ -11,12 +12,18 @@ const showBatch = ref(false)
 const showReview = ref(false)
 const galleryFilter = ref<'all' | 'review' | 'accepted' | 'unlabeled'>('all')
 const gallerySearch = ref('')
+const selectedImageIds = ref<Set<string>>(new Set())
+const deleteTargetIds = ref<string[]>([])
+const deleteTargetLabel = ref('')
+const showImageDeleteConfirm = ref(false)
+const deletingImages = ref(false)
 
 const project = computed(() => store.currentProjectData)
 const totalPages = computed(() => Math.max(1, Math.ceil(store.imagesTotal / store.imagesLimit)))
 const pageStart = computed(() => (store.imagesTotal === 0 ? 0 : (store.imagesPage - 1) * store.imagesLimit + 1))
 const pageEnd = computed(() => Math.min(store.imagesPage * store.imagesLimit, store.imagesTotal))
 const hasGalleryFilter = computed(() => galleryFilter.value !== 'all' || gallerySearch.value.trim().length > 0)
+const selectedCount = computed(() => selectedImageIds.value.size)
 const pageButtons = computed(() => {
   const total = totalPages.value
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
@@ -74,6 +81,56 @@ async function selectImage(imgId: string) {
   showReview.value = true
 }
 
+function isImageSelected(imgId: string) {
+  return selectedImageIds.value.has(imgId)
+}
+
+function toggleImageSelection(imgId: string, checked: boolean) {
+  const next = new Set(selectedImageIds.value)
+  if (checked) next.add(imgId)
+  else next.delete(imgId)
+  selectedImageIds.value = next
+}
+
+function clearImageSelection() {
+  selectedImageIds.value = new Set()
+}
+
+function requestDeleteImages(ids: string[], label: string) {
+  if (!ids.length) return
+  deleteTargetIds.value = ids
+  deleteTargetLabel.value = label
+  showImageDeleteConfirm.value = true
+}
+
+function requestDeleteSelected() {
+  requestDeleteImages(Array.from(selectedImageIds.value), `${selectedImageIds.value.size} selected images`)
+}
+
+function closeImageDeleteDialog() {
+  if (deletingImages.value) return
+  showImageDeleteConfirm.value = false
+  deleteTargetIds.value = []
+  deleteTargetLabel.value = ''
+}
+
+async function confirmDeleteImages() {
+  if (!deleteTargetIds.value.length) return
+  deletingImages.value = true
+  try {
+    await store.removeImages(deleteTargetIds.value)
+    clearImageSelection()
+    if (store.selectedImage && deleteTargetIds.value.includes(store.selectedImage)) {
+      closeReview()
+    }
+  } finally {
+    deletingImages.value = false
+    showImageDeleteConfirm.value = false
+    deleteTargetIds.value = []
+    deleteTargetLabel.value = ''
+  }
+}
+
 function closeReview() {
   showReview.value = false
   store.clearSelection()
@@ -102,6 +159,14 @@ function statusDotClass(status: string) {
   if (status === 'review') return 'bg-ink'
   return 'bg-ink-faint'
 }
+
+watch(
+  () => store.images.map((img) => img.img_id),
+  (ids) => {
+    const visible = new Set(ids)
+    selectedImageIds.value = new Set(Array.from(selectedImageIds.value).filter((id) => visible.has(id)))
+  },
+)
 </script>
 
 <template>
@@ -128,7 +193,7 @@ function statusDotClass(status: string) {
           class="h-9 px-4 text-[13px] font-medium text-ink border border-hairline rounded-(--radius-sm) bg-canvas hover:bg-canvas-soft hover:border-hairline-strong hover:-translate-y-px transition-all cursor-pointer"
           @click="showBatch = true"
         >
-          Upload + Auto-Label
+          Rapid Inference
         </button>
         <button
           class="h-9 px-4 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep shadow-[0_1px_3px_rgba(0,0,0,0.06)] hover:-translate-y-px transition-all cursor-pointer"
@@ -191,10 +256,20 @@ function statusDotClass(status: string) {
       <div class="dataset-gallery-section">
       <div class="dataset-gallery-header">
         <h2 class="text-[16px] font-medium text-ink">Project Files</h2>
-        <span class="text-[12px] text-ink-mute font-mono">
-          <template v-if="hasGalleryFilter">{{ filteredImages.length }} matches · </template>
-          Showing {{ pageStart }}-{{ pageEnd }} of {{ store.imagesTotal }} files
-        </span>
+        <div class="dataset-gallery-header-actions">
+          <button
+            v-if="selectedCount"
+            class="dataset-delete-selected-button"
+            :disabled="deletingImages"
+            @click="requestDeleteSelected"
+          >
+            Delete Selected ({{ selectedCount }})
+          </button>
+          <span class="text-[12px] text-ink-mute font-mono">
+            <template v-if="hasGalleryFilter">{{ filteredImages.length }} matches · </template>
+            Showing {{ pageStart }}-{{ pageEnd }} of {{ store.imagesTotal }} files
+          </span>
+        </div>
       </div>
 
       <div class="dataset-gallery-grid">
@@ -202,23 +277,44 @@ function statusDotClass(status: string) {
           v-for="img in filteredImages"
           :key="img.img_id"
           class="dataset-gallery-card"
+          :class="{ 'is-selected': isImageSelected(img.img_id) }"
           tabindex="0"
           role="button"
           @click="selectImage(img.img_id)"
           @keydown.enter="selectImage(img.img_id)"
         >
           <div class="dataset-thumbnail">
-            <img
-              :src="img.image_url"
+            <DatasetMediaOverlay
+              :image-src="img.image_url"
               :alt="img.filename"
-              loading="lazy"
-
+              :width="img.width"
+              :height="img.height"
+              :detections="img.detections_preview ?? []"
+              :show-bbox="true"
+              :show-labels="false"
+              :show-masks="true"
             />
 
-            <template v-if="img.accepted + img.rejected > 0">
-              <div class="dataset-card-bbox" style="top: 25%; left: 18%; width: 38%; height: 32%"></div>
-              <div v-if="img.accepted + img.rejected > 1" class="dataset-card-bbox secondary" style="top: 55%; left: 52%; width: 28%; height: 22%"></div>
-            </template>
+            <label class="dataset-card-select" @click.stop>
+              <input
+                type="checkbox"
+                :checked="isImageSelected(img.img_id)"
+                :aria-label="`Select ${img.filename}`"
+                @change="toggleImageSelection(img.img_id, ($event.target as HTMLInputElement).checked)"
+              />
+              <span />
+            </label>
+
+            <button
+              class="dataset-card-delete"
+              :aria-label="`Delete ${img.filename}`"
+              @click.stop="requestDeleteImages([img.img_id], img.filename)"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+            </button>
 
             <div class="dataset-card-shade" />
 
@@ -259,7 +355,7 @@ function statusDotClass(status: string) {
         </svg>
       </div>
       <p class="text-[15px] font-medium text-ink mb-1">No images yet</p>
-      <p class="text-[12px] text-ink-mute mb-5">Upload images or a video, then run Auto-Label.</p>
+      <p class="text-[12px] text-ink-mute mb-5">Upload images or a video, then run Rapid Inference.</p>
       <button
         class="px-4 py-2.5 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition-all cursor-pointer"
         @click="showBatch = true"
@@ -291,5 +387,41 @@ function statusDotClass(status: string) {
     <ReviewPanel v-if="showReview && store.selectedImage" @close="closeReview" />
     <ExportDialog v-if="showExport" @close="showExport = false" />
     <BatchUploadDialog v-if="showBatch" @close="showBatch = false" />
+
+    <Transition
+      enter-active-class="transition ease-out duration-200"
+      enter-from-class="opacity-0 scale-[0.98]"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition ease-in duration-150"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-[0.98]"
+    >
+      <div v-if="showImageDeleteConfirm" class="dataset-dialog-backdrop" @click.self="closeImageDeleteDialog">
+        <section class="dataset-delete-dialog">
+          <header class="dataset-modal-header">
+            <div>
+              <h3 class="dataset-modal-title">Delete Image</h3>
+              <p class="dataset-modal-copy">This action cannot be undone.</p>
+            </div>
+            <button class="dataset-modal-close" :disabled="deletingImages" @click="closeImageDeleteDialog" aria-label="Close delete image dialog">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </header>
+
+          <div class="dataset-modal-body dataset-form-stack">
+            <p class="text-[13px] text-ink-mute leading-relaxed">
+              Delete <span class="font-medium text-ink">{{ deleteTargetLabel }}</span> and their annotations?
+            </p>
+          </div>
+
+          <footer class="dataset-modal-footer">
+            <button class="dataset-secondary-button" :disabled="deletingImages" @click="closeImageDeleteDialog">Cancel</button>
+            <button class="dataset-primary-button" :disabled="deletingImages" @click="confirmDeleteImages">
+              {{ deletingImages ? 'Deleting...' : 'Delete' }}
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
   </section>
 </template>

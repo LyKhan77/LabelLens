@@ -105,13 +105,23 @@ export const useDatasetStore = defineStore('dataset', () => {
     return api.saveToDataset(name, file, detections, source)
   }
 
-  async function removeImage(imgId: string) {
-    if (!currentProject.value) return
-    await api.deleteImage(currentProject.value, imgId)
-    if (selectedImage.value === imgId) {
+  async function removeImages(imgIds: string[]) {
+    if (!currentProject.value || imgIds.length === 0) return
+    const uniqueIds = Array.from(new Set(imgIds))
+    for (const imgId of uniqueIds) {
+      await api.deleteImage(currentProject.value, imgId)
+    }
+    if (selectedImage.value && uniqueIds.includes(selectedImage.value)) {
       clearSelection()
     }
-    await fetchImages(imagesPage.value)
+    const remainingTotal = Math.max(0, imagesTotal.value - uniqueIds.length)
+    const maxPage = Math.max(1, Math.ceil(remainingTotal / imagesLimit.value))
+    await fetchImages(Math.min(imagesPage.value, maxPage))
+    await fetchProjects()
+  }
+
+  async function removeImage(imgId: string) {
+    await removeImages([imgId])
   }
 
   async function uploadRaw(files: File[]) {
@@ -287,6 +297,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     reviewDetection,
     saveToDataset,
     removeImage,
+    removeImages,
     uploadRaw,
     uploadStream,
     labelImages,

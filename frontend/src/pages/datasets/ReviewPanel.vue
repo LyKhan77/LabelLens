@@ -2,10 +2,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import type { DetectionAnnotation } from '../../shared/api/dataset'
+import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
 
 const emit = defineEmits<{ close: [] }>()
 const store = useDatasetStore()
 const imageSrc = ref('')
+const showDeleteConfirm = ref(false)
+const deletingImage = ref(false)
 let objectUrl = ''
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
@@ -30,10 +33,6 @@ const classes = computed(() => {
 const COLORS = ['#3ecf8e', '#24b47e', '#707070', '#9a9a9a', '#6b01c2', '#644fc1', '#ffdb13', '#212121']
 function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max)
-}
-
 function closePanel() { emit('close') }
 
 function navigateNext() {
@@ -49,6 +48,10 @@ function navigatePrev() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if (showDeleteConfirm.value) {
+    if (e.key === 'Escape') closeDeleteDialog()
+    return
+  }
   if (e.key === 'Escape') closePanel()
   if (e.key === 'ArrowRight') navigateNext()
   if (e.key === 'ArrowLeft') navigatePrev()
@@ -62,43 +65,32 @@ function isClassHidden(cls: string): boolean {
   return store.overlayState.hiddenClasses.has(cls)
 }
 
-function boxStyle(det: DetectionAnnotation) {
-  const width = annotations.value?.width ?? 1
-  const height = annotations.value?.height ?? 1
-
-  const x1 = clamp(Math.min(det.box[0], det.box[2]), 0, width)
-  const y1 = clamp(Math.min(det.box[1], det.box[3]), 0, height)
-  const x2 = clamp(Math.max(det.box[0], det.box[2]), 0, width)
-  const y2 = clamp(Math.max(det.box[1], det.box[3]), 0, height)
-
-  return {
-    left: `${(x1 / width) * 100}%`,
-    top: `${(y1 / height) * 100}%`,
-    width: `${((x2 - x1) / width) * 100}%`,
-    height: `${((y2 - y1) / height) * 100}%`,
-    borderColor: detColor(det.id),
-  }
+function requestDeleteCurrent() {
+  showDeleteConfirm.value = true
 }
 
-function labelStyle(det: DetectionAnnotation) {
-  const height = annotations.value?.height ?? 1
-  const y1 = clamp(Math.min(det.box[1], det.box[3]), 0, height)
-  if (y1 < 22) {
-    return {
-      top: '0px',
-      transform: 'translateY(0)',
+function closeDeleteDialog() {
+  if (deletingImage.value) return
+  showDeleteConfirm.value = false
+}
+
+async function confirmDeleteCurrent() {
+  if (!store.selectedImage) return
+  const imgId = store.selectedImage
+  const idx = currentImageIndex.value
+  const nextId = store.images[idx + 1]?.img_id ?? store.images[idx - 1]?.img_id ?? null
+  deletingImage.value = true
+  try {
+    await store.removeImage(imgId)
+    showDeleteConfirm.value = false
+    if (nextId) {
+      await store.selectImage(nextId)
+    } else {
+      closePanel()
     }
+  } finally {
+    deletingImage.value = false
   }
-  return {
-    top: '0px',
-    transform: 'translateY(calc(-100% - 2px))',
-  }
-}
-
-function maskPoints(det: DetectionAnnotation) {
-  const width = annotations.value?.width ?? 1
-  const height = annotations.value?.height ?? 1
-  return (det.mask ?? []).map(([x, y]) => `${clamp(x, 0, width)},${clamp(y, 0, height)}`).join(' ')
 }
 
 async function toggleAccept(det: DetectionAnnotation) {
@@ -168,6 +160,13 @@ onUnmounted(() => {
               Next
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6" /></svg>
             </button>
+            <button class="dataset-review-delete-button" :disabled="deletingImage" aria-label="Delete image" @click="requestDeleteCurrent">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+              </svg>
+              Delete
+            </button>
             <button aria-label="Close review" @click="closePanel">
               <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -178,45 +177,20 @@ onUnmounted(() => {
 
         <div class="dataset-review-body">
           <main class="dataset-review-stage">
-            <div class="dataset-review-frame" :style="frameStyle">
-              <img v-if="imageSrc" :src="imageSrc" :alt="store.currentAnnotations?.filename" />
+            <DatasetMediaOverlay
+              v-if="imageSrc && annotations"
+              class="dataset-review-frame"
+              :style="frameStyle"
+              :image-src="imageSrc"
+              :alt="store.currentAnnotations?.filename || ''"
+              :width="annotations.width"
+              :height="annotations.height"
+              :detections="detections.filter((d) => isVisible(d))"
+              :show-bbox="store.overlayState.showBbox"
+              :show-labels="store.overlayState.showLabels"
+              :show-masks="store.overlayState.showMasks"
+            />
 
-              <svg
-                v-if="annotations && store.overlayState.showMasks"
-                class="dataset-review-mask-layer"
-                :viewBox="`0 0 ${annotations.width} ${annotations.height}`"
-                preserveAspectRatio="none"
-              >
-                <polygon
-                  v-for="det in detections.filter((d) => isVisible(d) && d.mask && d.mask.length)"
-                  :key="`mask-${det.id}`"
-                  :points="maskPoints(det)"
-                  :fill="detColor(det.id)"
-                  fill-opacity="0.22"
-                  :stroke="detColor(det.id)"
-                  stroke-opacity="0.55"
-                  stroke-width="2"
-                />
-              </svg>
-
-              <template v-if="store.overlayState.showBbox">
-                <div
-                  v-for="det in detections.filter((d) => isVisible(d))"
-                  :key="`box-${det.id}`"
-                  class="dataset-review-box absolute border-2 rounded-[3px] pointer-events-none transition-opacity"
-                  :class="{ 'opacity-30': !det.accepted }"
-                  :style="boxStyle(det)"
-                >
-                  <span
-                    v-if="store.overlayState.showLabels"
-                    class="dataset-review-box-label absolute left-0 text-[9px] font-medium px-1.5 py-[2px] rounded-[2px] text-white whitespace-nowrap"
-                    :style="{ backgroundColor: detColor(det.id), ...labelStyle(det) }"
-                  >
-                    {{ det.label }} {{ (det.confidence * 100).toFixed(0) }}%
-                  </span>
-                </div>
-              </template>
-            </div>
           </main>
 
           <aside class="dataset-inspector">
@@ -299,6 +273,33 @@ onUnmounted(() => {
               <span class="text-[11px] text-ink-faint font-mono">Auto-saved</span>
             </footer>
           </aside>
+        </div>
+
+        <div v-if="showDeleteConfirm" class="dataset-review-confirm">
+          <section class="dataset-delete-dialog">
+            <header class="dataset-modal-header">
+              <div>
+                <h3 class="dataset-modal-title">Delete Image</h3>
+                <p class="dataset-modal-copy">This action cannot be undone.</p>
+              </div>
+              <button class="dataset-modal-close" :disabled="deletingImage" @click="closeDeleteDialog" aria-label="Close delete image dialog">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </header>
+
+            <div class="dataset-modal-body dataset-form-stack">
+              <p class="text-[13px] text-ink-mute leading-relaxed">
+                Delete image <span class="font-medium text-ink">{{ store.currentAnnotations?.filename || store.selectedImage }}</span> and its annotations?
+              </p>
+            </div>
+
+            <footer class="dataset-modal-footer">
+              <button class="dataset-secondary-button" :disabled="deletingImage" @click="closeDeleteDialog">Cancel</button>
+              <button class="dataset-primary-button" :disabled="deletingImage" @click="confirmDeleteCurrent">
+                {{ deletingImage ? 'Deleting...' : 'Delete' }}
+              </button>
+            </footer>
+          </section>
         </div>
       </section>
     </div>
