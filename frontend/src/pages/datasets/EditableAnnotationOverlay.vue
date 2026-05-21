@@ -77,7 +77,12 @@ const planeStyle = computed(() => {
   }
 })
 
-const COLORS = ['#3ecf8e', '#24b47e', '#ffffff', '#ffdb13', '#644fc1', '#6b01c2', '#9a9a9a', '#212121']
+const COLORS = ['#3ecf8e', '#24b47e', '#707070', '#9a9a9a', '#6b01c2', '#644fc1', '#ffdb13', '#212121']
+function classColor(label: string): string {
+  let hash = 0
+  for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
+  return COLORS[Math.abs(hash) % COLORS.length]
+}
 function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 function clamp(value: number, min: number, max: number): number { return Math.min(Math.max(value, min), max) }
 
@@ -130,7 +135,7 @@ function boxStyle(det: DatasetOverlayDetection, idx: number) {
     top: `${(y1 / imageHeight.value) * 100}%`,
     width: `${((x2 - x1) / imageWidth.value) * 100}%`,
     height: `${((y2 - y1) / imageHeight.value) * 100}%`,
-    borderColor: det.id === props.selectedId ? '#ffdb13' : detColor(idx),
+    borderColor: det.id === props.selectedId ? '#ffdb13' : classColor(det.label),
   }
 }
 
@@ -297,9 +302,9 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
           v-for="(det, idx) in visibleDetections.filter((d) => d.mask && d.mask.length)"
           :key="`mask-${det.id ?? idx}`"
           :points="maskPoints(det)"
-          :fill="detColor(idx)"
+          :fill="classColor(det.label)"
           fill-opacity="0.22"
-          :stroke="detColor(idx)"
+          :stroke="classColor(det.label)"
           stroke-opacity="0.55"
           stroke-width="2"
         />

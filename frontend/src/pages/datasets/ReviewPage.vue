@@ -80,6 +80,11 @@ const displayDetections = computed<DatasetOverlayDetection[]>(() => [
 ])
 
 const COLORS = ['#3ecf8e', '#24b47e', '#707070', '#9a9a9a', '#6b01c2', '#644fc1', '#ffdb13', '#212121']
+function classColor(label: string): string {
+  let hash = 0
+  for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
+  return COLORS[Math.abs(hash) % COLORS.length]
+}
 function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 
 
@@ -306,6 +311,8 @@ async function acceptCandidate(candidate: AssistedCandidate) {
       confidence: candidate.confidence,
       assisted: true,
       source: 'visual_prompt',
+      mask: candidate.mask,
+      mask_rle: candidate.mask_rle,
     })
     rejectCandidate(candidate.candidateId)
     const promptIds = visualAssistPromptIds(result)
@@ -338,6 +345,8 @@ async function acceptAllCandidatesAndContinue() {
         confidence: candidate.confidence,
         assisted: true,
         source: 'visual_prompt',
+        mask: candidate.mask,
+        mask_rle: candidate.mask_rle,
       })
       rejectCandidate(candidate.candidateId)
     }
@@ -709,7 +718,7 @@ onUnmounted(() => {
                   :class="{ 'opacity-35 line-through': isClassHidden(cls) }"
                   @click="store.toggleClassVisibility(cls)"
                 >
-                  <span class="w-[5px] h-[5px] rounded-full" :style="{ backgroundColor: detColor(i) }" />
+                  <span class="w-[5px] h-[5px] rounded-full" :style="{ backgroundColor: classColor(cls) }" />
                   {{ cls }} ({{ count }})
                 </button>
               </div>

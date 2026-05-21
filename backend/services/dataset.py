@@ -488,6 +488,10 @@ class DatasetService:
             detection["assisted"] = True
         if payload.get("source") == "visual_prompt":
             detection["source"] = "visual_prompt"
+        if "mask" in payload:
+            detection["mask"] = payload["mask"]
+        if "mask_rle" in payload:
+            detection["mask_rle"] = payload["mask_rle"]
         detections.append(detection)
         ann["labeled"] = True
 

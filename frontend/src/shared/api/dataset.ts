@@ -244,6 +244,8 @@ export type DetectionPayload = {
   confidence?: number
   assisted?: boolean
   source?: string
+  mask?: number[][]
+  mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }
 }
 
 export async function inferNextVisualPrompt(
