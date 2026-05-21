@@ -24,6 +24,7 @@ const pageStart = computed(() => (store.imagesTotal === 0 ? 0 : (store.imagesPag
 const pageEnd = computed(() => Math.min(store.imagesPage * store.imagesLimit, store.imagesTotal))
 const hasGalleryFilter = computed(() => galleryFilter.value !== 'all' || gallerySearch.value.trim().length > 0)
 const selectedCount = computed(() => selectedImageIds.value.size)
+const allVisibleSelected = computed(() => filteredImages.value.length > 0 && filteredImages.value.every((img) => selectedImageIds.value.has(img.img_id)))
 const pageButtons = computed(() => {
   const total = totalPages.value
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
@@ -94,6 +95,16 @@ function toggleImageSelection(imgId: string, checked: boolean) {
 
 function clearImageSelection() {
   selectedImageIds.value = new Set()
+}
+
+function toggleSelectAllVisible() {
+  const next = new Set(selectedImageIds.value)
+  if (allVisibleSelected.value) {
+    for (const img of filteredImages.value) next.delete(img.img_id)
+  } else {
+    for (const img of filteredImages.value) next.add(img.img_id)
+  }
+  selectedImageIds.value = next
 }
 
 function requestDeleteImages(ids: string[], label: string) {
@@ -257,6 +268,13 @@ watch(
       <div class="dataset-gallery-header">
         <h2 class="text-[16px] font-medium text-ink">Project Files</h2>
         <div class="dataset-gallery-header-actions">
+          <button
+            class="dataset-select-all-button"
+            :disabled="!filteredImages.length"
+            @click="toggleSelectAllVisible"
+          >
+            {{ allVisibleSelected ? 'Clear Selection' : 'Select All Files' }}
+          </button>
           <button
             v-if="selectedCount"
             class="dataset-delete-selected-button"

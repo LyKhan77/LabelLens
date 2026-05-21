@@ -3,7 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import { useInferenceStore } from '../../shared/stores/inference'
 import type { BBoxAnnotation } from '../../shared/types'
-import type { DatasetLabelJobStatus } from '../../shared/api/dataset'
+import type { DatasetLabelJobItem, DatasetLabelJobStatus } from '../../shared/api/dataset'
 import BBoxAnnotationCanvas from '../../shared/components/BBoxAnnotation.vue'
 import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
 
@@ -28,7 +28,10 @@ const visualAnnotations = ref<BBoxAnnotation[]>([])
 const loadingModel = ref(false)
 
 const job = ref<DatasetLabelJobStatus | null>(null)
+const highlightedItemIndex = ref(0)
+const jobComplete = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let displayTimer: ReturnType<typeof setInterval> | null = null
 
 const imageFiles = computed(() => files.value.filter((f) => f.type.startsWith('image/')))
 const videoFiles = computed(() => files.value.filter((f) => f.type.startsWith('video/')))
@@ -49,19 +52,28 @@ const progressPercent = computed(() => {
   return Math.round((job.value.processed / job.value.total) * 100)
 })
 const progressItems = computed(() => job.value?.items ?? [])
-const previewItem = computed(() => (
-  progressItems.value.find((item) => item.state === 'running') ??
-  [...progressItems.value].reverse().find((item) => item.state === 'done') ??
-  null
-))
+const maxVisibleItemIndex = computed(() => {
+  if (!progressItems.value.length) return -1
+  if (jobComplete.value) return progressItems.value.length - 1
+  const runningIndex = progressItems.value.findIndex((item) => item.state === 'running')
+  return runningIndex >= 0 ? runningIndex : progressItems.value.length - 1
+})
+const previewItem = computed<DatasetLabelJobItem | null>(() => {
+  if (!progressItems.value.length) return null
+  const safeIndex = Math.min(highlightedItemIndex.value, progressItems.value.length - 1)
+  return progressItems.value[safeIndex] ?? null
+})
 const previewImageUrl = computed(() => previewItem.value?.image_url ?? job.value?.current_image_url ?? '')
 const previewFilename = computed(() => previewItem.value?.filename ?? job.value?.current_filename ?? '')
 const previewDetections = computed(() => previewItem.value?.detections ?? [])
 const doneItems = computed(() => progressItems.value.filter((item) => item.state === 'done').length)
 const failedItems = computed(() => progressItems.value.filter((item) => item.state === 'failed').length)
+const displayFrameNumber = computed(() => previewItem.value ? highlightedItemIndex.value + 1 : 0)
+const displayFrameTotal = computed(() => job.value?.total || progressItems.value.length || 0)
 
 function close() {
   stopPolling()
+  stopDisplayPlayback()
   emit('close')
 }
 
@@ -128,20 +140,54 @@ function stopPolling() {
   }
 }
 
+function stopDisplayPlayback() {
+  if (displayTimer) {
+    clearInterval(displayTimer)
+    displayTimer = null
+  }
+}
+
+function advanceDisplayFrame() {
+  if (maxVisibleItemIndex.value < 0) return
+  if (highlightedItemIndex.value < maxVisibleItemIndex.value) {
+    highlightedItemIndex.value += 1
+    return
+  }
+  if (jobComplete.value) {
+    stopDisplayPlayback()
+    phase.value = 'done'
+  }
+}
+
+function ensureDisplayPlayback() {
+  if (!displayTimer) {
+    displayTimer = setInterval(advanceDisplayFrame, 750)
+  }
+  advanceDisplayFrame()
+}
+
 async function pollJob(jobId: string) {
   const status = await datasetStore.getLabelJob(jobId)
   if (!status) return
   job.value = status
+  ensureDisplayPlayback()
   if (status.state === 'done' || status.state === 'failed') {
     stopPolling()
-    phase.value = status.state === 'done' ? 'done' : 'progress'
+    jobComplete.value = true
     if (status.error) error.value = status.error
+    if (!status.items.length || highlightedItemIndex.value >= status.items.length - 1) {
+      stopDisplayPlayback()
+      phase.value = status.state === 'done' ? 'done' : 'progress'
+    }
   }
 }
 
 async function startLabeling() {
   if (!canStart.value) return
   error.value = ''
+  highlightedItemIndex.value = 0
+  jobComplete.value = false
+  stopDisplayPlayback()
   phase.value = 'progress'
   try {
     const created = await datasetStore.createLabelJob({
@@ -154,7 +200,7 @@ async function startLabeling() {
     })
     if (!created) return
     job.value = created
-    pollTimer = setInterval(() => pollJob(created.job_id), 900)
+    pollTimer = setInterval(() => pollJob(created.job_id), 300)
     await pollJob(created.job_id)
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Label job failed'
@@ -162,7 +208,10 @@ async function startLabeling() {
 }
 
 watch(promptType, () => { error.value = '' })
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  stopPolling()
+  stopDisplayPlayback()
+})
 </script>
 
 <template>
@@ -306,6 +355,9 @@ onUnmounted(stopPolling)
           <template v-else>
             <div class="dataset-progress-card">
               <div class="dataset-progress-preview">
+                <div v-if="previewItem" class="dataset-progress-frame-badge">
+                  Frame {{ displayFrameNumber }} / {{ displayFrameTotal }}
+                </div>
                 <DatasetMediaOverlay
                   v-if="previewImageUrl"
                   :image-src="previewImageUrl"
@@ -322,8 +374,8 @@ onUnmounted(stopPolling)
               <div class="dataset-progress-meta">
                 <div class="dataset-progress-header">
                   <div>
-                    <strong>{{ progressPercent }}%</strong>
-                    <span>{{ job?.state || 'queued' }} · {{ job?.processed ?? 0 }} / {{ job?.total ?? 0 }} images</span>
+                    <strong>Frame {{ displayFrameNumber }} / {{ displayFrameTotal }}</strong>
+                    <span>{{ job?.state || 'queued' }} · {{ job?.processed ?? 0 }} / {{ job?.total ?? 0 }} images · {{ progressPercent }}%</span>
                   </div>
                   <div>
                     <strong>{{ job?.detections_count ?? 0 }}</strong>
@@ -342,7 +394,7 @@ onUnmounted(stopPolling)
                     v-for="item in progressItems"
                     :key="item.img_id"
                     class="dataset-progress-log-row"
-                    :class="`is-${item.state}`"
+                    :class="[`is-${item.state}`, { 'is-active': previewItem?.img_id === item.img_id }]"
                   >
                     <span class="dataset-progress-log-dot" />
                     <div>

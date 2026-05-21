@@ -18,8 +18,16 @@ const rejectedCount = computed(() => detections.value.filter((d) => !d.accepted)
 const classCount = computed(() => classes.value.length)
 const currentImageIndex = computed(() => store.images.findIndex((i) => i.img_id === store.selectedImage))
 const totalImages = computed(() => store.images.length)
-const canNavigatePrev = computed(() => currentImageIndex.value > 0)
-const canNavigateNext = computed(() => currentImageIndex.value >= 0 && currentImageIndex.value < totalImages.value - 1)
+const totalPages = computed(() => Math.max(1, Math.ceil(store.imagesTotal / store.imagesLimit)))
+const canNavigatePrev = computed(() => currentImageIndex.value > 0 || store.imagesPage > 1)
+const canNavigateNext = computed(() => (
+  (currentImageIndex.value >= 0 && currentImageIndex.value < totalImages.value - 1) ||
+  store.imagesPage < totalPages.value
+))
+const globalImageIndex = computed(() => {
+  if (currentImageIndex.value < 0) return 0
+  return (store.imagesPage - 1) * store.imagesLimit + currentImageIndex.value + 1
+})
 const frameStyle = computed(() => ({
   aspectRatio: `${annotations.value?.width ?? 16} / ${annotations.value?.height ?? 9}`,
 }))
@@ -35,16 +43,34 @@ function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 
 function closePanel() { emit('close') }
 
-function navigateNext() {
+async function navigateNext() {
   if (!canNavigateNext.value) return
   const idx = currentImageIndex.value
-  store.selectImage(store.images[idx + 1].img_id)
+  const nextOnPage = store.images[idx + 1]
+  if (nextOnPage) {
+    await store.selectImage(nextOnPage.img_id)
+    return
+  }
+  if (store.imagesPage < totalPages.value) {
+    await store.fetchImages(store.imagesPage + 1)
+    const first = store.images[0]
+    if (first) await store.selectImage(first.img_id)
+  }
 }
 
-function navigatePrev() {
+async function navigatePrev() {
   if (!canNavigatePrev.value) return
   const idx = currentImageIndex.value
-  store.selectImage(store.images[idx - 1].img_id)
+  const prevOnPage = store.images[idx - 1]
+  if (prevOnPage) {
+    await store.selectImage(prevOnPage.img_id)
+    return
+  }
+  if (store.imagesPage > 1) {
+    await store.fetchImages(store.imagesPage - 1)
+    const last = store.images[store.images.length - 1]
+    if (last) await store.selectImage(last.img_id)
+  }
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -155,7 +181,7 @@ onUnmounted(() => {
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
               Previous
             </button>
-            <span class="dataset-review-index">{{ currentImageIndex + 1 }} / {{ totalImages }}</span>
+            <span class="dataset-review-index">{{ globalImageIndex }} / {{ store.imagesTotal }}</span>
             <button :disabled="!canNavigateNext" @click="navigateNext">
               Next
               <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6" /></svg>
