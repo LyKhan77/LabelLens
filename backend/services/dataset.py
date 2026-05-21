@@ -467,15 +467,28 @@ class DatasetService:
         cls_id = self._ensure_class(name, label)
         detections = ann.setdefault("detections", [])
         next_id = max((int(det.get("id", -1)) for det in detections), default=-1) + 1
-        detections.append({
+        confidence = payload.get("confidence", 1.0)
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            confidence = 1.0
+        if not math.isfinite(confidence):
+            confidence = 1.0
+
+        detection = {
             "id": next_id,
             "box": box,
             "label": label,
-            "confidence": 1.0,
+            "confidence": confidence,
             "cls_id": cls_id,
             "accepted": bool(payload.get("accepted", True)),
             "manual": True,
-        })
+        }
+        if payload.get("assisted"):
+            detection["assisted"] = True
+        if payload.get("source") == "visual_prompt":
+            detection["source"] = "visual_prompt"
+        detections.append(detection)
         ann["labeled"] = True
 
         with open(ann_path, "w") as f:

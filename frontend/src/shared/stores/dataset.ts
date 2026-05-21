@@ -105,7 +105,7 @@ export const useDatasetStore = defineStore('dataset', () => {
 
   async function addDetection(
     imgId: string,
-    payload: Required<Pick<DetectionPayload, 'label' | 'box'>> & Pick<DetectionPayload, 'accepted'>,
+    payload: Required<Pick<DetectionPayload, 'label' | 'box'>> & Omit<DetectionPayload, 'label' | 'box'>,
   ) {
     if (!currentProject.value) return
     const result = await api.addDetection(currentProject.value, imgId, payload)
@@ -137,6 +137,20 @@ export const useDatasetStore = defineStore('dataset', () => {
     await fetchImages(imagesPage.value)
     await fetchProjects()
     return result
+  }
+
+  async function inferNextVisualPrompt(
+    sourceImgId: string,
+    targetImgId: string,
+    prompts: { box: [number, number, number, number]; label: string }[],
+    confidence = 0.5,
+  ) {
+    if (!currentProject.value) return
+    return api.inferNextVisualPrompt(currentProject.value, sourceImgId, {
+      target_img_id: targetImgId,
+      prompts,
+      confidence,
+    })
   }
 
   async function saveToDataset(name: string, file: File, detections: unknown[], source = 'inference') {
@@ -336,6 +350,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     addDetection,
     updateDetection,
     deleteDetection,
+    inferNextVisualPrompt,
     saveToDataset,
     removeImage,
     removeImages,

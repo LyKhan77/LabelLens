@@ -21,6 +21,8 @@ export interface DatasetOverlayDetection {
   cls_id?: number
   accepted?: boolean
   manual?: boolean
+  assisted?: boolean
+  source?: string
   mask?: number[][]
   mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }
 }
@@ -85,6 +87,8 @@ export interface DetectionAnnotation {
   cls_id: number
   accepted: boolean
   manual?: boolean
+  assisted?: boolean
+  source?: string
   mask?: number[][]
   mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }
 }
@@ -237,12 +241,28 @@ export type DetectionPayload = {
   label?: string
   box?: [number, number, number, number]
   accepted?: boolean
+  confidence?: number
+  assisted?: boolean
+  source?: string
+}
+
+export async function inferNextVisualPrompt(
+  name: string,
+  sourceImgId: string,
+  payload: {
+    target_img_id: string
+    prompts: { box: [number, number, number, number]; label: string }[]
+    confidence?: number
+  },
+): Promise<{ source_img_id: string; target_img_id: string; candidates: DatasetOverlayDetection[] }> {
+  const res = await api.post(`/datasets/${name}/images/${sourceImgId}/infer-next`, payload)
+  return res.data
 }
 
 export async function addDetection(
   name: string,
   imgId: string,
-  payload: Required<Pick<DetectionPayload, 'label' | 'box'>> & Pick<DetectionPayload, 'accepted'>,
+  payload: Required<Pick<DetectionPayload, 'label' | 'box'>> & Omit<DetectionPayload, 'label' | 'box'>,
 ): Promise<ImageAnnotation['annotations']> {
   const res = await api.post(`/datasets/${name}/images/${imgId}/detections`, payload)
   return res.data

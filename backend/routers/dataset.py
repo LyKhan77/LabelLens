@@ -209,6 +209,87 @@ async def get_image_file(name: str, img_id: str):
     return FileResponse(result["image_path"])
 
 
+def _read_dataset_image(name: str, img_id: str, role: str):
+    image_data = dataset_service.get_image(name, img_id)
+    if image_data is None or image_data.get("image_path") is None:
+        raise HTTPException(404, f"{role} image not found")
+    image = cv2.imread(image_data["image_path"])
+    if image is None:
+        raise HTTPException(400, f"{role} image could not be read")
+    return image
+
+
+def _parse_visual_prompt_payload(payload: dict) -> tuple[str, list, list[str], float]:
+    target_img_id = payload.get("target_img_id")
+    if not isinstance(target_img_id, str) or not target_img_id.strip():
+        raise HTTPException(400, "target_img_id is required")
+
+    prompts = payload.get("prompts")
+    if not isinstance(prompts, list) or len(prompts) == 0:
+        raise HTTPException(400, "At least one prompt is required")
+
+    bboxes = []
+    labels = []
+    for prompt in prompts:
+        if not isinstance(prompt, dict):
+            raise HTTPException(400, "prompts must contain objects")
+        box = prompt.get("box")
+        label = prompt.get("label")
+        if not isinstance(box, list) or len(box) != 4:
+            raise HTTPException(400, "prompt box must be a list of four numbers")
+        if not isinstance(label, str) or not label.strip():
+            raise HTTPException(400, "prompt label is required")
+        bboxes.append(box)
+        labels.append(label.strip())
+
+    try:
+        confidence = float(payload.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "confidence must be a number")
+    confidence = max(0.01, min(confidence, 0.99))
+    return target_img_id.strip(), bboxes, labels, confidence
+
+
+@router.post("/datasets/{name}/images/{source_img_id}/infer-next")
+async def infer_next_visual_prompt(name: str, source_img_id: str, payload: dict = Body(...)):
+    if model_service.model is None:
+        raise HTTPException(400, "No model loaded. Load the prompt model first.")
+
+    target_img_id, bboxes, labels, confidence = _parse_visual_prompt_payload(payload)
+    source_image = _read_dataset_image(name, source_img_id, "Source")
+    target_image = _read_dataset_image(name, target_img_id, "Target")
+
+    try:
+        model_service.setup_visual_prompt(source_image, bboxes, labels)
+        det_result = model_service.predict_with_vpe(target_image, confidence)
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+    candidates = []
+    for idx, det in enumerate(det_result.get("detections", [])):
+        candidate = {
+            "id": idx,
+            "box": det.get("box", []),
+            "label": det.get("label", ""),
+            "confidence": det.get("confidence", 0),
+            "cls_id": det.get("cls_id", -1),
+            "accepted": False,
+            "assisted": True,
+            "source": "visual_prompt",
+        }
+        if "mask" in det:
+            candidate["mask"] = det["mask"]
+        if "mask_rle" in det:
+            candidate["mask_rle"] = det["mask_rle"]
+        candidates.append(candidate)
+
+    return {
+        "source_img_id": source_img_id,
+        "target_img_id": target_img_id,
+        "candidates": candidates,
+    }
+
+
 @router.post("/datasets/{name}/save")
 async def save_to_dataset(
     name: str,

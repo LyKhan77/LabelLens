@@ -1140,6 +1140,99 @@
     gap: 6px;
   }
 
+  .dataset-assist-panel {
+    margin-top: 12px;
+    padding: 10px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    display: grid;
+    gap: 10px;
+  }
+
+  .dataset-assist-panel .dataset-primary-button,
+  .dataset-assist-panel .dataset-secondary-button {
+    width: 100%;
+    height: 32px;
+  }
+
+  .dataset-assist-error {
+    color: #b42318;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .dataset-candidate-panel {
+    border-bottom: 1px solid var(--color-hairline);
+    background: var(--color-canvas-soft);
+  }
+
+  .dataset-candidate-panel header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-hairline);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .dataset-candidate-panel strong {
+    display: block;
+    color: var(--color-ink);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .dataset-candidate-panel small {
+    display: block;
+    margin-top: 2px;
+    color: var(--color-ink-faint);
+    font-size: 11px;
+  }
+
+  .dataset-candidate-panel header .dataset-primary-button {
+    width: auto;
+    min-width: 74px;
+    height: 30px;
+  }
+
+  .dataset-candidate-list {
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .dataset-candidate-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 56px;
+    padding: 10px 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-hairline) 70%, transparent);
+    cursor: pointer;
+  }
+
+  .dataset-candidate-row:hover,
+  .dataset-candidate-row.is-selected {
+    background: var(--color-canvas);
+  }
+
+  .dataset-candidate-row.is-accepted {
+    box-shadow: inset 3px 0 0 var(--color-primary);
+  }
+
+  .dataset-candidate-row .dataset-secondary-button,
+  .dataset-candidate-row .dataset-accept-button {
+    height: 28px;
+    padding: 0 10px;
+  }
+
+  .dataset-candidate-empty {
+    padding: 14px 16px;
+    color: var(--color-ink-faint);
+    font-size: 12px;
+  }
+
   .dataset-detection-list {
     min-height: 0;
     flex: 1;

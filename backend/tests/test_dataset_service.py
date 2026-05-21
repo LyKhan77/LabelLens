@@ -121,6 +121,27 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertEqual(meta["class_to_id"], {"car": 0})
         self.assertEqual(stats["accepted"], 1)
 
+    def test_add_assisted_detection_persists_visual_prompt_metadata(self):
+        self.service.create_project("demo")
+        saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))
+
+        ann = self.service.add_detection(
+            "demo",
+            saved["img_id"],
+            {
+                "label": "bolt",
+                "box": [4, 6, 28, 30],
+                "assisted": True,
+                "source": "visual_prompt",
+                "confidence": 0.82,
+            },
+        )
+        det = ann["detections"][0]
+
+        self.assertTrue(det["assisted"])
+        self.assertEqual(det["source"], "visual_prompt")
+        self.assertEqual(det["confidence"], 0.82)
+
     def test_update_detection_label_and_bbox_clamps_box_and_removes_stale_mask(self):
         self.service.create_project("demo")
         saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))
