@@ -214,6 +214,29 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertIn("0 ", label_text)
         self.assertNotIn("1 ", label_text)
 
+    def test_delete_assisted_detection_removes_it_from_export(self):
+        self.service.create_project("demo", ["bolt"])
+        saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))
+        self.service.add_detection(
+            "demo",
+            saved["img_id"],
+            {
+                "box": [4, 6, 28, 30],
+                "label": "bolt",
+                "confidence": 0.82,
+                "assisted": True,
+                "source": "visual_prompt",
+            },
+        )
+
+        ann = self.service.delete_detection("demo", saved["img_id"], 0)
+        zip_bytes = self.service.export_yolo("demo")
+
+        self.assertEqual(ann["detections"], [])
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            label_names = [n for n in zf.namelist() if n.endswith(".txt")]
+        self.assertEqual(label_names, [])
+
     def test_rejected_detection_is_excluded_from_export(self):
         self.service.create_project("demo", ["car", "truck"])
         saved = self.service.save_image(

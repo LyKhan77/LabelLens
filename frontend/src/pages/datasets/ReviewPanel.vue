@@ -18,13 +18,15 @@ const draftBox = ref<[number, number, number, number] | null>(null)
 const savingAnnotation = ref(false)
 let objectUrl = ''
 
-type AssistedCandidate = DatasetOverlayDetection & { candidateId: number; accepted: boolean }
+type AssistedCandidate = DatasetOverlayDetection & { candidateId: number }
 
 const inferNextLoading = ref(false)
 const inferNextError = ref('')
 const inferCandidates = ref<AssistedCandidate[]>([])
 const selectedCandidateId = ref<number | null>(null)
-const savingCandidates = ref(false)
+const candidateBusyIds = ref<Set<number>>(new Set())
+const deletingDetectionIds = ref<Set<number>>(new Set())
+const promptDetectionIds = ref<Set<number>>(new Set())
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
 const detections = computed(() => annotations.value?.detections ?? [])
@@ -59,11 +61,11 @@ const availableLabels = computed(() => {
   return Array.from(labels).sort((a, b) => a.localeCompare(b))
 })
 const canSaveAnnotation = computed(() => Boolean(draftLabel.value.trim() && draftBox.value && store.selectedImage && editorMode.value !== 'idle'))
+const selectedPromptDetections = computed(() => detections.value.filter((det) => promptDetectionIds.value.has(det.id)))
 const promptModelReady = computed(() => inferenceStore.modelLoaded && inferenceStore.inferenceMode === 'prompt')
-const canInferNext = computed(() => Boolean(selectedDetection.value && canNavigateNext.value && store.selectedImage && !inferNextLoading.value))
+const canInferNext = computed(() => Boolean(selectedPromptDetections.value.length && canNavigateNext.value && store.selectedImage && !inferNextLoading.value))
 const visibleCandidates = computed(() => inferCandidates.value.filter((candidate) => !isDuplicateCandidate(candidate)))
 const duplicateCandidateCount = computed(() => inferCandidates.value.length - visibleCandidates.value.length)
-const acceptedCandidateCount = computed(() => visibleCandidates.value.filter((candidate) => candidate.accepted).length)
 const displayDetections = computed<DatasetOverlayDetection[]>(() => [
   ...detections.value.filter((d) => isVisible(d)),
   ...visibleCandidates.value.map((candidate) => ({
@@ -105,6 +107,7 @@ function resetEditor() {
 
 function beginNewAnnotation(box: [number, number, number, number]) {
   selectedDetectionId.value = null
+  selectedCandidateId.value = null
   editorMode.value = 'add'
   draftLabel.value = availableLabels.value[0] ?? ''
   draftBox.value = roundBox(box)
@@ -133,6 +136,49 @@ function handleOverlaySelect(id: number) {
     return
   }
   selectDetection(id)
+}
+
+function replaceSet<T>(source: Set<T>, mutate: (next: Set<T>) => void): Set<T> {
+  const next = new Set(source)
+  mutate(next)
+  return next
+}
+
+function isPromptSelected(id: number): boolean {
+  return promptDetectionIds.value.has(id)
+}
+
+function togglePromptDetection(id: number) {
+  promptDetectionIds.value = replaceSet(promptDetectionIds.value, (next) => {
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+  })
+}
+
+function setPromptDetections(ids: number[]) {
+  promptDetectionIds.value = new Set(ids)
+}
+
+function isCandidateBusy(candidateId: number): boolean {
+  return candidateBusyIds.value.has(candidateId)
+}
+
+function setCandidateBusy(candidateId: number, busy: boolean) {
+  candidateBusyIds.value = replaceSet(candidateBusyIds.value, (next) => {
+    if (busy) next.add(candidateId)
+    else next.delete(candidateId)
+  })
+}
+
+function isDeletingDetection(id: number): boolean {
+  return deletingDetectionIds.value.has(id)
+}
+
+function setDeletingDetection(id: number, deleting: boolean) {
+  deletingDetectionIds.value = replaceSet(deletingDetectionIds.value, (next) => {
+    if (deleting) next.add(id)
+    else next.delete(id)
+  })
 }
 
 function updateDraftBox(box: [number, number, number, number]) {
@@ -196,17 +242,17 @@ async function nextImageId(): Promise<string | null> {
 }
 
 async function runInferNext() {
-  if (!selectedDetection.value || !store.selectedImage) return
+  if (!selectedPromptDetections.value.length || !store.selectedImage) return
   if (!promptModelReady.value) {
     await loadPromptModel()
     if (!promptModelReady.value) return
   }
 
   const sourceImgId = store.selectedImage
-  const prompt = {
-    box: asBox(selectedDetection.value.box),
-    label: selectedDetection.value.label,
-  }
+  const prompts = selectedPromptDetections.value.map((det) => ({
+    box: asBox(det.box),
+    label: det.label,
+  }))
 
   inferNextLoading.value = true
   inferNextError.value = ''
@@ -217,12 +263,12 @@ async function runInferNext() {
       inferNextError.value = 'No next image available.'
       return
     }
-    const result = await store.inferNextVisualPrompt(sourceImgId, targetImgId, [prompt])
+    const result = await store.inferNextVisualPrompt(sourceImgId, targetImgId, prompts)
     await store.selectImage(targetImgId)
+    setPromptDetections([])
     inferCandidates.value = (result?.candidates ?? []).map((candidate, idx) => ({
       ...candidate,
       candidateId: -1000 - idx,
-      accepted: false,
       assisted: true,
       source: 'visual_prompt',
     }))
@@ -233,35 +279,44 @@ async function runInferNext() {
   }
 }
 
-function toggleCandidate(candidateId: number) {
-  const candidate = inferCandidates.value.find((item) => item.candidateId === candidateId)
-  if (candidate) candidate.accepted = !candidate.accepted
-}
-
 function rejectCandidate(candidateId: number) {
   inferCandidates.value = inferCandidates.value.filter((item) => item.candidateId !== candidateId)
   if (selectedCandidateId.value === candidateId) selectedCandidateId.value = null
 }
 
-async function saveAcceptedCandidates() {
-  if (!store.selectedImage || acceptedCandidateCount.value === 0) return
-  savingCandidates.value = true
+function visualAssistPromptIds(annotationsResult: { detections: DetectionAnnotation[] } | null | undefined): number[] {
+  return (annotationsResult?.detections ?? [])
+    .filter((det) => det.assisted && det.source === 'visual_prompt')
+    .map((det) => det.id)
+}
+
+async function acceptCandidate(candidate: AssistedCandidate, continueForward = false) {
+  if (!store.selectedImage || isCandidateBusy(candidate.candidateId)) return
+  setCandidateBusy(candidate.candidateId, true)
+  inferNextError.value = ''
   try {
-    const accepted = visibleCandidates.value.filter((candidate) => candidate.accepted)
-    for (const candidate of accepted) {
-      await store.addDetection(store.selectedImage, {
-        label: candidate.label,
-        box: asBox(candidate.box),
-        accepted: true,
-        confidence: candidate.confidence,
-        assisted: true,
-        source: 'visual_prompt',
+    const result = await store.addDetection(store.selectedImage, {
+      label: candidate.label,
+      box: asBox(candidate.box),
+      accepted: true,
+      confidence: candidate.confidence,
+      assisted: true,
+      source: 'visual_prompt',
+    })
+    rejectCandidate(candidate.candidateId)
+    const promptIds = visualAssistPromptIds(result)
+    if (continueForward) {
+      setPromptDetections(promptIds)
+      await runInferNext()
+    } else if (promptIds.length) {
+      promptDetectionIds.value = replaceSet(promptDetectionIds.value, (next) => {
+        next.add(promptIds[promptIds.length - 1])
       })
     }
-    inferCandidates.value = inferCandidates.value.filter((candidate) => !candidate.accepted)
-    selectedCandidateId.value = null
+  } catch (e) {
+    inferNextError.value = e instanceof Error ? e.message : 'Candidate save failed'
   } finally {
-    savingCandidates.value = false
+    setCandidateBusy(candidate.candidateId, false)
   }
 }
 
@@ -289,13 +344,24 @@ async function saveAnnotation() {
   }
 }
 
+async function deleteDetection(det: DetectionAnnotation) {
+  if (!store.selectedImage || isDeletingDetection(det.id)) return
+  if (!window.confirm(`Delete annotation "${det.label}"?`)) return
+  setDeletingDetection(det.id, true)
+  try {
+    await store.deleteDetection(store.selectedImage, det.id)
+    promptDetectionIds.value = replaceSet(promptDetectionIds.value, (next) => next.delete(det.id))
+    if (selectedDetectionId.value === det.id) resetEditor()
+  } finally {
+    setDeletingDetection(det.id, false)
+  }
+}
+
 async function deleteSelectedAnnotation() {
-  if (!store.selectedImage || selectedDetectionId.value === null) return
-  if (!window.confirm('Delete selected annotation?')) return
+  if (!selectedDetection.value) return
   savingAnnotation.value = true
   try {
-    await store.deleteDetection(store.selectedImage, selectedDetectionId.value)
-    resetEditor()
+    await deleteDetection(selectedDetection.value)
   } finally {
     savingAnnotation.value = false
   }
@@ -389,6 +455,8 @@ watch(
   async () => {
     resetEditor()
     inferCandidates.value = []
+    candidateBusyIds.value = new Set()
+    setPromptDetections([])
     inferNextError.value = ''
     if (objectUrl) {
       URL.revokeObjectURL(objectUrl)
@@ -413,7 +481,9 @@ watch(
 )
 
 watch(detections, () => {
-  if (selectedDetectionId.value !== null && !detections.value.some((d) => d.id === selectedDetectionId.value)) {
+  const validIds = new Set(detections.value.map((det) => det.id))
+  promptDetectionIds.value = new Set(Array.from(promptDetectionIds.value).filter((id) => validIds.has(id)))
+  if (selectedDetectionId.value !== null && !validIds.has(selectedDetectionId.value)) {
     resetEditor()
   }
 })
@@ -484,7 +554,7 @@ onUnmounted(() => {
               :show-bbox="store.overlayState.showBbox"
               :show-labels="store.overlayState.showLabels"
               :show-masks="store.overlayState.showMasks"
-              :selected-id="selectedDetectionId"
+              :selected-id="selectedCandidateId ?? selectedDetectionId"
               :draft-box="draftBox"
               :editor-open="editorMode !== 'idle'"
               @select="handleOverlaySelect"
@@ -576,7 +646,7 @@ onUnmounted(() => {
               <div class="dataset-assist-panel">
                 <div class="dataset-field-row">
                   <span class="dataset-field-label">Visual Assist</span>
-                  <span class="dataset-field-value">{{ promptModelReady ? 'Ready' : 'Prompt model' }}</span>
+                  <span class="dataset-field-value">{{ promptModelReady ? `${selectedPromptDetections.length} prompts` : 'Prompt model' }}</span>
                 </div>
                 <button
                   v-if="!promptModelReady"
@@ -616,9 +686,7 @@ onUnmounted(() => {
                   <strong>Candidates</strong>
                   <small>{{ visibleCandidates.length }} new<span v-if="duplicateCandidateCount"> · {{ duplicateCandidateCount }} hidden duplicate</span></small>
                 </div>
-                <button class="dataset-primary-button" :disabled="acceptedCandidateCount === 0 || savingCandidates" @click="saveAcceptedCandidates">
-                  {{ savingCandidates ? 'Saving...' : `Save ${acceptedCandidateCount}` }}
-                </button>
+                <span class="dataset-candidate-autosave">Accept auto-saves</span>
               </header>
 
               <div v-if="visibleCandidates.length" class="dataset-candidate-list">
@@ -626,17 +694,20 @@ onUnmounted(() => {
                   v-for="candidate in visibleCandidates"
                   :key="candidate.candidateId"
                   class="dataset-candidate-row"
-                  :class="{ 'is-selected': candidate.candidateId === selectedCandidateId, 'is-accepted': candidate.accepted }"
+                  :class="{ 'is-selected': candidate.candidateId === selectedCandidateId }"
                   @click="selectCandidate(candidate.candidateId)"
                 >
                   <div class="min-w-0">
                     <p class="text-[13px] font-medium truncate">{{ candidate.label }}</p>
                     <p class="text-[11px] text-ink-faint font-mono truncate">{{ (candidate.confidence * 100).toFixed(0) }}% · [{{ candidate.box.map((v) => Math.round(v)).join(', ') }}]</p>
                   </div>
-                  <button class="dataset-accept-button" :class="{ 'is-accepted': candidate.accepted }" @click.stop="toggleCandidate(candidate.candidateId)">
-                    {{ candidate.accepted ? 'Accepted' : 'Accept' }}
+                  <button class="dataset-accept-button" :disabled="isCandidateBusy(candidate.candidateId)" @click.stop="acceptCandidate(candidate)">
+                    {{ isCandidateBusy(candidate.candidateId) ? 'Saving...' : 'Accept' }}
                   </button>
-                  <button class="dataset-secondary-button" @click.stop="rejectCandidate(candidate.candidateId)">Reject</button>
+                  <button class="dataset-primary-button" :disabled="isCandidateBusy(candidate.candidateId) || !canNavigateNext" @click.stop="acceptCandidate(candidate, true)">
+                    Save & Continue
+                  </button>
+                  <button class="dataset-secondary-button" :disabled="isCandidateBusy(candidate.candidateId)" @click.stop="rejectCandidate(candidate.candidateId)">Reject</button>
                 </div>
               </div>
               <p v-else class="dataset-candidate-empty">All candidates overlap existing annotations.</p>
@@ -647,9 +718,14 @@ onUnmounted(() => {
                 v-for="det in detections"
                 :key="det.id"
                 class="dataset-detection-row"
-                :class="{ 'opacity-50': !det.accepted, 'is-selected': det.id === selectedDetectionId }"
+                :class="{ 'opacity-50': !det.accepted, 'is-selected': det.id === selectedDetectionId, 'is-prompt': isPromptSelected(det.id) }"
                 @click="selectDetection(det.id)"
               >
+                <label class="dataset-prompt-checkbox" title="Use as Visual Assist prompt" @click.stop>
+                  <input type="checkbox" :checked="isPromptSelected(det.id)" @change="togglePromptDetection(det.id)" />
+                  <span>Prompt</span>
+                </label>
+
                 <button
                   class="dataset-detection-toggle"
                   :class="{ 'opacity-30': !isVisible(det) }"
@@ -674,6 +750,18 @@ onUnmounted(() => {
                   @click.stop="toggleAccept(det)"
                 >
                   {{ det.accepted ? 'Accepted' : 'Rejected' }}
+                </button>
+
+                <button
+                  class="dataset-row-delete-button"
+                  :disabled="isDeletingDetection(det.id)"
+                  aria-label="Delete annotation"
+                  @click.stop="deleteDetection(det)"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                  </svg>
                 </button>
               </div>
 
