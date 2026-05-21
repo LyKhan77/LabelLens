@@ -53,6 +53,9 @@ LabelLens/
 
 **Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users always land on `/` (Feature Modes), navigate to `/workspace` after mode load, while Dataset Manager remains independently available at `/datasets`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated real-overlay thumbnail dataset gallery with Select All Files, Dataset Manager delete confirmation modals, centered modal review with image delete and cross-page Prev/Next, Rapid Inference job polling with frame-by-frame progress, and workspace RTSP auto-label continuous save with optional timer are functional.
 
+``` 
+In THIS (**Being Developed**) section, always double-check features or items that have been completed. Make sure the features are working and set them aside or remove them from the list. 
+```
 **Being Developed:**
 - Auto-Labelling / Rapid Inference: Standalone Dataset Manager page, project overview/delete controls, image bulk/card/review delete controls, Select All Files, real overlay paginated thumbnail gallery, centered modal review with cross-page navigation, batch label jobs with frame-by-frame progress, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights
 - Free Mode Inference: Backend + Frontend complete — needs `models/yoloe-26l-seg-pf.pt` placement and testing
@@ -77,6 +80,7 @@ This section contains critical agent behavior guidelines. Any changes require ex
 - Do not re-read files that have already been read in this session unless necessary.
 - Minimize non-essential tool calls.
 - Save every plan or specification to the `docs/plans/` folder so you can track which plans have been created or are currently being created. This allows you to resume the session if the AI agent's token expires. USE `Superpowers` skill to provide the plan.
+- Be sure to update `@CLAUDE.md` as well if you have updated `@AGENTS.md`, and vice versa. 
 
 ===========================
 
