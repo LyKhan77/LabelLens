@@ -104,6 +104,21 @@ class DatasetService:
             raise FileNotFoundError(f"Dataset '{name}' not found")
         shutil.rmtree(pdir)
 
+    def _preview_detection(self, det: dict) -> dict:
+        preview = {
+            "id": det.get("id", 0),
+            "box": det.get("box", []),
+            "label": det.get("label", ""),
+            "confidence": det.get("confidence", 0),
+            "cls_id": det.get("cls_id", -1),
+            "accepted": det.get("accepted", True),
+        }
+        if "mask" in det:
+            preview["mask"] = det["mask"]
+        if "mask_rle" in det:
+            preview["mask_rle"] = det["mask_rle"]
+        return preview
+
     def save_image(
         self,
         name: str,
@@ -304,13 +319,17 @@ class DatasetService:
             status = "new"
             accepted_count = 0
             rejected_count = 0
+            detections_preview = []
+            ann = {}
             if os.path.isfile(ann_path):
                 with open(ann_path) as f:
                     ann = json.load(f)
-                if not ann.get("labeled", True) and len(ann.get("detections", [])) == 0:
+                dets = ann.get("detections", [])
+                detections_preview = [self._preview_detection(det) for det in dets]
+                if not ann.get("labeled", True) and len(dets) == 0:
                     status = "unlabeled"
                 else:
-                    for det in ann.get("detections", []):
+                    for det in dets:
                         if det.get("accepted", True):
                             accepted_count += 1
                         else:
@@ -327,6 +346,7 @@ class DatasetService:
                 "source": ann.get("source") if os.path.isfile(ann_path) else None,
                 "width": ann.get("width") if os.path.isfile(ann_path) else None,
                 "height": ann.get("height") if os.path.isfile(ann_path) else None,
+                "detections_preview": detections_preview,
             })
 
         total = len(all_images)

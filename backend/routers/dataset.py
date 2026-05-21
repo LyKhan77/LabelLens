@@ -32,6 +32,7 @@ def _new_job(name: str) -> dict:
         "detections_count": 0,
         "error": None,
         "results": [],
+        "items": [],
         "created": time.time(),
     }
     label_jobs[job_id] = job
@@ -97,22 +98,52 @@ def _run_label_job(
 
         for img_id in unlabeled:
             image_data = dataset_service.get_image(name, img_id)
+            image_url = f"/api/datasets/{name}/images/{img_id}/file"
+            annotations = image_data.get("annotations") if image_data else None
+            item = {
+                "img_id": img_id,
+                "filename": image_data["filename"] if image_data else img_id,
+                "image_url": image_url,
+                "width": annotations.get("width") if annotations else None,
+                "height": annotations.get("height") if annotations else None,
+                "state": "running",
+                "detections_count": 0,
+                "detections": [],
+                "error": None,
+            }
+            job["items"].append(item)
+            job["current_filename"] = item["filename"]
+            job["current_image_url"] = image_url
+
             if image_data is None or image_data["image_path"] is None:
-                continue
-
-            job["current_filename"] = image_data["filename"]
-            job["current_image_url"] = f"/api/datasets/{name}/images/{img_id}/file"
-
-            image = cv2.imread(image_data["image_path"])
-            if image is None:
+                item["state"] = "failed"
+                item["error"] = "Image not found"
                 job["processed"] += 1
                 continue
 
-            det_result = _run_inference(image, prompt_type, labels, confidence)
-            labeled = dataset_service.label_image(name, img_id, det_result["detections"])
-            if labeled:
-                job["detections_count"] += labeled["detections_count"]
-                job["results"].append(labeled)
+            image = cv2.imread(image_data["image_path"])
+            if image is None:
+                item["state"] = "failed"
+                item["error"] = "Image could not be read"
+                job["processed"] += 1
+                continue
+
+            try:
+                det_result = _run_inference(image, prompt_type, labels, confidence)
+                detections = det_result.get("detections", [])
+                labeled = dataset_service.label_image(name, img_id, detections)
+                if labeled:
+                    item["detections_count"] = labeled["detections_count"]
+                    item["detections"] = detections
+                    item["state"] = "done"
+                    job["detections_count"] += labeled["detections_count"]
+                    job["results"].append(labeled)
+                else:
+                    item["state"] = "failed"
+                    item["error"] = "Image annotation not found"
+            except Exception as exc:
+                item["state"] = "failed"
+                item["error"] = str(exc)
             job["processed"] += 1
 
         job["state"] = "done"

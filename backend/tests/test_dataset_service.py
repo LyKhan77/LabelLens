@@ -62,6 +62,38 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertEqual(result["images"][0]["accepted"], 1)
         self.assertEqual(result["images"][0]["rejected"], 0)
 
+    def test_list_images_includes_detection_preview_for_gallery_overlays(self):
+        self.service.create_project("demo")
+        saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))
+
+        self.service.label_image(
+            "demo",
+            saved["img_id"],
+            [
+                {
+                    "box": [4, 6, 28, 30],
+                    "label": "car",
+                    "confidence": 0.91,
+                    "mask": [[4, 6], [28, 6], [28, 30], [4, 30]],
+                },
+                {
+                    "box": [30, 10, 50, 32],
+                    "label": "truck",
+                    "confidence": 0.72,
+                },
+            ],
+        )
+
+        result = self.service.list_images("demo")
+
+        preview = result["images"][0]["detections_preview"]
+        self.assertEqual(len(preview), 2)
+        self.assertEqual(preview[0]["box"], [4, 6, 28, 30])
+        self.assertEqual(preview[0]["label"], "car")
+        self.assertEqual(preview[0]["confidence"], 0.91)
+        self.assertTrue(preview[0]["accepted"])
+        self.assertEqual(preview[0]["mask"], [[4, 6], [28, 6], [28, 30], [4, 30]])
+
 
 if __name__ == "__main__":
     unittest.main()

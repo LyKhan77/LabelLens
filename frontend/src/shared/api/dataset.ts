@@ -13,6 +13,17 @@ export interface DatasetProject {
   }
 }
 
+export interface DatasetOverlayDetection {
+  id?: number
+  box: number[]
+  label: string
+  confidence: number
+  cls_id?: number
+  accepted?: boolean
+  mask?: number[][]
+  mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }
+}
+
 export interface DatasetImage {
   img_id: string
   filename: string
@@ -23,6 +34,19 @@ export interface DatasetImage {
   source?: string | null
   width?: number | null
   height?: number | null
+  detections_preview?: DatasetOverlayDetection[]
+}
+
+export interface DatasetLabelJobItem {
+  img_id: string
+  filename: string
+  image_url: string
+  width?: number | null
+  height?: number | null
+  state: 'queued' | 'running' | 'done' | 'failed'
+  detections_count: number
+  detections?: DatasetOverlayDetection[]
+  error?: string | null
 }
 
 export interface DatasetLabelJobStatus {
@@ -36,6 +60,7 @@ export interface DatasetLabelJobStatus {
   detections_count: number
   error: string | null
   results: unknown[]
+  items: DatasetLabelJobItem[]
 }
 
 export interface ImageAnnotation {
