@@ -30,6 +30,10 @@ const classes = computed(() => {
 const COLORS = ['#3ecf8e', '#24b47e', '#707070', '#9a9a9a', '#6b01c2', '#644fc1', '#ffdb13', '#212121']
 function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
 function closePanel() { emit('close') }
 
 function navigateNext() {
@@ -61,17 +65,40 @@ function isClassHidden(cls: string): boolean {
 function boxStyle(det: DetectionAnnotation) {
   const width = annotations.value?.width ?? 1
   const height = annotations.value?.height ?? 1
+
+  const x1 = clamp(Math.min(det.box[0], det.box[2]), 0, width)
+  const y1 = clamp(Math.min(det.box[1], det.box[3]), 0, height)
+  const x2 = clamp(Math.max(det.box[0], det.box[2]), 0, width)
+  const y2 = clamp(Math.max(det.box[1], det.box[3]), 0, height)
+
   return {
-    left: `${(det.box[0] / width) * 100}%`,
-    top: `${(det.box[1] / height) * 100}%`,
-    width: `${((det.box[2] - det.box[0]) / width) * 100}%`,
-    height: `${((det.box[3] - det.box[1]) / height) * 100}%`,
+    left: `${(x1 / width) * 100}%`,
+    top: `${(y1 / height) * 100}%`,
+    width: `${((x2 - x1) / width) * 100}%`,
+    height: `${((y2 - y1) / height) * 100}%`,
     borderColor: detColor(det.id),
   }
 }
 
+function labelStyle(det: DetectionAnnotation) {
+  const height = annotations.value?.height ?? 1
+  const y1 = clamp(Math.min(det.box[1], det.box[3]), 0, height)
+  if (y1 < 22) {
+    return {
+      top: '0px',
+      transform: 'translateY(0)',
+    }
+  }
+  return {
+    top: '0px',
+    transform: 'translateY(calc(-100% - 2px))',
+  }
+}
+
 function maskPoints(det: DetectionAnnotation) {
-  return (det.mask ?? []).map(([x, y]) => `${x},${y}`).join(' ')
+  const width = annotations.value?.width ?? 1
+  const height = annotations.value?.height ?? 1
+  return (det.mask ?? []).map(([x, y]) => `${clamp(x, 0, width)},${clamp(y, 0, height)}`).join(' ')
 }
 
 async function toggleAccept(det: DetectionAnnotation) {
@@ -156,7 +183,7 @@ onUnmounted(() => {
 
               <svg
                 v-if="annotations && store.overlayState.showMasks"
-                class="absolute inset-0 w-full h-full pointer-events-none"
+                class="dataset-review-mask-layer"
                 :viewBox="`0 0 ${annotations.width} ${annotations.height}`"
                 preserveAspectRatio="none"
               >
@@ -176,14 +203,14 @@ onUnmounted(() => {
                 <div
                   v-for="det in detections.filter((d) => isVisible(d))"
                   :key="`box-${det.id}`"
-                  class="absolute border-2 rounded-[3px] pointer-events-none transition-opacity"
+                  class="dataset-review-box absolute border-2 rounded-[3px] pointer-events-none transition-opacity"
                   :class="{ 'opacity-30': !det.accepted }"
                   :style="boxStyle(det)"
                 >
                   <span
                     v-if="store.overlayState.showLabels"
-                    class="absolute -top-[20px] left-0 text-[9px] font-medium px-1.5 py-[2px] rounded-[2px] text-white whitespace-nowrap"
-                    :style="{ backgroundColor: detColor(det.id) }"
+                    class="dataset-review-box-label absolute left-0 text-[9px] font-medium px-1.5 py-[2px] rounded-[2px] text-white whitespace-nowrap"
+                    :style="{ backgroundColor: detColor(det.id), ...labelStyle(det) }"
                   >
                     {{ det.label }} {{ (det.confidence * 100).toFixed(0) }}%
                   </span>

@@ -9,6 +9,8 @@ const newName = ref('')
 const newClasses = ref('')
 const creating = ref(false)
 const deleting = ref<string | null>(null)
+const showDeleteConfirm = ref(false)
+const deleteTarget = ref<string | null>(null)
 
 const totals = computed(() => store.projects.reduce(
   (acc, p) => {
@@ -43,13 +45,27 @@ function openProject(name: string) {
   store.fetchImages(1)
 }
 
-async function deleteProject(name: string) {
-  if (!confirm(`Delete dataset "${name}"? This cannot be undone.`)) return
+function requestDelete(name: string) {
+  deleteTarget.value = name
+  showDeleteConfirm.value = true
+}
+
+function closeDeleteDialog() {
+  if (deleting.value) return
+  showDeleteConfirm.value = false
+  deleteTarget.value = null
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value) return
+  const name = deleteTarget.value
   deleting.value = name
   try {
     await store.deleteProject(name)
   } finally {
     deleting.value = null
+    showDeleteConfirm.value = false
+    deleteTarget.value = null
   }
 }
 </script>
@@ -117,7 +133,7 @@ async function deleteProject(name: string) {
           <button
             class="dataset-delete-button"
             :disabled="deleting === p.name"
-            @click="deleteProject(p.name)"
+            @click="requestDelete(p.name)"
           >
             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polyline points="3 6 5 6 21 6" />
@@ -175,6 +191,45 @@ async function deleteProject(name: string) {
             <button class="dataset-secondary-button" @click="showCreate = false">Cancel</button>
             <button class="dataset-primary-button" :disabled="creating || !newName.trim()" @click="createProject">
               {{ creating ? 'Creating...' : 'Create' }}
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition
+      enter-active-class="transition ease-out duration-200"
+      enter-from-class="opacity-0 scale-[0.98]"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition ease-in duration-150"
+      leave-to-class="opacity-0 scale-[0.98]"
+    >
+      <div v-if="showDeleteConfirm" class="dataset-dialog-backdrop" @click.self="closeDeleteDialog">
+        <section class="dataset-delete-dialog">
+          <header class="dataset-modal-header">
+            <div>
+              <h3 class="dataset-modal-title">Delete Dataset</h3>
+              <p class="dataset-modal-copy">This action cannot be undone.</p>
+            </div>
+            <button class="dataset-modal-close" :disabled="Boolean(deleting)" @click="closeDeleteDialog" aria-label="Close delete dataset dialog">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </header>
+
+          <div class="dataset-modal-body dataset-form-stack">
+            <p class="text-[13px] text-ink-mute leading-relaxed">
+              Delete dataset <span class="font-medium text-ink">{{ deleteTarget }}</span> and all saved images/annotations?
+            </p>
+          </div>
+
+          <footer class="dataset-modal-footer">
+            <button class="dataset-secondary-button" :disabled="Boolean(deleting)" @click="closeDeleteDialog">Cancel</button>
+            <button
+              class="dataset-primary-button"
+              :disabled="!deleteTarget || Boolean(deleting)"
+              @click="confirmDelete"
+            >
+              {{ deleting ? 'Deleting...' : 'Delete' }}
             </button>
           </footer>
         </section>

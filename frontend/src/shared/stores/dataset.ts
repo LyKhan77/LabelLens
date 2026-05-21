@@ -30,6 +30,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const autoLabelActive = ref(false)
   const autoLabelDataset = ref<string | null>(null)
   const autoLabelFps = ref(1)
+  const autoLabelRtspTimerSeconds = ref<number | null>(null)
 
   // Overlay state
   const overlayState = ref({
@@ -216,15 +217,17 @@ export const useDatasetStore = defineStore('dataset', () => {
   }
 
   // Auto-labelling
-  function toggleAutoLabel(dataset: string, fps: number) {
+  function toggleAutoLabel(dataset: string, fps: number, rtspTimerSeconds: number | null = null) {
     autoLabelActive.value = true
     autoLabelDataset.value = dataset
     autoLabelFps.value = fps
+    autoLabelRtspTimerSeconds.value = rtspTimerSeconds
   }
 
   function disableAutoLabel() {
     autoLabelActive.value = false
     autoLabelDataset.value = null
+    autoLabelRtspTimerSeconds.value = null
   }
 
   // Overlay controls
@@ -270,6 +273,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     autoLabelActive,
     autoLabelDataset,
     autoLabelFps,
+    autoLabelRtspTimerSeconds,
     overlayState,
     // Computed
     currentProjectData,

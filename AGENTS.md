@@ -11,7 +11,7 @@
 
 ## Key Features - ALWAYS Update this section based on Changes or Features Made
 
-- **Feature Modes Page** — Landing page with mode selection: Free Inference (LRPC, 1200+ LVIS categories) or Prompt Inference (text/visual)
+- **Feature Modes Page** — Deterministic landing page at `/` with mode selection: Free Inference (LRPC, 1200+ LVIS categories) or Prompt Inference (text/visual), then navigates to `/workspace` after model load
 - **Free Inference Mode** — Prompt-free detection using YOLOE LRPC internal vocabulary (separate `yoloe-26l-seg-pf.pt` weights, no user prompts needed)
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
@@ -20,8 +20,8 @@
 - **Detection Dashboard** — Floating right-side inference panel with compact stats and scrollable detection log
 - **Clear Media Workflow** — Media mode switching is locked until inference is stopped and current media input is cleared
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
-- **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Quick-save from workspace or batch upload via Dataset Manager. Accept/reject detections with per-class and per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split.
-- **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, visible project delete controls, Roboflow-style paginated thumbnail gallery (25/page), centered modal review with granular overlay controls, batch auto-label jobs with configurable frame sampling, and zip export.
+- **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Trigger from Workspace Auto-Label modal or batch upload via Dataset Manager. While active on RTSP, continuous viewer-frame annotations are saved until auto-label is stopped (modal, optional MM:SS timer, or Stop Inference). Accept/reject detections with per-class and per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split.
+- **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, delete confirmation modal, Roboflow-style paginated thumbnail gallery (25/page), centered modal review with granular overlay controls, batch auto-label jobs with configurable frame sampling, and zip export.
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
 
@@ -51,7 +51,7 @@ LabelLens/
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users select Free Inference or Prompt Inference from the Feature Modes landing page, while Dataset Manager is available independently at `/datasets`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated thumbnail dataset gallery, Dataset Manager overview with delete controls, centered modal review, and batch auto-label job polling are functional.
+**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users always land on `/` (Feature Modes), navigate to `/workspace` after mode load, while Dataset Manager remains independently available at `/datasets`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated thumbnail dataset gallery, Dataset Manager delete confirmation modal, centered modal review, batch auto-label job polling, and workspace RTSP auto-label continuous save with optional timer are functional.
 
 **Being Developed:**
 - Auto-Labelling: Standalone Dataset Manager page, project overview/delete controls, paginated thumbnail gallery, centered modal review, batch label jobs, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights

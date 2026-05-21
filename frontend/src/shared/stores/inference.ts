@@ -51,6 +51,22 @@ export const useInferenceStore = defineStore('inference', () => {
   const rtspFrame = ref<string>('')
   const rtspConnected = ref(false)
   const ws = useWebSocket()
+  const datasetStore = useDatasetStore()
+  let rtspAutoSaveTimer: ReturnType<typeof setInterval> | null = null
+  let rtspAutoLabelStopTimer: ReturnType<typeof setTimeout> | null = null
+  let rtspAutoSaveInFlight = false
+
+  function clearRtspAutoSaveLoop() {
+    if (rtspAutoSaveTimer) {
+      clearInterval(rtspAutoSaveTimer)
+      rtspAutoSaveTimer = null
+    }
+    if (rtspAutoLabelStopTimer) {
+      clearTimeout(rtspAutoLabelStopTimer)
+      rtspAutoLabelStopTimer = null
+    }
+    rtspAutoSaveInFlight = false
+  }
 
   // Sync WebSocket reactive state to store
   watch(() => ws.lastFrame.value, (v) => { if (v) rtspFrame.value = v })
@@ -71,6 +87,29 @@ export const useInferenceStore = defineStore('inference', () => {
       detections.value = videoDetections.value[idx] ?? []
     }
   })
+  watch(
+    () => [
+      mediaMode.value,
+      isRunning.value,
+      datasetStore.autoLabelActive,
+      datasetStore.autoLabelDataset,
+      datasetStore.autoLabelFps,
+      datasetStore.autoLabelRtspTimerSeconds,
+    ],
+    () => {
+      if (
+        mediaMode.value === 'rtsp' &&
+        isRunning.value &&
+        datasetStore.autoLabelActive &&
+        datasetStore.autoLabelDataset
+      ) {
+        startRtspAutoSaveLoop()
+      } else {
+        clearRtspAutoSaveLoop()
+      }
+    },
+    { immediate: true },
+  )
 
   const hasMediaInput = computed(() => {
     if (mediaMode.value === 'rtsp') return rtspUrl.value.trim().length > 0
@@ -147,6 +186,7 @@ export const useInferenceStore = defineStore('inference', () => {
     }
 
     stopVideo()
+    clearRtspAutoSaveLoop()
     ws.disconnect()
     rtspConnected.value = false
     file.value = null
@@ -204,6 +244,7 @@ export const useInferenceStore = defineStore('inference', () => {
         videoFrames.value = resp.frames
         videoDetections.value = resp.detections
         videoIndex.value = 0
+        resultImage.value = videoFrames.value[0] ?? ''
         detections.value = videoDetections.value[0] ?? []
         stats.value = resp.stats as unknown as Stats
         viewerState.value = 'video'
@@ -252,8 +293,6 @@ export const useInferenceStore = defineStore('inference', () => {
       show_bbox: showBbox.value,
       show_masks: showMasks.value,
     })
-
-    void autoSaveToDataset()
   }
 
   async function fileToBase64(f: File): Promise<string> {
@@ -268,12 +307,26 @@ export const useInferenceStore = defineStore('inference', () => {
     })
   }
 
+  function frameBase64ToFile(base64: string): File | null {
+    try {
+      const binary = atob(base64)
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i)
+      }
+      const blob = new Blob([bytes], { type: 'image/jpeg' })
+      return new File([blob], `rtsp_${Date.now()}.jpg`, { type: 'image/jpeg' })
+    } catch {
+      return null
+    }
+  }
+
   function playVideo() {
     stopVideo()
     videoPlaying.value = true
     videoTimer = setInterval(() => {
       if (videoIndex.value < videoFrames.value.length - 1) {
-        videoIndex.value++
+        videoIndex.value += 1
         resultImage.value = videoFrames.value[videoIndex.value]
       } else {
         videoIndex.value = 0
@@ -301,6 +354,10 @@ export const useInferenceStore = defineStore('inference', () => {
       rtspConnected.value = false
       rtspFrame.value = ''
     }
+    clearRtspAutoSaveLoop()
+    if (datasetStore.autoLabelActive) {
+      datasetStore.disableAutoLabel()
+    }
     if (viewerState.value === 'loading' || viewerState.value === 'rtsp') {
       viewerState.value = 'empty'
     }
@@ -309,18 +366,18 @@ export const useInferenceStore = defineStore('inference', () => {
   function reset() {
     clearOutput()
     stopVideo()
+    clearRtspAutoSaveLoop()
   }
 
   async function autoSaveToDataset() {
-    const ds = useDatasetStore()
-    if (!ds.autoLabelActive || !ds.autoLabelDataset) return
+    if (!datasetStore.autoLabelActive || !datasetStore.autoLabelDataset) return
 
     const params = buildPromptParams()
     const streamParams = {
       promptType: params.promptType,
       labels: params.labels,
       confidence: params.confidence,
-      sampleFps: ds.autoLabelFps,
+      sampleFps: datasetStore.autoLabelFps,
       referImage: params.referImage,
       bboxes: params.bboxes,
       vcls: params.vcls,
@@ -329,25 +386,66 @@ export const useInferenceStore = defineStore('inference', () => {
     try {
       if (mediaMode.value === 'image' && file.value) {
         if (detections.value.length === 0) return
-        await ds.saveToDataset(
-          ds.autoLabelDataset,
+        await datasetStore.saveToDataset(
+          datasetStore.autoLabelDataset,
           file.value,
           detections.value,
           mediaMode.value,
         )
       } else if (mediaMode.value === 'video' && file.value) {
-        await ds.saveStream(ds.autoLabelDataset, {
+        await datasetStore.saveStream(datasetStore.autoLabelDataset, {
           file: file.value,
-          ...streamParams,
-        })
-      } else if (mediaMode.value === 'rtsp' && rtspUrl.value.trim()) {
-        await ds.saveStream(ds.autoLabelDataset, {
-          rtspUrl: rtspUrl.value,
           ...streamParams,
         })
       }
     } catch {
       // Auto-save failure should not block inference
+    }
+  }
+
+  function startRtspAutoSaveLoop() {
+    clearRtspAutoSaveLoop()
+
+    if (!datasetStore.autoLabelActive || !datasetStore.autoLabelDataset) {
+      return
+    }
+
+    const fps = Math.max(0.1, datasetStore.autoLabelFps)
+    const intervalMs = Math.max(200, Math.round(1000 / fps))
+
+    rtspAutoSaveTimer = setInterval(() => {
+      void autoSaveRtspFrame()
+    }, intervalMs)
+
+    if (datasetStore.autoLabelRtspTimerSeconds && datasetStore.autoLabelRtspTimerSeconds > 0) {
+      rtspAutoLabelStopTimer = setTimeout(() => {
+        datasetStore.disableAutoLabel()
+        clearRtspAutoSaveLoop()
+      }, datasetStore.autoLabelRtspTimerSeconds * 1000)
+    }
+  }
+
+  async function autoSaveRtspFrame() {
+    if (rtspAutoSaveInFlight) return
+    if (mediaMode.value !== 'rtsp') return
+    if (!datasetStore.autoLabelActive || !datasetStore.autoLabelDataset) return
+    if (!rtspFrame.value || detections.value.length === 0) return
+
+    const frameFile = frameBase64ToFile(rtspFrame.value)
+    if (!frameFile) return
+
+    rtspAutoSaveInFlight = true
+    try {
+      await datasetStore.saveToDataset(
+        datasetStore.autoLabelDataset,
+        frameFile,
+        detections.value,
+        'rtsp',
+      )
+    } catch {
+      // Auto-save failure should not block stream inference
+    } finally {
+      rtspAutoSaveInFlight = false
     }
   }
 

@@ -5,7 +5,6 @@ import GroundingInput from '../sections/grounding/GroundingInput.vue'
 import MediaInput from '../sections/media/MediaInput.vue'
 import SettingsPanel from '../sections/settings/SettingsPanel.vue'
 import AutoLabelModal from './AutoLabelModal.vue'
-import QuickSave from './QuickSave.vue'
 
 const collapsed = ref(false)
 const showAutoLabelModal = ref(false)
@@ -74,7 +73,6 @@ const datasetStore = useDatasetStore()
             <span>{{ datasetStore.autoLabelActive ? `Auto-Label → ${datasetStore.autoLabelDataset}` : 'Auto-Label' }}</span>
             <span v-if="datasetStore.autoLabelActive" class="w-2 h-2 rounded-full bg-primary animate-pulse" />
           </button>
-          <QuickSave class="mt-2" />
         </div>
       </div>
     </div>

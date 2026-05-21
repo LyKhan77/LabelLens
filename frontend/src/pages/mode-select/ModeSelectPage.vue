@@ -25,9 +25,13 @@ const MODES: ModeCard[] = [
   },
 ]
 
-function select(mode: InferenceMode) {
+async function select(mode: InferenceMode) {
   if (store.modelLoading) return
-  store.selectMode(mode)
+  await store.selectMode(mode)
+  if (store.modelLoaded) {
+    window.history.pushState({}, '', '/workspace')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }
 }
 
 function isLoading(m: ModeCard) {

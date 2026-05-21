@@ -473,7 +473,6 @@
     padding: 24px;
     background: var(--color-canvas-soft);
   }
-
   .dataset-review-frame {
     position: relative;
     width: 100%;
@@ -483,6 +482,28 @@
     border-radius: var(--radius-md);
     background: var(--color-canvas-night);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    isolation: isolate;
+  }
+
+  .dataset-review-mask-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .dataset-review-box {
+    overflow: visible;
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .dataset-review-box-label {
+    max-width: min(220px, calc(100% - 2px));
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .dataset-review-frame img {
@@ -510,6 +531,10 @@
 
     .dataset-workspace {
       gap: 24px;
+    }
+
+    .dataset-review-stage {
+      padding: 12px;
     }
 
     .dataset-metrics,
@@ -763,9 +788,16 @@
     padding: 32px;
     text-align: center;
   }
-
   .dataset-create-dialog {
     width: min(440px, calc(100vw - 32px));
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-xl);
+    background: var(--color-canvas);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+  }
+
+  .dataset-delete-dialog {
+    width: min(460px, calc(100vw - 32px));
     border: 1px solid var(--color-hairline);
     border-radius: var(--radius-xl);
     background: var(--color-canvas);
@@ -1687,7 +1719,8 @@
     .dataset-upload-dialog,
     .dataset-review-dialog,
     .dataset-export-dialog,
-    .dataset-create-dialog {
+    .dataset-create-dialog,
+    .dataset-delete-dialog {
       width: calc(100vw - 24px);
       max-height: calc(100vh - 24px);
     }

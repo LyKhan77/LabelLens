@@ -9,7 +9,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 
 ## Features
 
-- **Feature Modes Page** — select Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts) before entering the dashboard
+- **Feature Modes Page** — root path `/` always opens mode selection; choose Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts), then enter workspace at `/workspace`
 - **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project delete controls, Roboflow-style paginated thumbnail gallery review, centered modal inspector, batch upload, auto-label jobs, and YOLO/COCO export
 - **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
@@ -20,6 +20,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 - **Configurable Settings** — confidence threshold plus backend-rendered label, bbox, and clipped mask overlay toggles
 - **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
 - **Clear Media Workflow** — stop inference, clear current media, then switch Image/Video/RTSP modes without losing prompt state
+- **Workspace Auto-Label Modal** — trigger auto-save only from Auto-Label modal; RTSP saves continuous viewer frames while active, optional `MM:SS` timer stops auto-label only, and Stop Inference also stops auto-label
 - **Auto-Labelling Workflow** — upload images or sample video frames into a dataset, configure Free/Text/Visual YOLOE grounding in Dataset Manager, load the required model, run batch inference with progress preview, then inspect detections in a modal reviewer
 
 ## Tech Stack
@@ -93,14 +94,15 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 
 ## Usage
 
-1. **Select Mode** — choose Free Inference (no prompts needed) or Prompt Inference on the landing page
+1. **Select Mode** — open `/`, choose Free Inference (no prompts needed) or Prompt Inference on the landing page
 2. **Text Prompt** — type comma-separated labels in the grounding prompt field (Prompt mode only)
 3. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels (Prompt mode only)
 4. **Select media** — choose Image / Video / RTSP before adding media input
 5. **Adjust settings** — set confidence threshold and choose label/bbox/mask overlays before starting inference; image/video changes require rerun, RTSP changes require restarting the stream
 6. **Run or switch media** — Start/Stop can reuse the current media; use Clear Media after stopping inference to switch modes
 7. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
-8. **Switch Mode** — click "Switch Mode" in the header to return to mode selection
+8. **Auto-Label (optional)** — open Dataset section in sidebar, start Auto-Label via modal, and stop from modal or Stop Inference. For RTSP, optional `MM:SS` timer stops auto-label while stream keeps running.
+9. **Switch Mode** — click "Switch Mode" in the header to return to mode selection
 
 ### Dataset Manager
 
