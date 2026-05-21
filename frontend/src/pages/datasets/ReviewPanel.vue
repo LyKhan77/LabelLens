@@ -2,13 +2,18 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import type { DetectionAnnotation } from '../../shared/api/dataset'
-import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
+import EditableAnnotationOverlay from './EditableAnnotationOverlay.vue'
 
 const emit = defineEmits<{ close: [] }>()
 const store = useDatasetStore()
 const imageSrc = ref('')
 const showDeleteConfirm = ref(false)
 const deletingImage = ref(false)
+const selectedDetectionId = ref<number | null>(null)
+const editorMode = ref<'idle' | 'add' | 'edit'>('idle')
+const draftLabel = ref('')
+const draftBox = ref<[number, number, number, number] | null>(null)
+const savingAnnotation = ref(false)
 let objectUrl = ''
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
@@ -16,6 +21,7 @@ const detections = computed(() => annotations.value?.detections ?? [])
 const acceptedCount = computed(() => detections.value.filter((d) => d.accepted).length)
 const rejectedCount = computed(() => detections.value.filter((d) => !d.accepted).length)
 const classCount = computed(() => classes.value.length)
+const selectedDetection = computed(() => detections.value.find((d) => d.id === selectedDetectionId.value) ?? null)
 const currentImageIndex = computed(() => store.images.findIndex((i) => i.img_id === store.selectedImage))
 const totalImages = computed(() => store.images.length)
 const totalPages = computed(() => Math.max(1, Math.ceil(store.imagesTotal / store.imagesLimit)))
@@ -37,9 +43,111 @@ const classes = computed(() => {
   for (const d of detections.value) cls.set(d.label, (cls.get(d.label) ?? 0) + 1)
   return Array.from(cls.entries())
 })
+const availableLabels = computed(() => {
+  const labels = new Set<string>(Object.keys(store.currentProjectData?.class_to_id ?? {}))
+  for (const d of detections.value) if (d.label) labels.add(d.label)
+  return Array.from(labels).sort((a, b) => a.localeCompare(b))
+})
+const canSaveAnnotation = computed(() => Boolean(draftLabel.value.trim() && draftBox.value && store.selectedImage && editorMode.value !== 'idle'))
 
 const COLORS = ['#3ecf8e', '#24b47e', '#707070', '#9a9a9a', '#6b01c2', '#644fc1', '#ffdb13', '#212121']
 function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
+
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+function normalizeBox(box: number[]): [number, number, number, number] {
+  const width = annotations.value?.width ?? 1
+  const height = annotations.value?.height ?? 1
+  const x1 = clamp(Math.min(box[0] ?? 0, box[2] ?? 0), 0, width)
+  const y1 = clamp(Math.min(box[1] ?? 0, box[3] ?? 0), 0, height)
+  const x2 = clamp(Math.max(box[0] ?? 0, box[2] ?? 0), 0, width)
+  const y2 = clamp(Math.max(box[1] ?? 0, box[3] ?? 0), 0, height)
+  return [x1, y1, x2, y2]
+}
+
+function roundBox(box: number[]): [number, number, number, number] {
+  return normalizeBox(box).map((v) => Math.round(v * 10) / 10) as [number, number, number, number]
+}
+
+function resetEditor() {
+  selectedDetectionId.value = null
+  editorMode.value = 'idle'
+  draftLabel.value = ''
+  draftBox.value = null
+}
+
+function startAddAnnotation() {
+  selectedDetectionId.value = null
+  editorMode.value = 'add'
+  draftLabel.value = availableLabels.value[0] ?? ''
+  draftBox.value = null
+}
+
+function selectDetection(id: number) {
+  const det = detections.value.find((d) => d.id === id)
+  if (!det) return
+  selectedDetectionId.value = id
+  editorMode.value = 'edit'
+  draftLabel.value = det.label
+  draftBox.value = roundBox(det.box)
+}
+
+function updateDraftBox(box: [number, number, number, number]) {
+  draftBox.value = roundBox(box)
+}
+
+function updateDraftCoord(index: number, value: string) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return
+  const current = draftBox.value ?? [0, 0, 1, 1]
+  const next = [...current] as [number, number, number, number]
+  next[index] = numeric
+  draftBox.value = roundBox(next)
+}
+
+function usePresetLabel(e: Event) {
+  const value = (e.target as HTMLSelectElement).value
+  if (value) draftLabel.value = value
+}
+
+async function saveAnnotation() {
+  if (!store.selectedImage || !draftBox.value || !draftLabel.value.trim()) return
+  savingAnnotation.value = true
+  try {
+    if (editorMode.value === 'add') {
+      await store.addDetection(store.selectedImage, {
+        label: draftLabel.value.trim(),
+        box: draftBox.value,
+        accepted: true,
+      })
+      resetEditor()
+    } else if (editorMode.value === 'edit' && selectedDetectionId.value !== null) {
+      await store.updateDetection(store.selectedImage, selectedDetectionId.value, {
+        label: draftLabel.value.trim(),
+        box: draftBox.value,
+      })
+      const id = selectedDetectionId.value
+      selectDetection(id)
+    }
+  } finally {
+    savingAnnotation.value = false
+  }
+}
+
+async function deleteSelectedAnnotation() {
+  if (!store.selectedImage || selectedDetectionId.value === null) return
+  if (!window.confirm('Delete selected annotation?')) return
+  savingAnnotation.value = true
+  try {
+    await store.deleteDetection(store.selectedImage, selectedDetectionId.value)
+    resetEditor()
+  } finally {
+    savingAnnotation.value = false
+  }
+}
 
 function closePanel() { emit('close') }
 
@@ -127,6 +235,7 @@ async function toggleAccept(det: DetectionAnnotation) {
 watch(
   () => store.selectedImage,
   async () => {
+    resetEditor()
     if (objectUrl) {
       URL.revokeObjectURL(objectUrl)
       objectUrl = ''
@@ -148,6 +257,12 @@ watch(
   },
   { immediate: true },
 )
+
+watch(detections, () => {
+  if (selectedDetectionId.value !== null && !detections.value.some((d) => d.id === selectedDetectionId.value)) {
+    resetEditor()
+  }
+})
 
 onMounted(() => window.addEventListener('keydown', handleKeydown))
 onUnmounted(() => {
@@ -203,7 +318,7 @@ onUnmounted(() => {
 
         <div class="dataset-review-body">
           <main class="dataset-review-stage">
-            <DatasetMediaOverlay
+            <EditableAnnotationOverlay
               v-if="imageSrc && annotations"
               class="dataset-review-frame"
               :style="frameStyle"
@@ -215,6 +330,12 @@ onUnmounted(() => {
               :show-bbox="store.overlayState.showBbox"
               :show-labels="store.overlayState.showLabels"
               :show-masks="store.overlayState.showMasks"
+              :add-mode="editorMode === 'add'"
+              :selected-id="selectedDetectionId"
+              :draft-box="draftBox"
+              @select="selectDetection"
+              @draft-change="updateDraftBox"
+              @create-draft="updateDraftBox"
             />
 
           </main>
@@ -255,17 +376,84 @@ onUnmounted(() => {
               </div>
             </section>
 
+            <section class="dataset-inspector-section dataset-editor-panel">
+              <div class="dataset-editor-toolbar">
+                <button
+                  class="dataset-secondary-button"
+                  :class="{ 'is-ready': editorMode === 'add' }"
+                  :disabled="savingAnnotation"
+                  @click="startAddAnnotation"
+                >
+                  Add BBox
+                </button>
+                <button
+                  class="dataset-secondary-button"
+                  :disabled="editorMode === 'idle' || savingAnnotation"
+                  @click="resetEditor"
+                >
+                  Cancel
+                </button>
+              </div>
+
+              <div v-if="editorMode !== 'idle'" class="dataset-editor-form">
+                <div class="dataset-editor-field">
+                  <label>Class</label>
+                  <div class="dataset-editor-label-row">
+                    <select :value="availableLabels.includes(draftLabel) ? draftLabel : ''" @change="usePresetLabel">
+                      <option value="">Custom</option>
+                      <option v-for="label in availableLabels" :key="label" :value="label">{{ label }}</option>
+                    </select>
+                    <input v-model="draftLabel" type="text" placeholder="Label" />
+                  </div>
+                </div>
+
+                <div class="dataset-editor-coords">
+                  <label>
+                    X1
+                    <input :value="draftBox?.[0] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(0, ($event.target as HTMLInputElement).value)" />
+                  </label>
+                  <label>
+                    Y1
+                    <input :value="draftBox?.[1] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(1, ($event.target as HTMLInputElement).value)" />
+                  </label>
+                  <label>
+                    X2
+                    <input :value="draftBox?.[2] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(2, ($event.target as HTMLInputElement).value)" />
+                  </label>
+                  <label>
+                    Y2
+                    <input :value="draftBox?.[3] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(3, ($event.target as HTMLInputElement).value)" />
+                  </label>
+                </div>
+
+                <div class="dataset-editor-actions">
+                  <button class="dataset-primary-button" :disabled="!canSaveAnnotation || savingAnnotation" @click="saveAnnotation">
+                    {{ savingAnnotation ? 'Saving...' : 'Save' }}
+                  </button>
+                  <button
+                    v-if="editorMode === 'edit'"
+                    class="dataset-secondary-button dataset-danger-button"
+                    :disabled="savingAnnotation || !selectedDetection"
+                    @click="deleteSelectedAnnotation"
+                  >
+                    Delete Annotation
+                  </button>
+                </div>
+              </div>
+            </section>
+
             <div class="dataset-detection-list">
               <div
                 v-for="det in detections"
                 :key="det.id"
                 class="dataset-detection-row"
-                :class="{ 'opacity-50': !det.accepted }"
+                :class="{ 'opacity-50': !det.accepted, 'is-selected': det.id === selectedDetectionId }"
+                @click="selectDetection(det.id)"
               >
                 <button
                   class="dataset-detection-toggle"
                   :class="{ 'opacity-30': !isVisible(det) }"
-                  @click="store.toggleDetectionVisibility(det.id)"
+                  @click.stop="store.toggleDetectionVisibility(det.id)"
                 >
                   <svg v-if="isVisible(det)" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
@@ -277,13 +465,13 @@ onUnmounted(() => {
 
                 <div class="min-w-0">
                   <p class="text-[13px] font-medium truncate" :class="det.accepted ? 'text-ink' : 'text-ink-faint line-through'">{{ det.label }}</p>
-                  <p class="text-[11px] text-ink-faint font-mono truncate">{{ (det.confidence * 100).toFixed(0) }}% · [{{ det.box.map((v) => Math.round(v)).join(', ') }}]</p>
+                  <p class="text-[11px] text-ink-faint font-mono truncate">{{ det.manual ? 'Manual' : `${(det.confidence * 100).toFixed(0)}%` }} · [{{ det.box.map((v) => Math.round(v)).join(', ') }}]</p>
                 </div>
 
                 <button
                   class="dataset-accept-button"
                   :class="{ 'is-accepted': det.accepted }"
-                  @click="toggleAccept(det)"
+                  @click.stop="toggleAccept(det)"
                 >
                   {{ det.accepted ? 'Accepted' : 'Rejected' }}
                 </button>

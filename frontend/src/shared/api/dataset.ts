@@ -20,6 +20,7 @@ export interface DatasetOverlayDetection {
   confidence: number
   cls_id?: number
   accepted?: boolean
+  manual?: boolean
   mask?: number[][]
   mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }
 }
@@ -83,6 +84,7 @@ export interface DetectionAnnotation {
   confidence: number
   cls_id: number
   accepted: boolean
+  manual?: boolean
   mask?: number[][]
   mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }
 }
@@ -227,6 +229,41 @@ export async function batchUpload(
   form.append('labels', JSON.stringify(labels))
   form.append('confidence', String(confidence))
   const res = await api.post(`/datasets/${name}/batch`, form)
+  return res.data
+}
+
+
+export type DetectionPayload = {
+  label?: string
+  box?: [number, number, number, number]
+  accepted?: boolean
+}
+
+export async function addDetection(
+  name: string,
+  imgId: string,
+  payload: Required<Pick<DetectionPayload, 'label' | 'box'>> & Pick<DetectionPayload, 'accepted'>,
+): Promise<ImageAnnotation['annotations']> {
+  const res = await api.post(`/datasets/${name}/images/${imgId}/detections`, payload)
+  return res.data
+}
+
+export async function updateDetection(
+  name: string,
+  imgId: string,
+  detId: number,
+  payload: DetectionPayload,
+): Promise<ImageAnnotation['annotations']> {
+  const res = await api.patch(`/datasets/${name}/images/${imgId}/detections/${detId}`, payload)
+  return res.data
+}
+
+export async function deleteDetection(
+  name: string,
+  imgId: string,
+  detId: number,
+): Promise<ImageAnnotation['annotations']> {
+  const res = await api.delete(`/datasets/${name}/images/${imgId}/detections/${detId}`)
   return res.data
 }
 

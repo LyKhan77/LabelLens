@@ -20,8 +20,8 @@
 - **Detection Dashboard** — Floating right-side inference panel with compact stats and scrollable detection log
 - **Clear Media Workflow** — Media mode switching is locked until inference is stopped and current media input is cleared
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
-- **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Trigger from Workspace Auto-Label modal or batch upload via Dataset Manager. While active on RTSP, continuous viewer-frame annotations are saved until auto-label is stopped (modal, optional MM:SS timer, or Stop Inference). Accept/reject detections with per-class and per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split.
-- **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, delete confirmation modals, Select All Files gallery selection, real overlay paginated thumbnail gallery (25/page), centered modal review with cross-page Prev/Next, granular overlay controls and image delete, Rapid Inference jobs with frame-by-frame `Frame x/y` progress, configurable frame sampling, and zip export.
+- **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Trigger from Workspace Auto-Label modal or batch upload via Dataset Manager. While active on RTSP, continuous viewer-frame annotations are saved until auto-label is stopped (modal, optional MM:SS timer, or Stop Inference). Accept/reject detections, add/edit/delete manual bboxes, and use per-class/per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split.
+- **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, delete confirmation modals, Select All Files gallery selection, real overlay paginated thumbnail gallery (25/page), centered modal review with cross-page Prev/Next, manual bbox add/edit/delete annotation editor, granular overlay controls and image delete, Rapid Inference jobs with frame-by-frame `Frame x/y` progress, configurable frame sampling, and zip export.
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
 
@@ -36,7 +36,7 @@ LabelLens/
 │   └── pages/
 │       ├── mode-select/     (ModeSelectPage.vue — inference mode selection)
 │       ├── datasets/        (DatasetsPage, DatasetList, DatasetDetail, ReviewPanel,
-│       │                    ExportDialog, BatchUploadDialog)
+│       │                    EditableAnnotationOverlay, ExportDialog, BatchUploadDialog)
 │       └── workspace/       (components, sections)
 ├── backend/
 │   ├── routers/         (health.py, detection.py, stream.py, dataset.py)
@@ -51,13 +51,13 @@ LabelLens/
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users always land on `/` (Feature Modes), navigate to `/workspace` after mode load, while Dataset Manager remains independently available at `/datasets`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated real-overlay thumbnail dataset gallery with Select All Files, Dataset Manager delete confirmation modals, centered modal review with image delete and cross-page Prev/Next, Rapid Inference job polling with frame-by-frame progress, and workspace RTSP auto-label continuous save with optional timer are functional.
+**Condition:** In active development. All three phases (Image, Video, RTSP) are scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users always land on `/` (Feature Modes), navigate to `/workspace` after mode load, while Dataset Manager remains independently available at `/datasets`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated real-overlay thumbnail dataset gallery with Select All Files, Dataset Manager delete confirmation modals, centered modal review with image delete, manual bbox add/edit/delete, and cross-page Prev/Next, Rapid Inference job polling with frame-by-frame progress, and workspace RTSP auto-label continuous save with optional timer are functional.
 
 ``` 
 In THIS (**Being Developed**) section, always double-check features or items that have been completed. Make sure the features are working and set them aside or remove them from the list. 
 ```
 **Being Developed:**
-- Auto-Labelling / Rapid Inference: Standalone Dataset Manager page, project overview/delete controls, image bulk/card/review delete controls, Select All Files, real overlay paginated thumbnail gallery, centered modal review with cross-page navigation, batch label jobs with frame-by-frame progress, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights
+- Auto-Labelling / Rapid Inference: Standalone Dataset Manager page, project overview/delete controls, image bulk/card/review delete controls, Select All Files, real overlay paginated thumbnail gallery, centered modal review with cross-page navigation and manual bbox add/edit/delete, batch label jobs with frame-by-frame progress, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights
 - Free Mode Inference: Backend + Frontend complete — needs `models/yoloe-26l-seg-pf.pt` placement and testing
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights
 - Phase 2 (Video Processing): Backend + Frontend complete — needs testing with sample videos

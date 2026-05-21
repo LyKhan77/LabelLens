@@ -443,6 +443,37 @@ async def batch_upload(
     return {"processed": len(results), "results": results}
 
 
+
+@router.post("/datasets/{name}/images/{img_id}/detections")
+async def add_detection(name: str, img_id: str, payload: dict = Body(...)):
+    try:
+        result = dataset_service.add_detection(name, img_id, payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if result is None:
+        raise HTTPException(404, "Image not found")
+    return result
+
+
+@router.patch("/datasets/{name}/images/{img_id}/detections/{det_id}")
+async def update_detection(name: str, img_id: str, det_id: int, payload: dict = Body(...)):
+    try:
+        result = dataset_service.update_detection(name, img_id, det_id, payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if result is None:
+        raise HTTPException(404, "Detection not found")
+    return result
+
+
+@router.delete("/datasets/{name}/images/{img_id}/detections/{det_id}")
+async def delete_detection(name: str, img_id: str, det_id: int):
+    result = dataset_service.delete_detection(name, img_id, det_id)
+    if result is None:
+        raise HTTPException(404, "Detection not found")
+    return result
+
+
 @router.patch("/datasets/{name}/images/{img_id}/review")
 async def review_image(name: str, img_id: str, reviews: list[dict] = Body(...)):
     result = dataset_service.review_image(name, img_id, reviews)

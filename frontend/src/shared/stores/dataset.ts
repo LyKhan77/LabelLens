@@ -5,6 +5,7 @@ import type {
   DatasetImage,
   ImageAnnotation,
   DetectionAnnotation,
+  DetectionPayload,
 } from '../api/dataset'
 import * as api from '../api/dataset'
 
@@ -99,6 +100,43 @@ export const useDatasetStore = defineStore('dataset', () => {
       await selectImage(imgId)
     }
     await fetchImages(imagesPage.value)
+  }
+
+
+  async function addDetection(
+    imgId: string,
+    payload: Required<Pick<DetectionPayload, 'label' | 'box'>> & Pick<DetectionPayload, 'accepted'>,
+  ) {
+    if (!currentProject.value) return
+    const result = await api.addDetection(currentProject.value, imgId, payload)
+    if (selectedImage.value === imgId) {
+      await selectImage(imgId)
+    }
+    await fetchImages(imagesPage.value)
+    await fetchProjects()
+    return result
+  }
+
+  async function updateDetection(imgId: string, detId: number, payload: DetectionPayload) {
+    if (!currentProject.value) return
+    const result = await api.updateDetection(currentProject.value, imgId, detId, payload)
+    if (selectedImage.value === imgId) {
+      await selectImage(imgId)
+    }
+    await fetchImages(imagesPage.value)
+    await fetchProjects()
+    return result
+  }
+
+  async function deleteDetection(imgId: string, detId: number) {
+    if (!currentProject.value) return
+    const result = await api.deleteDetection(currentProject.value, imgId, detId)
+    if (selectedImage.value === imgId) {
+      await selectImage(imgId)
+    }
+    await fetchImages(imagesPage.value)
+    await fetchProjects()
+    return result
   }
 
   async function saveToDataset(name: string, file: File, detections: unknown[], source = 'inference') {
@@ -295,6 +333,9 @@ export const useDatasetStore = defineStore('dataset', () => {
     selectImage,
     clearSelection,
     reviewDetection,
+    addDetection,
+    updateDetection,
+    deleteDetection,
     saveToDataset,
     removeImage,
     removeImages,

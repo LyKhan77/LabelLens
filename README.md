@@ -10,7 +10,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 ## Features
 
 - **Feature Modes Page** — root path `/` always opens mode selection; choose Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts), then enter workspace at `/workspace`
-- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project/image delete controls, Select All Files gallery selection, real overlay thumbnail gallery review, cross-page modal inspector navigation, Rapid Inference jobs, and YOLO/COCO export
+- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project/image delete controls, Select All Files gallery selection, real overlay thumbnail gallery review, cross-page modal inspector navigation, manual bbox add/edit/delete annotation editor, Rapid Inference jobs, and YOLO/COCO export
 - **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
 - **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes with hover X/Y alignment lines, and detect visually similar objects via SAVPE encoder
@@ -21,7 +21,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 - **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
 - **Clear Media Workflow** — stop inference, clear current media, then switch Image/Video/RTSP modes without losing prompt state
 - **Workspace Auto-Label Modal** — trigger auto-save only from Auto-Label modal; RTSP saves continuous viewer frames while active, optional `MM:SS` timer stops auto-label only, and Stop Inference also stops auto-label
-- **Rapid Inference Workflow** — upload images or sample video frames into a dataset, configure Free/Text/Visual YOLOE grounding in Dataset Manager, load the required model, run batch inference with frame-by-frame progress, `Frame x/y` highlighting, and overlay preview, then inspect detections in a modal reviewer
+- **Rapid Inference Workflow** — upload images or sample video frames into a dataset, configure Free/Text/Visual YOLOE grounding in Dataset Manager, load the required model, run batch inference with frame-by-frame progress, `Frame x/y` highlighting, and overlay preview, then inspect detections in a modal reviewer with accept/reject plus manual bbox correction
 
 ## Tech Stack
 
@@ -41,7 +41,7 @@ LabelLens/
 │   └── src/
 │       ├── app/             # App shell, entrypoint, global style
 │       ├── pages/           # Logical pages (mode-select, datasets, workspace)
-│       │   ├── datasets/    # Dataset Manager gallery, review modal, auto-label wizard
+│       │   ├── datasets/    # Dataset Manager gallery, review modal, manual bbox editor, auto-label wizard
 │       │   └── workspace/
 │       │       ├── components/   # Workspace layout/display blocks
 │       │       └── sections/     # Grounding, media, settings sections
@@ -111,7 +111,7 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 3. Click **Rapid Inference** and upload either multiple images or one video. Video frames are sampled once based on the selected FPS until the video ends.
 4. Choose Free, Text, or Visual prompt mode. Visual prompt uses an inline reference image + bbox annotation editor.
 5. Load the required YOLOE model, start inference, and watch frame-by-frame progress with `Frame x/y` highlighting and overlay preview.
-6. Inspect the paginated thumbnail gallery (25 images per page) with real bbox/mask overlays. Use Select All Files for the visible page/filter, delete selected images, delete a single card, or click any image to open the centered review modal with bbox/label/mask overlays, cross-page Prev/Next navigation, class filters, per-object visibility, accept/reject controls, and image delete.
+6. Inspect the paginated thumbnail gallery (25 images per page) with real bbox/mask overlays. Use Select All Files for the visible page/filter, delete selected images, delete a single card, or click any image to open the centered review modal with bbox/label/mask overlays, cross-page Prev/Next navigation, class filters, per-object visibility, accept/reject controls, manual bbox add/edit/delete, and image delete.
 7. Export accepted detections as YOLO TXT or COCO JSON with train/val split.
 
 ## Environment Variables

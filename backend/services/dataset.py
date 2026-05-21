@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import os
 import random
 import shutil
@@ -117,6 +118,8 @@ class DatasetService:
             preview["mask"] = det["mask"]
         if "mask_rle" in det:
             preview["mask_rle"] = det["mask_rle"]
+        if "manual" in det:
+            preview["manual"] = det["manual"]
         return preview
 
     def save_image(
@@ -409,6 +412,129 @@ class DatasetService:
             deleted = True
 
         return deleted
+
+
+    def _ensure_class(self, name: str, label: str) -> int:
+        meta = self._read_meta(name)
+        class_to_id = meta.get("class_to_id", {})
+        if label not in class_to_id:
+            class_to_id[label] = len(class_to_id)
+            meta["class_to_id"] = class_to_id
+            self._write_meta(name, meta)
+        return class_to_id[label]
+
+    def _clean_label(self, label) -> str:
+        if not isinstance(label, str):
+            raise ValueError("label must be a string")
+        clean = label.strip()
+        if not clean:
+            raise ValueError("label is required")
+        return clean
+
+    def _clean_box(self, box, width: int, height: int) -> list[float]:
+        if not isinstance(box, list) or len(box) != 4:
+            raise ValueError("box must be a list of four numbers")
+        try:
+            x1, y1, x2, y2 = [float(v) for v in box]
+        except (TypeError, ValueError):
+            raise ValueError("box must contain finite numbers")
+        if not all(math.isfinite(v) for v in (x1, y1, x2, y2)):
+            raise ValueError("box must contain finite numbers")
+
+        left = min(x1, x2)
+        top = min(y1, y2)
+        right = max(x1, x2)
+        bottom = max(y1, y2)
+        left = min(max(left, 0.0), float(width))
+        right = min(max(right, 0.0), float(width))
+        top = min(max(top, 0.0), float(height))
+        bottom = min(max(bottom, 0.0), float(height))
+        if right <= left or bottom <= top:
+            raise ValueError("box must have positive width and height")
+        return [left, top, right, bottom]
+
+    def add_detection(self, name: str, img_id: str, payload: dict) -> dict | None:
+        pdir = self._project_dir(name)
+        ann_path = os.path.join(pdir, "annotations", f"{img_id}.json")
+        if not os.path.isfile(ann_path):
+            return None
+
+        with open(ann_path) as f:
+            ann = json.load(f)
+
+        label = self._clean_label(payload.get("label"))
+        box = self._clean_box(payload.get("box"), ann["width"], ann["height"])
+        cls_id = self._ensure_class(name, label)
+        detections = ann.setdefault("detections", [])
+        next_id = max((int(det.get("id", -1)) for det in detections), default=-1) + 1
+        detections.append({
+            "id": next_id,
+            "box": box,
+            "label": label,
+            "confidence": 1.0,
+            "cls_id": cls_id,
+            "accepted": bool(payload.get("accepted", True)),
+            "manual": True,
+        })
+        ann["labeled"] = True
+
+        with open(ann_path, "w") as f:
+            json.dump(ann, f, indent=2)
+        return ann
+
+    def update_detection(self, name: str, img_id: str, det_id: int, payload: dict) -> dict | None:
+        pdir = self._project_dir(name)
+        ann_path = os.path.join(pdir, "annotations", f"{img_id}.json")
+        if not os.path.isfile(ann_path):
+            return None
+
+        with open(ann_path) as f:
+            ann = json.load(f)
+
+        target = None
+        for det in ann.get("detections", []):
+            if det.get("id") == det_id:
+                target = det
+                break
+        if target is None:
+            return None
+
+        if "label" in payload and payload.get("label") is not None:
+            label = self._clean_label(payload.get("label"))
+            target["label"] = label
+            target["cls_id"] = self._ensure_class(name, label)
+
+        if "box" in payload and payload.get("box") is not None:
+            target["box"] = self._clean_box(payload.get("box"), ann["width"], ann["height"])
+            target.pop("mask", None)
+            target.pop("mask_rle", None)
+
+        if "accepted" in payload:
+            target["accepted"] = bool(payload.get("accepted"))
+
+        with open(ann_path, "w") as f:
+            json.dump(ann, f, indent=2)
+        return ann
+
+    def delete_detection(self, name: str, img_id: str, det_id: int) -> dict | None:
+        pdir = self._project_dir(name)
+        ann_path = os.path.join(pdir, "annotations", f"{img_id}.json")
+        if not os.path.isfile(ann_path):
+            return None
+
+        with open(ann_path) as f:
+            ann = json.load(f)
+
+        detections = ann.get("detections", [])
+        remaining = [det for det in detections if det.get("id") != det_id]
+        if len(remaining) == len(detections):
+            return None
+        ann["detections"] = remaining
+        ann["labeled"] = bool(remaining)
+
+        with open(ann_path, "w") as f:
+            json.dump(ann, f, indent=2)
+        return ann
 
     def review_image(self, name: str, img_id: str, reviews: list[dict]) -> dict | None:
         pdir = self._project_dir(name)

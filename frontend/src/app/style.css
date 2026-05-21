@@ -2071,3 +2071,139 @@
     }
   }
 }
+
+  .dataset-editor-plane.is-adding {
+    cursor: crosshair;
+  }
+
+  .dataset-editor-box {
+    appearance: none;
+    background: transparent;
+    cursor: grab;
+    padding: 0;
+    pointer-events: auto;
+    text-align: left;
+  }
+
+  .dataset-editor-box.is-selected {
+    border-color: #ffdb13 !important;
+    box-shadow: 0 0 0 1px rgba(255, 219, 19, 0.85);
+  }
+
+  .dataset-editor-label {
+    pointer-events: none;
+  }
+
+  .dataset-editor-active-box {
+    position: absolute;
+    border: 1.5px solid #ffdb13;
+    box-shadow: 0 0 0 1px rgba(255, 219, 19, 0.35);
+    pointer-events: none;
+  }
+
+  .dataset-editor-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--color-canvas-night);
+    border-radius: 50%;
+    background: #ffdb13;
+    pointer-events: auto;
+  }
+
+  .dataset-editor-handle.is-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+  .dataset-editor-handle.is-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+  .dataset-editor-handle.is-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+  .dataset-editor-handle.is-se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+  .dataset-editor-handle.is-n { top: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+  .dataset-editor-handle.is-s { bottom: -6px; left: calc(50% - 6px); cursor: ns-resize; }
+  .dataset-editor-handle.is-w { top: calc(50% - 6px); left: -6px; cursor: ew-resize; }
+  .dataset-editor-handle.is-e { top: calc(50% - 6px); right: -6px; cursor: ew-resize; }
+
+  .dataset-editor-panel {
+    display: grid;
+    gap: 12px;
+  }
+
+  .dataset-editor-toolbar,
+  .dataset-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dataset-editor-toolbar .dataset-secondary-button,
+  .dataset-editor-actions .dataset-primary-button,
+  .dataset-editor-actions .dataset-secondary-button {
+    height: 32px;
+    min-width: 0;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+
+  .dataset-editor-form {
+    display: grid;
+    gap: 10px;
+  }
+
+  .dataset-editor-field {
+    display: grid;
+    gap: 6px;
+  }
+
+  .dataset-editor-field label,
+  .dataset-editor-coords label {
+    color: var(--color-ink-mute);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .dataset-editor-label-row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 8px;
+  }
+
+  .dataset-editor-label-row select,
+  .dataset-editor-label-row input,
+  .dataset-editor-coords input {
+    width: 100%;
+    min-width: 0;
+    height: 32px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    color: var(--color-ink);
+    font-size: 12px;
+  }
+
+  .dataset-editor-label-row select,
+  .dataset-editor-label-row input {
+    padding: 0 9px;
+  }
+
+  .dataset-editor-coords {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .dataset-editor-coords label {
+    display: grid;
+    gap: 5px;
+  }
+
+  .dataset-editor-coords input {
+    padding: 0 6px;
+    font-family: var(--font-mono);
+  }
+
+  .dataset-danger-button {
+    color: #b42318;
+  }
+
+  .dataset-detection-row.is-selected {
+    background: rgba(255, 219, 19, 0.1);
+  }
