@@ -5,6 +5,7 @@ import { useInferenceStore } from '../../shared/stores/inference'
 import type { BBoxAnnotation } from '../../shared/types'
 import type { DatasetLabelJobStatus } from '../../shared/api/dataset'
 import BBoxAnnotationCanvas from '../../shared/components/BBoxAnnotation.vue'
+import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
 
 const emit = defineEmits<{ close: [] }>()
 const datasetStore = useDatasetStore()
@@ -47,6 +48,17 @@ const progressPercent = computed(() => {
   if (!job.value || job.value.total === 0) return job.value?.state === 'done' ? 100 : 0
   return Math.round((job.value.processed / job.value.total) * 100)
 })
+const progressItems = computed(() => job.value?.items ?? [])
+const previewItem = computed(() => (
+  progressItems.value.find((item) => item.state === 'running') ??
+  [...progressItems.value].reverse().find((item) => item.state === 'done') ??
+  null
+))
+const previewImageUrl = computed(() => previewItem.value?.image_url ?? job.value?.current_image_url ?? '')
+const previewFilename = computed(() => previewItem.value?.filename ?? job.value?.current_filename ?? '')
+const previewDetections = computed(() => previewItem.value?.detections ?? [])
+const doneItems = computed(() => progressItems.value.filter((item) => item.state === 'done').length)
+const failedItems = computed(() => progressItems.value.filter((item) => item.state === 'failed').length)
 
 function close() {
   stopPolling()
@@ -165,7 +177,7 @@ onUnmounted(stopPolling)
       <section class="dataset-upload-dialog">
         <header class="dataset-modal-header">
           <div>
-            <h3 class="dataset-modal-title">Upload + Auto-Label</h3>
+            <h3 class="dataset-modal-title">Rapid Inference</h3>
             <p class="dataset-modal-copy">Upload data, configure YOLOE grounding, then review results.</p>
           </div>
           <button class="dataset-modal-close" @click="close" aria-label="Close upload dialog">
@@ -173,10 +185,10 @@ onUnmounted(stopPolling)
           </button>
         </header>
 
-        <nav class="dataset-upload-steps" aria-label="Auto-label workflow">
+        <nav class="dataset-upload-steps" aria-label="Rapid inference workflow">
           <span :class="['dataset-upload-step', { 'is-active': phase === 'upload', 'is-done': phase !== 'upload' }]">1 Upload</span>
-          <span :class="['dataset-upload-step', { 'is-active': phase === 'configure', 'is-done': phase === 'progress' || phase === 'done' }]">2 Auto-Label</span>
-          <span :class="['dataset-upload-step', { 'is-active': phase === 'progress', 'is-done': phase === 'done' }]">3 Batch Inference</span>
+          <span :class="['dataset-upload-step', { 'is-active': phase === 'configure', 'is-done': phase === 'progress' || phase === 'done' }]">2 Grounding</span>
+          <span :class="['dataset-upload-step', { 'is-active': phase === 'progress', 'is-done': phase === 'done' }]">3 Inference</span>
           <span :class="['dataset-upload-step', { 'is-active': phase === 'done' }]">4 Review</span>
         </nav>
 
@@ -294,18 +306,53 @@ onUnmounted(stopPolling)
           <template v-else>
             <div class="dataset-progress-card">
               <div class="dataset-progress-preview">
-                <img v-if="job?.current_image_url" :src="job.current_image_url" :alt="job.current_filename || 'Current image'" />
+                <DatasetMediaOverlay
+                  v-if="previewImageUrl"
+                  :image-src="previewImageUrl"
+                  :alt="previewFilename || 'Current image'"
+                  :width="previewItem?.width"
+                  :height="previewItem?.height"
+                  :detections="previewDetections"
+                  :show-bbox="true"
+                  :show-labels="true"
+                  :show-masks="true"
+                />
                 <span v-else>Waiting for first frame</span>
               </div>
               <div class="dataset-progress-meta">
+                <div class="dataset-progress-header">
+                  <div>
+                    <strong>{{ progressPercent }}%</strong>
+                    <span>{{ job?.state || 'queued' }} · {{ job?.processed ?? 0 }} / {{ job?.total ?? 0 }} images</span>
+                  </div>
+                  <div>
+                    <strong>{{ job?.detections_count ?? 0 }}</strong>
+                    <span>detections</span>
+                  </div>
+                </div>
                 <div class="dataset-progress-bar">
                   <div :style="{ width: `${progressPercent}%` }" />
                 </div>
                 <div class="dataset-progress-stats">
-                  <span>{{ job?.state || 'queued' }} · {{ job?.processed ?? 0 }} / {{ job?.total ?? 0 }} images</span>
-                  <strong>{{ job?.detections_count ?? 0 }} detections</strong>
+                  <span>{{ doneItems }} done · {{ failedItems }} failed</span>
+                  <strong v-if="previewFilename">{{ previewFilename }}</strong>
                 </div>
-                <p v-if="job?.current_filename">{{ job.current_filename }}</p>
+                <div v-if="progressItems.length" class="dataset-progress-log">
+                  <div
+                    v-for="item in progressItems"
+                    :key="item.img_id"
+                    class="dataset-progress-log-row"
+                    :class="`is-${item.state}`"
+                  >
+                    <span class="dataset-progress-log-dot" />
+                    <div>
+                      <strong>{{ item.filename }}</strong>
+                      <small v-if="item.error">{{ item.error }}</small>
+                      <small v-else>{{ item.detections_count }} bbox</small>
+                    </div>
+                    <em>{{ item.state }}</em>
+                  </div>
+                </div>
               </div>
             </div>
           </template>
@@ -323,7 +370,7 @@ onUnmounted(stopPolling)
               {{ uploading ? 'Uploading...' : 'Upload' }}
             </button>
             <button v-else-if="phase === 'configure'" class="dataset-primary-button" :disabled="!canStart" @click="startLabeling">
-              Start Labeling
+              Start Inference
             </button>
             <button v-else-if="phase === 'done'" class="dataset-primary-button" @click="close">
               Review Gallery

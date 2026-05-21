@@ -10,7 +10,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 ## Features
 
 - **Feature Modes Page** — root path `/` always opens mode selection; choose Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts), then enter workspace at `/workspace`
-- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project delete controls, Roboflow-style paginated thumbnail gallery review, centered modal inspector, batch upload, auto-label jobs, and YOLO/COCO export
+- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project/image delete controls, real overlay thumbnail gallery review, centered modal inspector, Rapid Inference jobs, and YOLO/COCO export
 - **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
 - **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes with hover X/Y alignment lines, and detect visually similar objects via SAVPE encoder
@@ -21,7 +21,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 - **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
 - **Clear Media Workflow** — stop inference, clear current media, then switch Image/Video/RTSP modes without losing prompt state
 - **Workspace Auto-Label Modal** — trigger auto-save only from Auto-Label modal; RTSP saves continuous viewer frames while active, optional `MM:SS` timer stops auto-label only, and Stop Inference also stops auto-label
-- **Auto-Labelling Workflow** — upload images or sample video frames into a dataset, configure Free/Text/Visual YOLOE grounding in Dataset Manager, load the required model, run batch inference with progress preview, then inspect detections in a modal reviewer
+- **Rapid Inference Workflow** — upload images or sample video frames into a dataset, configure Free/Text/Visual YOLOE grounding in Dataset Manager, load the required model, run batch inference with per-image progress and overlay preview, then inspect detections in a modal reviewer
 
 ## Tech Stack
 
@@ -108,10 +108,10 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 
 1. Open `/datasets` from the Feature Modes page or directly in the browser.
 2. Create, open, or delete a dataset project from the Dataset Manager overview.
-3. Click **Upload + Auto-Label** and upload either multiple images or one video. Video frames are sampled once based on the selected FPS until the video ends.
+3. Click **Rapid Inference** and upload either multiple images or one video. Video frames are sampled once based on the selected FPS until the video ends.
 4. Choose Free, Text, or Visual prompt mode. Visual prompt uses an inline reference image + bbox annotation editor.
-5. Load the required YOLOE model, start labeling, and watch the batch progress preview.
-6. Inspect the paginated thumbnail gallery (25 images per page). Click any image to open the centered review modal with bbox/label/mask overlays, class filters, per-object visibility, and accept/reject controls.
+5. Load the required YOLOE model, start inference, and watch per-image progress with overlay preview.
+6. Inspect the paginated thumbnail gallery (25 images per page) with real bbox/mask overlays. Select images for bulk delete, delete a single card, or click any image to open the centered review modal with bbox/label/mask overlays, class filters, per-object visibility, accept/reject controls, and image delete.
 7. Export accepted detections as YOLO TXT or COCO JSON with train/val split.
 
 ## Environment Variables
