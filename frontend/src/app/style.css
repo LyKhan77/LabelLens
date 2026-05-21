@@ -1187,6 +1187,22 @@
     white-space: nowrap;
   }
 
+  .dataset-prompt-conf-slider {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--color-ink-mute);
+    white-space: nowrap;
+  }
+
+  .dataset-prompt-conf-slider input[type="range"] {
+    width: 72px;
+    height: 4px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+  }
+
   .prompt-bar-enter-active,
   .prompt-bar-leave-active {
     transition: opacity 0.2s ease, transform 0.2s ease;

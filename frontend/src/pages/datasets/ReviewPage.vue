@@ -22,6 +22,7 @@ type AssistedCandidate = DatasetOverlayDetection & { candidateId: number }
 
 const inferNextLoading = ref(false)
 const inferNextError = ref('')
+const inferNextConfidence = ref(0.25)
 const inferCandidates = ref<AssistedCandidate[]>([])
 const selectedCandidateId = ref<number | null>(null)
 const acceptingAllCandidates = ref(false)
@@ -272,7 +273,7 @@ async function runInferNext() {
       inferNextError.value = 'No next image available.'
       return
     }
-    const result = await store.inferNextVisualPrompt(sourceImgId, targetImgId, prompts)
+    const result = await store.inferNextVisualPrompt(sourceImgId, targetImgId, prompts, inferNextConfidence.value)
     await store.selectImage(targetImgId)
     setPromptDetections([])
     inferCandidates.value = (result?.candidates ?? []).map((candidate, idx) => ({
@@ -665,6 +666,10 @@ onUnmounted(() => {
             <Transition name="prompt-bar">
               <div v-if="selectedPromptDetections.length > 0" class="dataset-prompt-action-bar">
                 <span>{{ selectedPromptDetections.length }} prompt{{ selectedPromptDetections.length > 1 ? 's' : '' }} selected</span>
+                <label class="dataset-prompt-conf-slider">
+                  Conf {{ (inferNextConfidence * 100).toFixed(0) }}%
+                  <input type="range" min="0.05" max="0.95" step="0.05" v-model.number="inferNextConfidence" />
+                </label>
                 <button
                   v-if="!promptModelReady"
                   class="dataset-secondary-button"
