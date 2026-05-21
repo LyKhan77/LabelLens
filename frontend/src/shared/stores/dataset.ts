@@ -26,6 +26,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   // Review
   const selectedImage = ref<string | null>(null)
   const currentAnnotations = ref<ImageAnnotation | null>(null)
+  const reviewingImageId = ref<string | null>(null)
 
   // Auto-labelling
   const autoLabelActive = ref(false)
@@ -88,6 +89,14 @@ export const useDatasetStore = defineStore('dataset', () => {
   function clearSelection() {
     selectedImage.value = null
     currentAnnotations.value = null
+  }
+
+  function startReview(imgId: string) {
+    reviewingImageId.value = imgId
+  }
+
+  function exitReview() {
+    reviewingImageId.value = null
   }
 
   async function reviewDetection(
@@ -332,6 +341,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     imagesLimit,
     selectedImage,
     currentAnnotations,
+    reviewingImageId,
     autoLabelActive,
     autoLabelDataset,
     autoLabelFps,
@@ -346,6 +356,8 @@ export const useDatasetStore = defineStore('dataset', () => {
     fetchImages,
     selectImage,
     clearSelection,
+    startReview,
+    exitReview,
     reviewDetection,
     addDetection,
     updateDetection,

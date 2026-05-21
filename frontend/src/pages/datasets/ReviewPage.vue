@@ -5,7 +5,7 @@ import { useInferenceStore } from '../../shared/stores/inference'
 import type { DetectionAnnotation, DatasetOverlayDetection } from '../../shared/api/dataset'
 import EditableAnnotationOverlay from './EditableAnnotationOverlay.vue'
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ back: [] }>()
 const store = useDatasetStore()
 const inferenceStore = useInferenceStore()
 const imageSrc = ref('')
@@ -367,7 +367,7 @@ async function deleteSelectedAnnotation() {
   }
 }
 
-function closePanel() { emit('close') }
+function closePanel() { emit('back') }
 
 async function navigateNext() {
   if (!canNavigateNext.value) return
@@ -488,7 +488,12 @@ watch(detections, () => {
   }
 })
 
-onMounted(() => window.addEventListener('keydown', handleKeydown))
+onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown)
+  if (store.reviewingImageId && (!store.selectedImage || store.selectedImage !== store.reviewingImageId)) {
+    await store.selectImage(store.reviewingImageId)
+  }
+})
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   if (objectUrl) URL.revokeObjectURL(objectUrl)
@@ -496,51 +501,37 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Transition
-    enter-active-class="transition ease-out duration-200"
-    enter-from-class="opacity-0 scale-[0.98]"
-    enter-to-class="opacity-100 scale-100"
-    leave-active-class="transition ease-in duration-150"
-    leave-from-class="opacity-100 scale-100"
-    leave-to-class="opacity-0 scale-[0.98]"
-  >
-    <div class="dataset-dialog-backdrop" @click.self="closePanel">
-      <section class="dataset-review-dialog">
-        <header class="dataset-review-header">
-          <div class="min-w-0">
-            <p class="text-[14px] font-medium text-ink truncate">{{ store.currentAnnotations?.filename || store.selectedImage }}</p>
-            <p class="text-[11px] text-ink-mute font-mono truncate">
-              <template v-if="annotations?.width">{{ annotations.width }}x{{ annotations.height }} px</template>
-              <template v-else>{{ acceptedCount + rejectedCount }} detections</template>
-            </p>
-          </div>
+  <section class="dataset-review-fullpage">
+    <header class="dataset-review-header">
+      <div class="min-w-0">
+        <p class="text-[14px] font-medium text-ink truncate">{{ store.currentAnnotations?.filename || store.selectedImage }}</p>
+        <p class="text-[11px] text-ink-mute font-mono truncate">
+          <template v-if="annotations?.width">{{ annotations.width }}x{{ annotations.height }} px</template>
+          <template v-else>{{ acceptedCount + rejectedCount }} detections</template>
+        </p>
+      </div>
 
-          <div class="dataset-review-nav">
-            <button :disabled="!canNavigatePrev" @click="navigatePrev">
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
-              Previous
-            </button>
-            <span class="dataset-review-index">{{ globalImageIndex }} / {{ store.imagesTotal }}</span>
-            <button :disabled="!canNavigateNext" @click="navigateNext">
-              Next
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6" /></svg>
-            </button>
-            <button class="dataset-review-delete-button" :disabled="deletingImage" aria-label="Delete image" @click="requestDeleteCurrent">
-              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-              </svg>
-              Delete
-            </button>
-            <button aria-label="Close review" @click="closePanel">
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </header>
+      <div class="dataset-review-nav">
+        <button :disabled="!canNavigatePrev" @click="navigatePrev">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6" /></svg>
+          Previous
+        </button>
+        <span class="dataset-review-index">{{ globalImageIndex }} / {{ store.imagesTotal }}</span>
+        <button :disabled="!canNavigateNext" @click="navigateNext">
+          Next
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6" /></svg>
+        </button>
+        <button class="dataset-review-delete-button" :disabled="deletingImage" aria-label="Delete image" @click="requestDeleteCurrent">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+          </svg>
+          Delete
+        </button>
+      </div>
+    </header>
 
-        <div class="dataset-review-body">
+    <div class="dataset-review-body">
           <main class="dataset-review-stage">
             <EditableAnnotationOverlay
               v-if="imageSrc && annotations"
@@ -802,8 +793,6 @@ onUnmounted(() => {
               </button>
             </footer>
           </section>
-        </div>
-      </section>
     </div>
-  </Transition>
+  </section>
 </template>

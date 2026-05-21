@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
-import ReviewPanel from './ReviewPanel.vue'
 import ExportDialog from './ExportDialog.vue'
 import BatchUploadDialog from './BatchUploadDialog.vue'
 import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
@@ -9,7 +8,6 @@ import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
 const store = useDatasetStore()
 const showExport = ref(false)
 const showBatch = ref(false)
-const showReview = ref(false)
 const galleryFilter = ref<'all' | 'review' | 'accepted' | 'unlabeled'>('all')
 const gallerySearch = ref('')
 const selectedImageIds = ref<Set<string>>(new Set())
@@ -79,7 +77,7 @@ function goBack() {
 
 async function selectImage(imgId: string) {
   await store.selectImage(imgId)
-  showReview.value = true
+  store.startReview(imgId)
 }
 
 function isImageSelected(imgId: string) {
@@ -143,7 +141,7 @@ async function confirmDeleteImages() {
 }
 
 function closeReview() {
-  showReview.value = false
+  store.exitReview()
   store.clearSelection()
 }
 
@@ -402,7 +400,6 @@ watch(
       >Next</button>
     </div>
 
-    <ReviewPanel v-if="showReview && store.selectedImage" @close="closeReview" />
     <ExportDialog v-if="showExport" @close="showExport = false" />
     <BatchUploadDialog v-if="showBatch" @close="showBatch = false" />
 

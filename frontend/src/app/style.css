@@ -618,6 +618,20 @@
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
   }
 
+  .dataset-review-fullpage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    background: var(--color-canvas);
+  }
+
+  .dataset-review-fullpage .dataset-review-frame {
+    max-width: none;
+  }
+
   .dataset-review-body {
     min-height: 0;
     flex: 1;
