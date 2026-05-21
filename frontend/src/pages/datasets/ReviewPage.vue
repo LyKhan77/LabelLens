@@ -24,6 +24,7 @@ const inferNextLoading = ref(false)
 const inferNextError = ref('')
 const inferCandidates = ref<AssistedCandidate[]>([])
 const selectedCandidateId = ref<number | null>(null)
+const acceptingAllCandidates = ref(false)
 const candidateBusyIds = ref<Set<number>>(new Set())
 const deletingDetectionIds = ref<Set<number>>(new Set())
 const promptDetectionIds = ref<Set<number>>(new Set())
@@ -66,6 +67,7 @@ const promptModelReady = computed(() => inferenceStore.modelLoaded && inferenceS
 const canInferNext = computed(() => Boolean(selectedPromptDetections.value.length && canNavigateNext.value && store.selectedImage && !inferNextLoading.value))
 const visibleCandidates = computed(() => inferCandidates.value.filter((candidate) => !isDuplicateCandidate(candidate)))
 const duplicateCandidateCount = computed(() => inferCandidates.value.length - visibleCandidates.value.length)
+const candidateActionBusy = computed(() => acceptingAllCandidates.value || candidateBusyIds.value.size > 0)
 const displayDetections = computed<DatasetOverlayDetection[]>(() => [
   ...detections.value.filter((d) => isVisible(d)),
   ...visibleCandidates.value.map((candidate) => ({
@@ -290,8 +292,8 @@ function visualAssistPromptIds(annotationsResult: { detections: DetectionAnnotat
     .map((det) => det.id)
 }
 
-async function acceptCandidate(candidate: AssistedCandidate, continueForward = false) {
-  if (!store.selectedImage || isCandidateBusy(candidate.candidateId)) return
+async function acceptCandidate(candidate: AssistedCandidate) {
+  if (!store.selectedImage || isCandidateBusy(candidate.candidateId) || acceptingAllCandidates.value) return
   setCandidateBusy(candidate.candidateId, true)
   inferNextError.value = ''
   try {
@@ -305,10 +307,7 @@ async function acceptCandidate(candidate: AssistedCandidate, continueForward = f
     })
     rejectCandidate(candidate.candidateId)
     const promptIds = visualAssistPromptIds(result)
-    if (continueForward) {
-      setPromptDetections(promptIds)
-      await runInferNext()
-    } else if (promptIds.length) {
+    if (promptIds.length) {
       promptDetectionIds.value = replaceSet(promptDetectionIds.value, (next) => {
         next.add(promptIds[promptIds.length - 1])
       })
@@ -317,6 +316,37 @@ async function acceptCandidate(candidate: AssistedCandidate, continueForward = f
     inferNextError.value = e instanceof Error ? e.message : 'Candidate save failed'
   } finally {
     setCandidateBusy(candidate.candidateId, false)
+  }
+}
+
+async function acceptAllCandidatesAndContinue() {
+  if (!store.selectedImage || acceptingAllCandidates.value || !visibleCandidates.value.length || !canNavigateNext.value) return
+  const imgId = store.selectedImage
+  const candidates = [...visibleCandidates.value]
+  acceptingAllCandidates.value = true
+  candidateBusyIds.value = new Set(candidates.map((candidate) => candidate.candidateId))
+  inferNextError.value = ''
+  try {
+    let latestResult: { detections: DetectionAnnotation[] } | null | undefined
+    for (const candidate of candidates) {
+      latestResult = await store.addDetection(imgId, {
+        label: candidate.label,
+        box: asBox(candidate.box),
+        accepted: true,
+        confidence: candidate.confidence,
+        assisted: true,
+        source: 'visual_prompt',
+      })
+      rejectCandidate(candidate.candidateId)
+    }
+    const promptIds = visualAssistPromptIds(latestResult)
+    setPromptDetections(promptIds)
+    await runInferNext()
+  } catch (e) {
+    inferNextError.value = e instanceof Error ? e.message : 'Candidate save failed'
+  } finally {
+    acceptingAllCandidates.value = false
+    candidateBusyIds.value = new Set()
   }
 }
 
@@ -635,26 +665,28 @@ onUnmounted(() => {
               </div>
 
               <div class="dataset-assist-panel">
-                <div class="dataset-field-row">
-                  <span class="dataset-field-label">Visual Assist</span>
-                  <span class="dataset-field-value">{{ promptModelReady ? `${selectedPromptDetections.length} prompts` : 'Prompt model' }}</span>
+                <div class="dataset-assist-main">
+                  <div class="min-w-0">
+                    <span class="dataset-field-label">Visual Assist</span>
+                    <span class="dataset-field-value">{{ promptModelReady ? `${selectedPromptDetections.length} prompts` : 'Prompt model' }}</span>
+                  </div>
+                  <button
+                    v-if="!promptModelReady"
+                    class="dataset-secondary-button dataset-assist-action"
+                    :disabled="inferenceStore.modelLoading"
+                    @click="loadPromptModel"
+                  >
+                    {{ inferenceStore.modelLoading ? 'Loading...' : 'Load Model' }}
+                  </button>
+                  <button
+                    v-else
+                    class="dataset-primary-button dataset-assist-action"
+                    :disabled="!canInferNext"
+                    @click="runInferNext"
+                  >
+                    {{ inferNextLoading ? 'Running...' : 'Infer Next' }}
+                  </button>
                 </div>
-                <button
-                  v-if="!promptModelReady"
-                  class="dataset-secondary-button"
-                  :disabled="inferenceStore.modelLoading"
-                  @click="loadPromptModel"
-                >
-                  {{ inferenceStore.modelLoading ? 'Loading...' : 'Load Prompt Model' }}
-                </button>
-                <button
-                  v-else
-                  class="dataset-primary-button"
-                  :disabled="!canInferNext"
-                  @click="runInferNext"
-                >
-                  {{ inferNextLoading ? 'Running...' : 'Infer Next' }}
-                </button>
                 <p v-if="inferNextError" class="dataset-assist-error">{{ inferNextError }}</p>
               </div>
 
@@ -677,7 +709,14 @@ onUnmounted(() => {
                   <strong>Candidates</strong>
                   <small>{{ visibleCandidates.length }} new<span v-if="duplicateCandidateCount"> · {{ duplicateCandidateCount }} hidden duplicate</span></small>
                 </div>
-                <span class="dataset-candidate-autosave">Accept auto-saves</span>
+                <button
+                  v-if="visibleCandidates.length"
+                  class="dataset-primary-button dataset-candidate-continue"
+                  :disabled="candidateActionBusy || !canNavigateNext"
+                  @click="acceptAllCandidatesAndContinue"
+                >
+                  {{ acceptingAllCandidates ? 'Saving...' : 'Accept All & Continue' }}
+                </button>
               </header>
 
               <div v-if="visibleCandidates.length" class="dataset-candidate-list">
@@ -695,10 +734,13 @@ onUnmounted(() => {
                   <button class="dataset-accept-button" :disabled="isCandidateBusy(candidate.candidateId)" @click.stop="acceptCandidate(candidate)">
                     {{ isCandidateBusy(candidate.candidateId) ? 'Saving...' : 'Accept' }}
                   </button>
-                  <button class="dataset-primary-button" :disabled="isCandidateBusy(candidate.candidateId) || !canNavigateNext" @click.stop="acceptCandidate(candidate, true)">
-                    Save & Continue
+                  <button
+                    class="dataset-secondary-button dataset-candidate-reject"
+                    :disabled="isCandidateBusy(candidate.candidateId) || acceptingAllCandidates"
+                    @click.stop="rejectCandidate(candidate.candidateId)"
+                  >
+                    Reject
                   </button>
-                  <button class="dataset-secondary-button" :disabled="isCandidateBusy(candidate.candidateId)" @click.stop="rejectCandidate(candidate.candidateId)">Reject</button>
                 </div>
               </div>
               <p v-else class="dataset-candidate-empty">All candidates overlap existing annotations.</p>
