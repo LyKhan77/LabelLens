@@ -28,6 +28,8 @@ const acceptingAllCandidates = ref(false)
 const candidateBusyIds = ref<Set<number>>(new Set())
 const deletingDetectionIds = ref<Set<number>>(new Set())
 const promptDetectionIds = ref<Set<number>>(new Set())
+const showDetectionDeleteConfirm = ref(false)
+const pendingDeleteDetection = ref<DetectionAnnotation | null>(null)
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
 const detections = computed(() => annotations.value?.detections ?? [])
@@ -374,14 +376,27 @@ async function saveAnnotation() {
   }
 }
 
-async function deleteDetection(det: DetectionAnnotation) {
-  if (!store.selectedImage || isDeletingDetection(det.id)) return
-  if (!window.confirm(`Delete annotation "${det.label}"?`)) return
+function requestDeleteDetection(det: DetectionAnnotation) {
+  pendingDeleteDetection.value = det
+  showDetectionDeleteConfirm.value = true
+}
+
+function closeDetectionDeleteDialog() {
+  if (pendingDeleteDetection.value && isDeletingDetection(pendingDeleteDetection.value.id)) return
+  showDetectionDeleteConfirm.value = false
+  pendingDeleteDetection.value = null
+}
+
+async function confirmDeleteDetection() {
+  const det = pendingDeleteDetection.value
+  if (!det || !store.selectedImage || isDeletingDetection(det.id)) return
   setDeletingDetection(det.id, true)
   try {
     await store.deleteDetection(store.selectedImage, det.id)
     promptDetectionIds.value = replaceSet(promptDetectionIds.value, (next) => next.delete(det.id))
     if (selectedDetectionId.value === det.id) resetEditor()
+    showDetectionDeleteConfirm.value = false
+    pendingDeleteDetection.value = null
   } finally {
     setDeletingDetection(det.id, false)
   }
@@ -389,12 +404,7 @@ async function deleteDetection(det: DetectionAnnotation) {
 
 async function deleteSelectedAnnotation() {
   if (!selectedDetection.value) return
-  savingAnnotation.value = true
-  try {
-    await deleteDetection(selectedDetection.value)
-  } finally {
-    savingAnnotation.value = false
-  }
+  requestDeleteDetection(selectedDetection.value)
 }
 
 function closePanel() { emit('back') }
@@ -432,6 +442,10 @@ async function navigatePrev() {
 function handleKeydown(e: KeyboardEvent) {
   if (showDeleteConfirm.value) {
     if (e.key === 'Escape') closeDeleteDialog()
+    return
+  }
+  if (showDetectionDeleteConfirm.value) {
+    if (e.key === 'Escape') closeDetectionDeleteDialog()
     return
   }
   if (e.key === 'Escape') closePanel()
@@ -639,6 +653,30 @@ onUnmounted(() => {
               </template>
             </EditableAnnotationOverlay>
 
+            <Transition name="prompt-bar">
+              <div v-if="selectedPromptDetections.length > 0" class="dataset-prompt-action-bar">
+                <span>{{ selectedPromptDetections.length }} prompt{{ selectedPromptDetections.length > 1 ? 's' : '' }} selected</span>
+                <button
+                  v-if="!promptModelReady"
+                  class="dataset-secondary-button"
+                  :disabled="inferenceStore.modelLoading"
+                  @click="loadPromptModel"
+                >
+                  {{ inferenceStore.modelLoading ? 'Loading...' : 'Load Model' }}
+                </button>
+                <button
+                  v-else
+                  class="dataset-primary-button"
+                  :disabled="!canInferNext || inferNextLoading"
+                  @click="runInferNext"
+                >
+                  {{ inferNextLoading ? 'Running...' : 'Infer Next ▸' }}
+                </button>
+                <div v-if="inferNextError" style="position: absolute; top: 100%; left: 0; right: 0; text-align: center; margin-top: 4px; color: #b42318; font-size: 11px;">
+                  {{ inferNextError }}
+                </div>
+              </div>
+            </Transition>
           </main>
 
           <aside class="dataset-inspector">
@@ -664,32 +702,6 @@ onUnmounted(() => {
                 <button :class="{ 'is-active': store.overlayState.showMasks }" @click="store.toggleOverlay('showMasks')">Masks</button>
               </div>
 
-              <div class="dataset-assist-panel">
-                <div class="dataset-assist-main">
-                  <div class="min-w-0">
-                    <span class="dataset-field-label">Visual Assist</span>
-                    <span class="dataset-field-value">{{ promptModelReady ? `${selectedPromptDetections.length} prompts` : 'Prompt model' }}</span>
-                  </div>
-                  <button
-                    v-if="!promptModelReady"
-                    class="dataset-secondary-button dataset-assist-action"
-                    :disabled="inferenceStore.modelLoading"
-                    @click="loadPromptModel"
-                  >
-                    {{ inferenceStore.modelLoading ? 'Loading...' : 'Load Model' }}
-                  </button>
-                  <button
-                    v-else
-                    class="dataset-primary-button dataset-assist-action"
-                    :disabled="!canInferNext"
-                    @click="runInferNext"
-                  >
-                    {{ inferNextLoading ? 'Running...' : 'Infer Next' }}
-                  </button>
-                </div>
-                <p v-if="inferNextError" class="dataset-assist-error">{{ inferNextError }}</p>
-              </div>
-
               <div v-if="classes.length" class="dataset-class-filters">
                 <button
                   v-for="([cls, count], i) in classes"
@@ -697,7 +709,7 @@ onUnmounted(() => {
                   :class="{ 'opacity-35 line-through': isClassHidden(cls) }"
                   @click="store.toggleClassVisibility(cls)"
                 >
-                  <span class="w-[6px] h-[6px] rounded-full" :style="{ backgroundColor: detColor(i) }" />
+                  <span class="w-[5px] h-[5px] rounded-full" :style="{ backgroundColor: detColor(i) }" />
                   {{ cls }} ({{ count }})
                 </button>
               </div>
@@ -728,8 +740,8 @@ onUnmounted(() => {
                   @click="selectCandidate(candidate.candidateId)"
                 >
                   <div class="min-w-0">
-                    <p class="text-[13px] font-medium truncate">{{ candidate.label }}</p>
-                    <p class="text-[11px] text-ink-faint font-mono truncate">{{ (candidate.confidence * 100).toFixed(0) }}% · [{{ candidate.box.map((v) => Math.round(v)).join(', ') }}]</p>
+                    <p class="text-[12px] font-medium truncate">{{ candidate.label }}</p>
+                    <p class="text-[10px] text-ink-faint font-mono truncate">{{ (candidate.confidence * 100).toFixed(0) }}% · [{{ candidate.box.map((v) => Math.round(v)).join(', ') }}]</p>
                   </div>
                   <button class="dataset-accept-button" :disabled="isCandidateBusy(candidate.candidateId)" @click.stop="acceptCandidate(candidate)">
                     {{ isCandidateBusy(candidate.candidateId) ? 'Saving...' : 'Accept' }}
@@ -754,44 +766,44 @@ onUnmounted(() => {
                 :class="{ 'opacity-50': !det.accepted, 'is-selected': det.id === selectedDetectionId, 'is-prompt': isPromptSelected(det.id) }"
                 @click="selectDetection(det.id)"
               >
-                <label class="dataset-prompt-checkbox" title="Use as Visual Assist prompt" @click.stop>
-                  <input type="checkbox" :checked="isPromptSelected(det.id)" @change="togglePromptDetection(det.id)" />
-                  <span>Prompt</span>
-                </label>
+                <input type="checkbox" class="dataset-prompt-check" :checked="isPromptSelected(det.id)" @change="togglePromptDetection(det.id)" title="Use as Visual Assist prompt" @click.stop />
 
                 <button
                   class="dataset-detection-toggle"
                   :class="{ 'opacity-30': !isVisible(det) }"
                   @click.stop="store.toggleDetectionVisibility(det.id)"
                 >
-                  <svg v-if="isVisible(det)" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg v-if="isVisible(det)" class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
                   </svg>
-                  <svg v-else class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg v-else class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><line x1="1" y1="1" x2="23" y2="23" />
                   </svg>
                 </button>
 
                 <div class="min-w-0">
-                  <p class="text-[13px] font-medium truncate" :class="det.accepted ? 'text-ink' : 'text-ink-faint line-through'">{{ det.label }}</p>
-                  <p class="text-[11px] text-ink-faint font-mono truncate">{{ det.assisted ? 'Visual assist' : det.manual ? 'Manual' : `${(det.confidence * 100).toFixed(0)}%` }} · [{{ det.box.map((v) => Math.round(v)).join(', ') }}]</p>
+                  <p class="text-[12px] font-medium truncate" :class="det.accepted ? 'text-ink' : 'text-ink-faint line-through'">{{ det.label }}</p>
+                  <p class="text-[10px] text-ink-faint font-mono truncate">{{ det.assisted ? 'Visual assist' : det.manual ? 'Manual' : `${(det.confidence * 100).toFixed(0)}%` }} · [{{ det.box.map((v) => Math.round(v)).join(', ') }}]</p>
                 </div>
 
                 <button
-                  class="dataset-accept-button"
+                  class="dataset-status-toggle"
                   :class="{ 'is-accepted': det.accepted }"
+                  :title="det.accepted ? 'Accepted' : 'Rejected'"
                   @click.stop="toggleAccept(det)"
                 >
-                  {{ det.accepted ? 'Accepted' : 'Rejected' }}
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
                 </button>
 
                 <button
                   class="dataset-row-delete-button"
                   :disabled="isDeletingDetection(det.id)"
                   aria-label="Delete annotation"
-                  @click.stop="deleteDetection(det)"
+                  @click.stop="requestDeleteDetection(det)"
                 >
-                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
                   </svg>
@@ -803,7 +815,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <footer class="px-5 py-3 border-t border-hairline flex items-center justify-between bg-canvas-soft shrink-0">
+            <footer class="px-4 py-2 border-t border-hairline flex items-center justify-between bg-canvas-soft shrink-0">
               <span class="text-[11px] text-ink-faint font-mono">Esc close | Arrows navigate</span>
               <span class="text-[11px] text-ink-faint font-mono">Auto-saved</span>
             </footer>
@@ -835,6 +847,33 @@ onUnmounted(() => {
               </button>
             </footer>
           </section>
+    </div>
+
+    <div v-if="showDetectionDeleteConfirm && pendingDeleteDetection" class="dataset-review-confirm">
+      <section class="dataset-delete-dialog">
+        <header class="dataset-modal-header">
+          <div>
+            <h3 class="dataset-modal-title">Delete Annotation</h3>
+            <p class="dataset-modal-copy">This action cannot be undone.</p>
+          </div>
+          <button class="dataset-modal-close" :disabled="isDeletingDetection(pendingDeleteDetection.id)" @click="closeDetectionDeleteDialog" aria-label="Close delete annotation dialog">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </header>
+
+        <div class="dataset-modal-body dataset-form-stack">
+          <p class="text-[13px] text-ink-mute leading-relaxed">
+            Delete annotation <span class="font-medium text-ink">"{{ pendingDeleteDetection.label }}"</span>?
+          </p>
+        </div>
+
+        <footer class="dataset-modal-footer">
+          <button class="dataset-secondary-button" :disabled="isDeletingDetection(pendingDeleteDetection.id)" @click="closeDetectionDeleteDialog">Cancel</button>
+          <button class="dataset-primary-button" :disabled="isDeletingDetection(pendingDeleteDetection.id)" @click="confirmDeleteDetection">
+            {{ isDeletingDetection(pendingDeleteDetection.id) ? 'Deleting...' : 'Delete' }}
+          </button>
+        </footer>
+      </section>
     </div>
   </section>
 </template>
