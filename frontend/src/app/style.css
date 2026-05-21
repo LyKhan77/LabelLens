@@ -2072,8 +2072,38 @@
   }
 }
 
-  .dataset-editor-plane.is-adding {
+  .dataset-editor-plane {
     cursor: crosshair;
+  }
+
+  .dataset-editor-guides {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  .dataset-editor-guides::before,
+  .dataset-editor-guides::after {
+    content: '';
+    position: absolute;
+    background: rgba(62, 207, 142, 0.68);
+  }
+
+  .dataset-editor-guides::before {
+    top: 0;
+    bottom: 0;
+    left: var(--guide-x);
+    width: 1px;
+    background: repeating-linear-gradient(to bottom, rgba(62, 207, 142, 0.75), rgba(62, 207, 142, 0.75) 3px, transparent 3px, transparent 7px);
+  }
+
+  .dataset-editor-guides::after {
+    left: 0;
+    right: 0;
+    top: var(--guide-y);
+    height: 1px;
+    background: repeating-linear-gradient(to right, rgba(62, 207, 142, 0.75), rgba(62, 207, 142, 0.75) 3px, transparent 3px, transparent 7px);
   }
 
   .dataset-editor-box {
@@ -2096,7 +2126,8 @@
 
   .dataset-editor-active-box {
     position: absolute;
-    border: 1.5px solid #ffdb13;
+    z-index: 5;
+    border: 1.5px dashed #ffdb13;
     box-shadow: 0 0 0 1px rgba(255, 219, 19, 0.35);
     pointer-events: none;
   }
@@ -2109,6 +2140,7 @@
     border-radius: 50%;
     background: #ffdb13;
     pointer-events: auto;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   }
 
   .dataset-editor-handle.is-nw { top: -6px; left: -6px; cursor: nwse-resize; }
@@ -2119,6 +2151,106 @@
   .dataset-editor-handle.is-s { bottom: -6px; left: calc(50% - 6px); cursor: ns-resize; }
   .dataset-editor-handle.is-w { top: calc(50% - 6px); left: -6px; cursor: ew-resize; }
   .dataset-editor-handle.is-e { top: calc(50% - 6px); right: -6px; cursor: ew-resize; }
+
+
+  .dataset-editor-popover {
+    position: absolute;
+    z-index: 9;
+    width: min(280px, calc(100% - 18px));
+    max-width: 280px;
+    pointer-events: auto;
+  }
+
+  .dataset-canvas-editor {
+    display: grid;
+    gap: 9px;
+    padding: 10px;
+    border: 1px solid rgba(62, 207, 142, 0.35);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--color-canvas) 96%, transparent);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(10px);
+  }
+
+  .dataset-canvas-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .dataset-canvas-editor-header strong {
+    min-width: 0;
+    color: var(--color-ink);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .dataset-canvas-editor-header button {
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    color: var(--color-ink-mute);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dataset-canvas-label-row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 8px;
+  }
+
+  .dataset-canvas-label-row select,
+  .dataset-canvas-label-row input {
+    width: 100%;
+    min-width: 0;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    color: var(--color-ink);
+    font-size: 12px;
+  }
+
+  .dataset-canvas-coords {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+  }
+
+  .dataset-canvas-coords summary {
+    height: 28px;
+    padding: 0 9px;
+    color: var(--color-ink-mute);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 28px;
+  }
+
+  .dataset-canvas-coords .dataset-editor-coords {
+    padding: 0 8px 8px;
+  }
+
+  .dataset-canvas-editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dataset-canvas-editor-actions .dataset-primary-button,
+  .dataset-canvas-editor-actions .dataset-secondary-button {
+    height: 30px;
+    min-width: 0;
+    padding: 0 9px;
+    font-size: 11px;
+  }
 
   .dataset-editor-panel {
     display: grid;

@@ -79,11 +79,11 @@ function resetEditor() {
   draftBox.value = null
 }
 
-function startAddAnnotation() {
+function beginNewAnnotation(box: [number, number, number, number]) {
   selectedDetectionId.value = null
   editorMode.value = 'add'
   draftLabel.value = availableLabels.value[0] ?? ''
-  draftBox.value = null
+  draftBox.value = roundBox(box)
 }
 
 function selectDetection(id: number) {
@@ -330,13 +330,69 @@ onUnmounted(() => {
               :show-bbox="store.overlayState.showBbox"
               :show-labels="store.overlayState.showLabels"
               :show-masks="store.overlayState.showMasks"
-              :add-mode="editorMode === 'add'"
               :selected-id="selectedDetectionId"
               :draft-box="draftBox"
+              :editor-open="editorMode !== 'idle'"
               @select="selectDetection"
               @draft-change="updateDraftBox"
-              @create-draft="updateDraftBox"
-            />
+              @create-draft="beginNewAnnotation"
+            >
+              <template #editor>
+                <div v-if="editorMode !== 'idle'" class="dataset-canvas-editor">
+                  <header class="dataset-canvas-editor-header">
+                    <strong>{{ editorMode === 'add' ? 'New BBox' : 'Edit BBox' }}</strong>
+                    <button type="button" aria-label="Close annotation editor" @click="resetEditor">
+                      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
+                  </header>
+
+                  <div class="dataset-canvas-label-row">
+                    <select :value="availableLabels.includes(draftLabel) ? draftLabel : ''" @change="usePresetLabel">
+                      <option value="">Custom</option>
+                      <option v-for="label in availableLabels" :key="label" :value="label">{{ label }}</option>
+                    </select>
+                    <input v-model="draftLabel" type="text" placeholder="Label" @keydown.enter="saveAnnotation" @keydown.escape="resetEditor" />
+                  </div>
+
+                  <details class="dataset-canvas-coords">
+                    <summary>Coordinates</summary>
+                    <div class="dataset-editor-coords">
+                      <label>
+                        X1
+                        <input :value="draftBox?.[0] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(0, ($event.target as HTMLInputElement).value)" />
+                      </label>
+                      <label>
+                        Y1
+                        <input :value="draftBox?.[1] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(1, ($event.target as HTMLInputElement).value)" />
+                      </label>
+                      <label>
+                        X2
+                        <input :value="draftBox?.[2] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(2, ($event.target as HTMLInputElement).value)" />
+                      </label>
+                      <label>
+                        Y2
+                        <input :value="draftBox?.[3] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(3, ($event.target as HTMLInputElement).value)" />
+                      </label>
+                    </div>
+                  </details>
+
+                  <div class="dataset-canvas-editor-actions">
+                    <button class="dataset-primary-button" :disabled="!canSaveAnnotation || savingAnnotation" @click="saveAnnotation">
+                      {{ savingAnnotation ? 'Saving...' : 'Save' }}
+                    </button>
+                    <button
+                      v-if="editorMode === 'edit'"
+                      class="dataset-secondary-button dataset-danger-button"
+                      :disabled="savingAnnotation || !selectedDetection"
+                      @click="deleteSelectedAnnotation"
+                    >
+                      Delete
+                    </button>
+                    <button class="dataset-secondary-button" :disabled="savingAnnotation" @click="resetEditor">Cancel</button>
+                  </div>
+                </div>
+              </template>
+            </EditableAnnotationOverlay>
 
           </main>
 
@@ -373,72 +429,6 @@ onUnmounted(() => {
                   <span class="w-[6px] h-[6px] rounded-full" :style="{ backgroundColor: detColor(i) }" />
                   {{ cls }} ({{ count }})
                 </button>
-              </div>
-            </section>
-
-            <section class="dataset-inspector-section dataset-editor-panel">
-              <div class="dataset-editor-toolbar">
-                <button
-                  class="dataset-secondary-button"
-                  :class="{ 'is-ready': editorMode === 'add' }"
-                  :disabled="savingAnnotation"
-                  @click="startAddAnnotation"
-                >
-                  Add BBox
-                </button>
-                <button
-                  class="dataset-secondary-button"
-                  :disabled="editorMode === 'idle' || savingAnnotation"
-                  @click="resetEditor"
-                >
-                  Cancel
-                </button>
-              </div>
-
-              <div v-if="editorMode !== 'idle'" class="dataset-editor-form">
-                <div class="dataset-editor-field">
-                  <label>Class</label>
-                  <div class="dataset-editor-label-row">
-                    <select :value="availableLabels.includes(draftLabel) ? draftLabel : ''" @change="usePresetLabel">
-                      <option value="">Custom</option>
-                      <option v-for="label in availableLabels" :key="label" :value="label">{{ label }}</option>
-                    </select>
-                    <input v-model="draftLabel" type="text" placeholder="Label" />
-                  </div>
-                </div>
-
-                <div class="dataset-editor-coords">
-                  <label>
-                    X1
-                    <input :value="draftBox?.[0] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(0, ($event.target as HTMLInputElement).value)" />
-                  </label>
-                  <label>
-                    Y1
-                    <input :value="draftBox?.[1] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(1, ($event.target as HTMLInputElement).value)" />
-                  </label>
-                  <label>
-                    X2
-                    <input :value="draftBox?.[2] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(2, ($event.target as HTMLInputElement).value)" />
-                  </label>
-                  <label>
-                    Y2
-                    <input :value="draftBox?.[3] ?? ''" type="number" min="0" step="1" @input="updateDraftCoord(3, ($event.target as HTMLInputElement).value)" />
-                  </label>
-                </div>
-
-                <div class="dataset-editor-actions">
-                  <button class="dataset-primary-button" :disabled="!canSaveAnnotation || savingAnnotation" @click="saveAnnotation">
-                    {{ savingAnnotation ? 'Saving...' : 'Save' }}
-                  </button>
-                  <button
-                    v-if="editorMode === 'edit'"
-                    class="dataset-secondary-button dataset-danger-button"
-                    :disabled="savingAnnotation || !selectedDetection"
-                    @click="deleteSelectedAnnotation"
-                  >
-                    Delete Annotation
-                  </button>
-                </div>
               </div>
             </section>
 

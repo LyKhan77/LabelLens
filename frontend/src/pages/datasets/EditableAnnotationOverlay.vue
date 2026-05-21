@@ -14,9 +14,9 @@ const props = withDefaults(defineProps<{
   showBbox?: boolean
   showLabels?: boolean
   showMasks?: boolean
-  addMode?: boolean
   selectedId?: number | null
   draftBox?: Box | null
+  editorOpen?: boolean
 }>(), {
   alt: '',
   width: null,
@@ -25,9 +25,9 @@ const props = withDefaults(defineProps<{
   showBbox: true,
   showLabels: false,
   showMasks: false,
-  addMode: false,
   selectedId: null,
   draftBox: null,
+  editorOpen: false,
 })
 
 const emit = defineEmits<{
@@ -39,6 +39,7 @@ const emit = defineEmits<{
 const stageRef = ref<HTMLElement | null>(null)
 const planeRef = ref<HTMLElement | null>(null)
 const stageSize = ref({ width: 0, height: 0 })
+const hoverPoint = ref<{ x: number; y: number } | null>(null)
 let observer: ResizeObserver | null = null
 let drag: { action: DragAction; pointerId: number; start: { x: number; y: number }; box: Box } | null = null
 
@@ -79,6 +80,29 @@ const planeStyle = computed(() => {
 const COLORS = ['#3ecf8e', '#24b47e', '#ffffff', '#ffdb13', '#644fc1', '#6b01c2', '#9a9a9a', '#212121']
 function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 function clamp(value: number, min: number, max: number): number { return Math.min(Math.max(value, min), max) }
+
+
+const guideStyle = computed(() => {
+  const point = hoverPoint.value
+  if (!point || drag) return null
+  return {
+    '--guide-x': `${(point.x / imageWidth.value) * 100}%`,
+    '--guide-y': `${(point.y / imageHeight.value) * 100}%`,
+  }
+})
+
+const popoverStyle = computed(() => {
+  const box = activeBox.value
+  if (!box) return {}
+  const [x1, y1, x2, y2] = normalizeBox(box)
+  const anchorX = x2 > imageWidth.value * 0.72 ? x1 : x2
+  const anchorY = y1 < imageHeight.value * 0.28 ? y2 : y1
+  return {
+    left: `${(anchorX / imageWidth.value) * 100}%`,
+    top: `${(anchorY / imageHeight.value) * 100}%`,
+    transform: `${x2 > imageWidth.value * 0.72 ? 'translate(calc(-100% - 10px),' : 'translate(10px,'} ${y1 < imageHeight.value * 0.28 ? '10px)' : 'calc(-100% - 10px))'}`,
+  }
+})
 
 function updateStageSize() {
   const el = stageRef.value
@@ -153,7 +177,6 @@ function emitBox(box: Box) {
 }
 
 function onPlanePointerDown(e: PointerEvent) {
-  if (!props.addMode) return
   const point = pointFromEvent(e)
   if (!point) return
   drag = { action: 'create', pointerId: e.pointerId, start: point, box: [point.x, point.y, point.x, point.y] }
@@ -164,7 +187,6 @@ function onPlanePointerDown(e: PointerEvent) {
 function onBoxPointerDown(e: PointerEvent, det: DatasetOverlayDetection) {
   if (det.id == null) return
   emit('select', det.id)
-  if (props.addMode) return
   const point = pointFromEvent(e)
   if (!point) return
   drag = { action: 'move', pointerId: e.pointerId, start: point, box: normalizeBox((props.draftBox ?? det.box) as Box) }
@@ -210,10 +232,15 @@ function applyDrag(point: { x: number; y: number }) {
 }
 
 function onPointerMove(e: PointerEvent) {
-  if (!drag || drag.pointerId !== e.pointerId) return
   const point = pointFromEvent(e)
   if (!point) return
+  hoverPoint.value = point
+  if (!drag || drag.pointerId !== e.pointerId) return
   applyDrag(point)
+}
+
+function onPointerLeave() {
+  hoverPoint.value = null
 }
 
 function onPointerUp(e: PointerEvent) {
@@ -249,14 +276,16 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
     <div
       ref="planeRef"
       class="dataset-media-plane dataset-editor-plane"
-      :class="{ 'is-adding': addMode }"
       :style="planeStyle"
       @pointerdown="onPlanePointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
+      @pointerleave="onPointerLeave"
     >
       <img class="dataset-media-image" :src="imageSrc" :alt="alt" loading="lazy" @load="updateStageSize" />
+
+      <div v-if="guideStyle" class="dataset-editor-guides" :style="guideStyle" />
 
       <svg
         v-if="showMasks"
@@ -305,6 +334,18 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
         <button type="button" class="dataset-editor-handle is-s" @pointerdown.stop="onHandlePointerDown($event, 's')" />
         <button type="button" class="dataset-editor-handle is-w" @pointerdown.stop="onHandlePointerDown($event, 'w')" />
         <button type="button" class="dataset-editor-handle is-e" @pointerdown.stop="onHandlePointerDown($event, 'e')" />
+      </div>
+
+      <div
+        v-if="activeBox && editorOpen && $slots.editor"
+        class="dataset-editor-popover"
+        :style="popoverStyle"
+        @pointerdown.stop
+        @pointermove.stop
+        @pointerup.stop
+        @click.stop
+      >
+        <slot name="editor" />
       </div>
     </div>
   </div>
