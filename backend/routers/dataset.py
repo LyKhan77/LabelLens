@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.services.dataset import dataset_service
 from backend.services.model import model_service
+from backend.services.sam import sam_service
 from backend.utils.encoding import decode_image
 
 router = APIRouter(tags=["datasets"])
@@ -523,6 +524,26 @@ async def batch_upload(
 
     return {"processed": len(results), "results": results}
 
+
+
+@router.post("/datasets/{name}/images/{img_id}/sam-mask")
+async def generate_sam_mask(name: str, img_id: str, payload: dict = Body(...)):
+    if not sam_service.get_status()["enabled"]:
+        raise HTTPException(400, "SAM is disabled")
+    box = payload.get("box")
+    if not isinstance(box, list) or len(box) != 4:
+        raise HTTPException(400, "box must be [x1, y1, x2, y2]")
+
+    image = _read_dataset_image(name, img_id, "Source")
+    try:
+        sam_service._ensure_loaded()
+        result = sam_service.predict_mask_from_bbox(image, box)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"SAM prediction failed: {e}")
+
+    return result
 
 
 @router.post("/datasets/{name}/images/{img_id}/detections")
