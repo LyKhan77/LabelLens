@@ -3,7 +3,7 @@ import { useBackendStatus } from '../../../shared/composables/useBackendStatus'
 import { useTheme } from '../../../shared/composables/useTheme'
 import { useInferenceStore } from '../../../shared/stores/inference'
 
-const { connected } = useBackendStatus()
+const { connected, yoloeStatus, samStatus } = useBackendStatus()
 const { theme, toggle } = useTheme()
 const store = useInferenceStore()
 </script>
@@ -26,12 +26,15 @@ const store = useInferenceStore()
       </button>
 
       <div class="flex items-center gap-2">
-        <span
-          class="w-2 h-2 rounded-full transition-colors"
-          :class="connected ? 'bg-primary' : 'bg-red-500'"
-        />
+        <span class="w-2 h-2 rounded-full transition-colors" :class="yoloeStatus === 'loaded' ? 'bg-primary' : yoloeStatus === 'no-model' ? 'bg-yellow-500' : 'bg-red-500'" />
         <span class="text-xs text-ink-mute">
-          {{ connected ? 'Backend Connected' : 'Backend Offline' }}
+          {{ yoloeStatus === 'loaded' ? 'YOLOE Ready' : yoloeStatus === 'no-model' ? 'YOLOE Idle' : 'Offline' }}
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full transition-colors" :class="samStatus === 'loaded' ? 'bg-primary' : samStatus === 'available' ? 'bg-yellow-500' : samStatus === 'disabled' ? 'bg-gray-400' : 'bg-red-500'" />
+        <span class="text-xs text-ink-mute">
+          {{ samStatus === 'loaded' ? 'SAM Ready' : samStatus === 'available' ? 'SAM Idle' : samStatus === 'disabled' ? 'SAM Off' : 'Offline' }}
         </span>
       </div>
 
