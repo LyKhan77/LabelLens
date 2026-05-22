@@ -107,11 +107,29 @@ function close() {
   emit('close')
 }
 
-function onDrop(e: DragEvent) {
+async function onDrop(e: DragEvent) {
   isDragging.value = false
   if (!e.dataTransfer) return
-  files.value = [...files.value, ...Array.from(e.dataTransfer.files)]
   error.value = ''
+  const items = e.dataTransfer.items
+  if (items && items.length > 0) {
+    const entries: FileSystemEntry[] = []
+    for (let i = 0; i < items.length; i++) {
+      const entry = items[i].webkitGetAsEntry?.()
+      if (entry) entries.push(entry)
+    }
+    if (entries.length > 0) {
+      uploading.value = true
+      try {
+        const scanned = await scanEntries(entries)
+        files.value = [...files.value, ...scanned]
+      } finally {
+        uploading.value = false
+      }
+      return
+    }
+  }
+  files.value = [...files.value, ...Array.from(e.dataTransfer.files)]
 }
 
 function removeFile(idx: number) {
