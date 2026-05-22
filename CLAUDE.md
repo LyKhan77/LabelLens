@@ -23,6 +23,7 @@
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
 - **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Trigger from Workspace Auto-Label modal or batch upload via Dataset Manager. While active on RTSP, continuous viewer-frame annotations are saved until auto-label is stopped (modal, optional MM:SS timer, or Stop Inference). Accept/reject detections, add/edit/delete manual bboxes, and use per-class/per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split, preserving original input filenames in exported artifacts whenever available.
 - **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, delete confirmation modals, Select All Files gallery selection, real overlay paginated thumbnail gallery (25/page), centered modal review with cross-page Prev/Next, compact class/status review controls, manual bbox add/edit/delete annotation editor, simplified multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, granular overlay controls and image delete, Rapid Inference jobs with frame-by-frame `Frame x/y` progress, configurable frame sampling, and zip export.
+- **SAM2.1 Auto-mask** — SAM2.1 (Hiera Large) runs on GPU 1 independently from YOLOE on GPU 0. Automatically generates mask segmentation when users draw manual bbox annotations in Dataset Manager review. Lazy-loaded, thread-safe, with status/load/unload API endpoints. Non-fatal — bbox saves without mask if SAM unavailable.
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
 
@@ -30,7 +31,7 @@
 LabelLens/
 ├── frontend/src/
 │   ├── shared/
-│   │   ├── api/             (client.ts, detection.ts, ws.ts, dataset.ts, training.ts)
+│   │   ├── api/             (client.ts, detection.ts, ws.ts, dataset.ts, training.ts, sam.ts)
 │   │   ├── composables/     (useBackendStatus.ts, useWebSocket.ts)
 │   │   ├── stores/          (inference.ts, dataset.ts, training.ts — Pinia)
 │   │   └── types/           (index.ts)
@@ -41,11 +42,11 @@ LabelLens/
 │       ├── train-tune/      (TrainTunePage — builder, dedicated live progress route, dedicated result route)
 │       └── workspace/       (components, sections)
 ├── backend/
-│   ├── routers/         (health.py, detection.py, stream.py, dataset.py, training.py)
+│   ├── routers/         (health.py, detection.py, stream.py, dataset.py, training.py, sam.py)
 │   ├── services/        (model.py, video.py, rtsp.py, dataset.py, activity.py, training.py,
-│   │                    training_events.py, training_runtime.py)
+│   │                    training_events.py, training_runtime.py, sam.py)
 │   ├── train_worker.py  (background training worker process for Train Tune jobs)
-│   └── utils/           (drawing.py, encoding.py)
+│   └── utils/           (drawing.py, encoding.py, masks.py, postprocess.py)
 ├── datasets/            (runtime dataset storage, gitignored)
 ├── docs/plans/          (saved implementation plans)
 ├── docs/superpowers/specs/ (design specs)
@@ -62,6 +63,8 @@ In THIS (**Being Developed**) section, always double-check features or items tha
 ```
 
 **Being Developed:**
+
+- SAM2.1 Auto-mask: Backend (SAMService on GPU 1, lazy load, thread-safe) + Frontend (auto-mask on manual bbox save in ReviewPage) + API endpoints (status/load/unload, dataset-scoped mask generation) implemented — needs `models/sam2.1_l.pt` placement and end-to-end testing with SAM2.1 weights on GPU 1 (RTX 5080)
 - Train Tune / Custom Model Reuse: bbox detection stepper versioning, locked Dataset Version preview, modal Dataset Version/Model Version deletion, detection checkpoint validation, queueing, Standard vs High-Speed GPU policy, live websocket progress, compact metric trends, dataset/run configuration detail panels, scrollable epoch history, and model registry are implemented — custom trained models are not yet wired back into the existing `/workspace` inference flow
 - Auto-Labelling / Rapid Inference: Standalone Dataset Manager page, project overview/delete controls, image bulk/card/review delete controls, Select All Files, real overlay paginated thumbnail gallery, centered modal review with cross-page navigation, compact class/status controls, manual bbox add/edit/delete, simplified multi-prompt Infer Next visual-prompt candidates with per-candidate Accept/Reject plus Accept All & Continue, direct saved-label delete, batch label jobs with frame-by-frame progress, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights
 - Free Mode Inference: Backend + Frontend complete — needs `models/yoloe-26l-seg-pf.pt` placement and testing
