@@ -14,6 +14,7 @@ from ultralytics.models.yolo.yoloe.predict import YOLOEVPSegPredictor
 from ultralytics.utils import ops
 
 from backend.config import DEVICE
+from backend.utils.postprocess import nms_dedup
 
 MODEL_MODES = {
     "prompt": "models/yoloe-26l-seg.pt",
@@ -217,6 +218,13 @@ class ModelService:
                         detection["mask"] = mask
                     boxes_data.append(detection)
                     classes_count[label] = classes_count.get(label, 0) + 1
+
+        boxes_data = nms_dedup(boxes_data, iou_threshold=0.5)
+
+        # Recount after dedup
+        classes_count.clear()
+        for det in boxes_data:
+            classes_count[det["label"]] = classes_count.get(det["label"], 0) + 1
 
         return {
             "detections": boxes_data,
