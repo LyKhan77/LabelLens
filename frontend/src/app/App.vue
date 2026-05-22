@@ -4,6 +4,7 @@ import { useInferenceStore } from '../shared/stores/inference'
 import ModeSelectPage from '../pages/mode-select/ModeSelectPage.vue'
 import WorkspacePage from '../pages/workspace/WorkspacePage.vue'
 import DatasetsPage from '../pages/datasets/DatasetsPage.vue'
+import TrainTunePage from '../pages/train-tune/TrainTunePage.vue'
 
 const store = useInferenceStore()
 const path = ref(window.location.pathname)
@@ -23,6 +24,7 @@ onUnmounted(() => window.removeEventListener('popstate', syncPath))
 <template>
   <div class="h-screen flex flex-col bg-canvas">
     <DatasetsPage v-if="path === '/datasets'" />
+    <TrainTunePage v-else-if="path === '/train-tune'" />
     <WorkspacePage v-else-if="path === '/workspace' && store.modelLoaded" />
     <ModeSelectPage v-else />
   </div>

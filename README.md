@@ -9,8 +9,9 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 
 ## Features
 
-- **Feature Modes Page** — root path `/` always opens mode selection; choose Free Inference (no prompts, 1200+ LVIS categories via LRPC) or Prompt Inference (text/visual prompts), then enter workspace at `/workspace`
-- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project/image delete controls, Select All Files gallery selection, real overlay thumbnail gallery review, cross-page modal inspector navigation, compact class/status review controls, manual bbox add/edit/delete annotation editor, multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, Rapid Inference jobs, and YOLO/COCO export
+- **Feature Modes Page** — root path `/` always opens mode selection; choose Free Inference (no prompts, 1200+ LVIS categories via LRPC), Prompt Inference (text/visual prompts), or Train Tune, then enter the matching workspace
+- **Train Tune Workspace** — dedicated `/train-tune` workflow for immutable dataset versions from live projects or export zips, train/val/test split, preprocessing and augmentation presets, YOLO11/YOLO26 job configuration, single-job queueing, Standard vs High-Speed GPU modes, real-time progress, metrics history, and model version registry
+- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project/image delete controls, Select All Files gallery selection, real overlay thumbnail gallery review, cross-page modal inspector navigation, compact class/status review controls, manual bbox add/edit/delete annotation editor, multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, Rapid Inference jobs, and YOLO/COCO export that preserves original input filenames in exported artifacts
 - **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
 - **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes with hover X/Y alignment lines, and detect visually similar objects via SAVPE encoder
@@ -40,16 +41,18 @@ LabelLens/
 ├── frontend/                # Vue 3 SPA
 │   └── src/
 │       ├── app/             # App shell, entrypoint, global style
-│       ├── pages/           # Logical pages (mode-select, datasets, workspace)
+│       ├── pages/           # Logical pages (mode-select, datasets, train-tune, workspace)
 │       │   ├── datasets/    # Dataset Manager gallery, review modal, manual bbox editor, auto-label wizard
+│       │   ├── train-tune/  # Training workspace, summary, live progress, model registry
 │       │   └── workspace/
 │       │       ├── components/   # Workspace layout/display blocks
 │       │       └── sections/     # Grounding, media, settings sections
-│       ├── shared/          # Shared api, composables, store, types
+│       ├── shared/          # Shared api, composables, stores, types
 │       └── assets/          # Static assets
 ├── backend/                 # FastAPI server
-│   ├── routers/             # API endpoints (health, detection, stream)
-│   ├── services/            # Model, video, RTSP services
+│   ├── routers/             # API endpoints (health, detection, stream, dataset, training)
+│   ├── services/            # Model, video, RTSP, activity, training, runtime services
+│   ├── train_worker.py      # Background training worker process for Train Tune jobs
 │   └── utils/               # Drawing, encoding helpers
 ├── docs/plans/              # Saved implementation plans
 ├── PRD.md                   # Product requirements document
@@ -94,7 +97,7 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 
 ## Usage
 
-1. **Select Mode** — open `/`, choose Free Inference (no prompts needed) or Prompt Inference on the landing page
+1. **Select Mode** — open `/`, choose Free Inference, Prompt Inference, or Train Tune on the landing page
 2. **Text Prompt** — type comma-separated labels in the grounding prompt field (Prompt mode only)
 3. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels (Prompt mode only)
 4. **Select media** — choose Image / Video / RTSP before adding media input
@@ -103,6 +106,16 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 7. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
 8. **Auto-Label (optional)** — open Dataset section in sidebar, start Auto-Label via modal, and stop from modal or Stop Inference. For RTSP, optional `MM:SS` timer stops auto-label while stream keeps running.
 9. **Switch Mode** — click "Switch Mode" in the header to return to mode selection
+
+### Train Tune
+
+1. Open `/train-tune` from the Feature Modes page.
+2. Choose a **Live Dataset** project or upload an **Export ZIP** from Dataset Manager.
+3. Create an immutable **Dataset Version** with train/val/test split plus preprocessing and augmentation presets.
+4. Pick YOLO family/size, base checkpoint, batch, epochs, image size, worker count, and GPU mode.
+5. Review the generated summary and heuristic training estimate.
+6. Queue the training job and watch live progress, epoch metrics, ETA, checkpoints, and job events in the same workspace.
+7. Review the resulting **Model Versions** list once a job completes.
 
 ### Dataset Manager
 
@@ -126,6 +139,9 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 | `HOST` | `0.0.0.0` | Backend host |
 | `PORT` | `3131` | Backend port |
 | `CORS_ORIGINS` | `*` | Allowed CORS origins |
+| `TRAIN_DEVICE_STANDARD` | `1` | CUDA device used by Standard Mode Train Tune jobs |
+| `TRAIN_DEVICE_HIGH_SPEED` | `0,1` | CUDA devices used by High-Speed Train Tune jobs |
+| `LABELLENS_TRAIN_TUNE_FAKE` | `0` | Set to `1` to run mock training jobs that stream progress without real weights |
 
 ## License
 

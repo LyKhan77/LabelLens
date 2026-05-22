@@ -83,7 +83,6 @@ function classColor(label: string): string {
   for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
   return COLORS[Math.abs(hash) % COLORS.length]
 }
-function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 function clamp(value: number, min: number, max: number): number { return Math.min(Math.max(value, min), max) }
 
 
@@ -128,7 +127,7 @@ function normalizedBox(det: DatasetOverlayDetection): Box {
   return normalizeBox(det.box ?? [0, 0, 0, 0])
 }
 
-function boxStyle(det: DatasetOverlayDetection, idx: number) {
+function boxStyle(det: DatasetOverlayDetection) {
   const [x1, y1, x2, y2] = normalizedBox(det)
   return {
     left: `${(x1 / imageWidth.value) * 100}%`,
@@ -317,7 +316,7 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
           type="button"
           class="dataset-media-box dataset-editor-box"
           :class="{ 'is-rejected': det.accepted === false, 'is-selected': det.id === selectedId }"
-          :style="boxStyle(det, idx)"
+          :style="boxStyle(det)"
           @pointerdown.stop="onBoxPointerDown($event, det)"
         >
           <span

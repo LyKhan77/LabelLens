@@ -6,6 +6,7 @@ import logging
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from backend.services.activity import activity_service
 from backend.services.rtsp import RTSPStream
 from backend.utils.encoding import decode_image
 
@@ -16,6 +17,12 @@ router = APIRouter()
 @router.websocket("/ws/stream")
 async def stream_endpoint(ws: WebSocket):
     await ws.accept()
+    try:
+        activity_service.start_inference()
+    except RuntimeError as exc:
+        await ws.send_json({'error': str(exc)})
+        await ws.close()
+        return
 
     rtsp = RTSPStream()
 
@@ -78,3 +85,4 @@ async def stream_endpoint(ws: WebSocket):
             pass
     finally:
         rtsp.stop()
+        activity_service.stop_inference()

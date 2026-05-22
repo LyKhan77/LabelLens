@@ -3,6 +3,7 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import zipfile
 from datetime import datetime
@@ -14,6 +15,15 @@ DATASETS_DIR = "datasets"
 
 
 class DatasetService:
+    def _sanitize_filename(self, filename: str | None, fallback: str) -> str:
+        if not filename:
+            return fallback
+        base = os.path.basename(filename.strip())
+        if not base:
+            return fallback
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", base).strip("-.")
+        return cleaned or fallback
+
     def _project_dir(self, name: str) -> str:
         return os.path.join(DATASETS_DIR, name)
 
@@ -128,6 +138,7 @@ class DatasetService:
         image_bytes: bytes,
         detections: list[dict],
         source: str = "inference",
+        original_filename: str | None = None,
     ) -> dict:
         pdir = self._project_dir(name)
         if not os.path.isdir(pdir):
@@ -179,6 +190,7 @@ class DatasetService:
         # Save annotation
         ann = {
             "image": img_filename,
+            "original_filename": self._sanitize_filename(original_filename, img_filename),
             "width": w,
             "height": h,
             "source": source,
@@ -200,7 +212,13 @@ class DatasetService:
             "detections_count": len(annotated_dets),
         }
 
-    def upload_raw(self, name: str, image_bytes: bytes, source: str = "upload") -> dict:
+    def upload_raw(
+        self,
+        name: str,
+        image_bytes: bytes,
+        source: str = "upload",
+        original_filename: str | None = None,
+    ) -> dict:
         """Upload image without inference. Creates empty annotation placeholder."""
         pdir = self._project_dir(name)
         if not os.path.isdir(pdir):
@@ -227,6 +245,7 @@ class DatasetService:
         # Save empty annotation (no detections, labeled=false)
         ann = {
             "image": img_filename,
+            "original_filename": self._sanitize_filename(original_filename, img_filename),
             "width": w,
             "height": h,
             "source": source,
@@ -581,6 +600,7 @@ class DatasetService:
 
         # Collect accepted images with annotations
         entries = []
+        used_filenames: set[str] = set()
         for fname in sorted(os.listdir(ann_dir)):
             if not fname.endswith(".json"):
                 continue
@@ -595,6 +615,10 @@ class DatasetService:
             img_path = os.path.join(pdir, "images", img_filename)
             if not os.path.isfile(img_path):
                 continue
+            export_filename = self._unique_export_filename(
+                ann.get("original_filename") or img_filename,
+                used_filenames,
+            )
 
             # Build YOLO label lines
             w, h = ann["width"], ann["height"]
@@ -614,7 +638,7 @@ class DatasetService:
             entries.append({
                 "img_id": img_id,
                 "img_path": img_path,
-                "img_filename": img_filename,
+                "img_filename": export_filename,
                 "label_text": "\n".join(lines),
             })
 
@@ -658,6 +682,7 @@ class DatasetService:
         coco_annotations = []
         img_entries = []
         ann_id_counter = 1
+        used_filenames: set[str] = set()
 
         for fname in sorted(os.listdir(ann_dir)):
             if not fname.endswith(".json"):
@@ -673,11 +698,15 @@ class DatasetService:
             img_path = os.path.join(pdir, "images", img_filename)
             if not os.path.isfile(img_path):
                 continue
+            export_filename = self._unique_export_filename(
+                ann.get("original_filename") or img_filename,
+                used_filenames,
+            )
 
             img_id = len(coco_images) + 1
             coco_images.append({
                 "id": img_id,
-                "file_name": img_filename,
+                "file_name": export_filename,
                 "width": ann["width"],
                 "height": ann["height"],
             })
@@ -700,7 +729,7 @@ class DatasetService:
                 })
                 ann_id_counter += 1
 
-            img_entries.append({"img_path": img_path, "img_filename": img_filename})
+            img_entries.append({"img_path": img_path, "img_filename": export_filename})
 
         coco_json = json.dumps({
             "images": coco_images,
@@ -716,6 +745,20 @@ class DatasetService:
 
         zip_buf.seek(0)
         return zip_buf.getvalue()
+
+    def _unique_export_filename(self, filename: str, used_filenames: set[str]) -> str:
+        safe = self._sanitize_filename(filename, "image.jpg")
+        if safe not in used_filenames:
+            used_filenames.add(safe)
+            return safe
+        stem, ext = os.path.splitext(safe)
+        index = 2
+        while True:
+            candidate = f"{stem}-{index}{ext}"
+            if candidate not in used_filenames:
+                used_filenames.add(candidate)
+                return candidate
+            index += 1
 
 
 dataset_service = DatasetService()

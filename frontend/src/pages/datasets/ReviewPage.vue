@@ -86,7 +86,6 @@ function classColor(label: string): string {
   for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
   return COLORS[Math.abs(hash) % COLORS.length]
 }
-function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
 
 
 function clamp(value: number, min: number, max: number): number {
@@ -718,7 +717,7 @@ onUnmounted(() => {
 
               <div v-if="classes.length" class="dataset-class-filters">
                 <button
-                  v-for="([cls, count], i) in classes"
+                  v-for="([cls, count]) in classes"
                   :key="cls"
                   :class="{ 'opacity-35 line-through': isClassHidden(cls) }"
                   @click="store.toggleClassVisibility(cls)"
