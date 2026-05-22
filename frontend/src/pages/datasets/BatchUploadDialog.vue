@@ -15,7 +15,6 @@ const phase = ref<'upload' | 'configure' | 'progress' | 'done'>('upload')
 const files = ref<File[]>([])
 const sampleFps = ref(1)
 const isDragging = ref(false)
-const folderScanning = ref(false)
 const uploading = ref(false)
 const uploadMessage = ref('')
 const error = ref('')
@@ -76,11 +75,10 @@ function onFolderSelect(e: Event) {
 const imageFiles = computed(() => files.value.filter((f) => f.type.startsWith('image/')))
 const videoFiles = computed(() => files.value.filter((f) => f.type.startsWith('video/')))
 const hasMixedMedia = computed(() => imageFiles.value.length > 0 && videoFiles.value.length > 0)
-const hasTooManyVideos = computed(() => videoFiles.value.length > 1)
 const labels = computed(() => labelsText.value.split(',').map((s) => s.trim()).filter(Boolean))
 const requiredModel = computed(() => promptType.value === 'free' ? 'free' : 'prompt')
 const modelReady = computed(() => inferenceStore.modelLoaded && inferenceStore.inferenceMode === requiredModel.value)
-const canUpload = computed(() => files.value.length > 0 && !hasMixedMedia.value && !hasTooManyVideos.value)
+const canUpload = computed(() => files.value.length > 0 && !hasMixedMedia.value)
 const canStart = computed(() => {
   if (!modelReady.value) return false
   if (promptType.value === 'text' && labels.value.length === 0) return false
@@ -158,17 +156,19 @@ function handleReference(file: File) {
 async function startUpload() {
   error.value = ''
   if (!canUpload.value) {
-    error.value = hasMixedMedia.value
-      ? 'Upload either images or one video, not mixed media.'
-      : 'Only one video can be uploaded per batch.'
+    error.value = 'Upload either images or videos, not mixed media.'
     return
   }
   uploading.value = true
   uploadMessage.value = ''
   try {
-    if (videoFiles.value.length === 1) {
-      const result = await datasetStore.uploadStream({ file: videoFiles.value[0], sampleFps: sampleFps.value })
-      uploadMessage.value = `${result?.uploaded ?? 0} frames uploaded`
+    if (videoFiles.value.length > 0) {
+      let totalFrames = 0
+      for (const video of videoFiles.value) {
+        const result = await datasetStore.uploadStream({ file: video, sampleFps: sampleFps.value })
+        totalFrames += result?.uploaded ?? 0
+      }
+      uploadMessage.value = `${totalFrames} frames uploaded from ${videoFiles.value.length} video(s)`
     } else {
       const result = await datasetStore.uploadRaw(imageFiles.value)
       uploadMessage.value = `${result?.uploaded ?? 0} images uploaded`
@@ -325,7 +325,6 @@ onUnmounted(() => {
               <div class="dataset-upload-files-header">
                 <span>{{ files.length }} selected</span>
                 <small v-if="hasMixedMedia">Mixed image and video batches are not supported.</small>
-                <small v-else-if="hasTooManyVideos">Only one video can be uploaded per batch.</small>
                 <small v-else>Ready to upload.</small>
               </div>
               <div class="dataset-file-list">
