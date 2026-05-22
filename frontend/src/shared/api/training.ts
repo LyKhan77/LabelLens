@@ -216,6 +216,10 @@ export async function listModelVersions(): Promise<ModelVersion[]> {
   return res.data
 }
 
+export async function deleteModelVersion(modelId: string): Promise<void> {
+  await api.delete(`/training/models/${modelId}`)
+}
+
 export function createTrainingWS(jobId: string): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host

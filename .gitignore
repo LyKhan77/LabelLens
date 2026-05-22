@@ -45,6 +45,7 @@ temp/
 
 # --- Datasets (runtime data) ---
 datasets/
+traintune-workspace/
 
 # --- Model artifacts ---
 models/*.pt
@@ -53,6 +54,7 @@ models/*.onnx
 models/*.engine
 mobileclip2_b.ts
 mobileclip_blt.ts
+*.pt
 
 # --- Other ---
 docs/superpowers/

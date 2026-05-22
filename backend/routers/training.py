@@ -180,6 +180,15 @@ async def get_model_version(model_id: str):
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.delete('/training/models/{model_id}')
+async def delete_model_version(model_id: str):
+    try:
+        training_service.delete_model_version(model_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {'ok': True}
+
+
 @router.websocket('/ws/training/{job_id}')
 async def training_events(ws: WebSocket, job_id: str):
     await ws.accept()

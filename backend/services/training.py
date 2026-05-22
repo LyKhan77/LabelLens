@@ -548,5 +548,20 @@ class TrainingService:
             raise FileNotFoundError(f'Model version {model_id} not found')
         return model
 
+    def delete_model_version(self, model_id: str) -> None:
+        model = self.get_model_version(model_id)
+        job_id = model.get('job_id')
+        job = self._read_json(self._job_path(job_id), {}) if job_id else {}
+        output_dir = job.get('output_dir')
+        if output_dir and os.path.isdir(output_dir):
+            shutil.rmtree(output_dir, ignore_errors=True)
+        if job_id:
+            for path in (self._job_path(job_id), self._metrics_path(job_id)):
+                if os.path.exists(path):
+                    os.remove(path)
+        model_path = self._model_path(model_id)
+        if os.path.exists(model_path):
+            os.remove(model_path)
+
 
 training_service = TrainingService()

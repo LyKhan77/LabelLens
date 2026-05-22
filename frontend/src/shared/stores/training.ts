@@ -147,6 +147,24 @@ export const useTrainingStore = defineStore('training', () => {
     }
   }
 
+  async function deleteModel(modelId: string) {
+    const model = models.value.find((item) => item.id === modelId) ?? null
+    await api.deleteModelVersion(modelId)
+    models.value = models.value.filter((item) => item.id !== modelId)
+    if (model?.job_id) {
+      jobs.value = jobs.value.filter((job) => job.id !== model.job_id)
+      if (selectedJob.value?.id === model.job_id) {
+        selectedJob.value = null
+        jobMetrics.value = []
+        liveEvents.value = []
+        disconnectJob()
+      }
+    }
+    if (selectedModel.value?.id === modelId) {
+      selectedModel.value = null
+    }
+  }
+
   function mergeJob(jobId: string, patch: Partial<TrainingJob>) {
     jobs.value = jobs.value.map((job) => (job.id === jobId ? { ...job, ...patch } : job))
     if (selectedJob.value?.id === jobId) {
@@ -260,6 +278,7 @@ export const useTrainingStore = defineStore('training', () => {
     cancelJob,
     recomputeJob,
     deleteJob,
+    deleteModel,
     connectJob,
     disconnectJob,
     findModelByJobId,

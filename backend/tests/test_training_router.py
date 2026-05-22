@@ -198,6 +198,40 @@ class TrainingRouterTest(unittest.TestCase):
         missing_response = self.client.get(f'/api/training/jobs/{job["id"]}')
         self.assertEqual(missing_response.status_code, 404)
 
+    def test_model_version_delete_endpoint_removes_model_and_training_job(self):
+        version = training_service.create_dataset_version_from_live_dataset(
+            'demo',
+            {
+                'version_name': 'model-delete',
+                'split_config': {'train': 70, 'val': 20, 'test': 10},
+                'preprocessing_config': {},
+                'augmentation_config': {'profile': 'baseline'},
+            },
+        )
+        job = training_service.create_training_job(
+            {
+                'job_name': 'model-delete',
+                'dataset_version_id': version['id'],
+                'family': 'yolo11',
+                'size': 'n',
+                'base_checkpoint': 'mock',
+                'epochs': 1,
+                'imgsz': 640,
+                'batch': 2,
+                'workers': 1,
+                'training_mode': 'standard',
+            },
+            inference_active=False,
+        )
+        training_service.complete_training_job(job['id'], best_model_path='best.pt')
+        model = next(model for model in training_service.list_model_versions() if model['job_id'] == job['id'])
+
+        response = self.client.delete(f'/api/training/models/{model["id"]}')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get(f'/api/training/models/{model["id"]}').status_code, 404)
+        self.assertEqual(self.client.get(f'/api/training/jobs/{job["id"]}').status_code, 404)
+
     def test_high_speed_job_endpoint_rejects_when_inference_is_active(self):
         version = training_service.create_dataset_version_from_live_dataset(
             'demo',

@@ -187,6 +187,37 @@ class TrainingServiceTest(unittest.TestCase):
 
         self.assertTrue(os.path.exists(version["storage_path"]))
 
+    def test_delete_model_version_removes_linked_training_history_and_output(self):
+        version = self._create_demo_version()
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "delete-model",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "yolo11n.pt",
+                "epochs": 1,
+                "imgsz": 640,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+        os.makedirs(job["output_dir"], exist_ok=True)
+        self.training_service.append_metric(job["id"], {"epoch": 1, "map50": 0.62})
+        self.training_service.complete_training_job(job["id"], best_model_path="best.pt")
+        model = next(model for model in self.training_service.list_model_versions() if model["job_id"] == job["id"])
+
+        self.training_service.delete_model_version(model["id"])
+
+        with self.assertRaises(FileNotFoundError):
+            self.training_service.get_model_version(model["id"])
+        with self.assertRaises(FileNotFoundError):
+            self.training_service.get_training_job(job["id"])
+        self.assertFalse(os.path.exists(self.training_service._metrics_path(job["id"])))
+        self.assertFalse(os.path.exists(job["output_dir"]))
+
     def test_create_training_job_rejects_high_speed_when_inference_is_active(self):
         self.dataset_service.create_project("demo", ["bolt"])
         self.dataset_service.save_image(

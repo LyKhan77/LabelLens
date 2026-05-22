@@ -5,7 +5,7 @@ import { useInferenceStore } from '../../shared/stores/inference'
 import { useBackendStatus } from '../../shared/composables/useBackendStatus'
 import { useTheme } from '../../shared/composables/useTheme'
 import { useTrainingStore } from '../../shared/stores/training'
-import type { DatasetVersion, TrainingJob, TrainingMetricPoint } from '../../shared/api/training'
+import type { DatasetVersion, ModelVersion, TrainingJob, TrainingMetricPoint } from '../../shared/api/training'
 
 const props = defineProps<{ path: string }>()
 
@@ -17,6 +17,13 @@ const { theme, toggle } = useTheme()
 
 const form = reactive(reactiveState())
 const versionDeleteError = ref<string | null>(null)
+const deleteError = ref<string | null>(null)
+const deletingTarget = ref(false)
+type DeleteTarget =
+  | { kind: 'dataset-version'; id: string; name: string }
+  | { kind: 'failed-job'; id: string; name: string }
+  | { kind: 'model-version'; id: string; name: string; jobName: string }
+const deleteTarget = ref<DeleteTarget | null>(null)
 const builderStep = ref(1)
 
 function reactiveState() {
@@ -62,6 +69,7 @@ const latestMetric = computed(() => trainingStore.selectedJob?.metrics_latest ??
 const resultSourceVersion = computed(() => trainingStore.versions.find((version) => version.id === trainingStore.selectedModel?.dataset_version_id) ?? null)
 const resultJob = computed(() => trainingStore.selectedJob)
 const builderSummary = computed(() => trainingStore.selectedVersion?.summary ?? null)
+const liveSourceVersion = computed(() => trainingStore.versions.find((version) => version.id === trainingStore.selectedJob?.dataset_version_id) ?? null)
 const sourceReady = computed(() => form.sourceType === 'live' ? Boolean(form.selectedDataset) : Boolean(form.zipFile))
 const architectureReady = computed(() => Boolean(form.baseCheckpoint) && form.epochs > 0 && form.imgsz > 0 && form.batch > 0 && form.workers > 0)
 const splitReady = computed(() => totalSplit.value === 100)
@@ -351,14 +359,51 @@ function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
 }
 
-async function deleteDatasetVersion(version: DatasetVersion) {
-  if (!window.confirm(`Delete dataset version "${version.version_name}"? This removes its immutable snapshot.`)) return
+function requestDatasetVersionDelete(version: DatasetVersion) {
+  deleteError.value = null
+  deleteTarget.value = { kind: 'dataset-version', id: version.id, name: version.version_name }
+}
+
+function requestFailedJobDelete(job: TrainingJob) {
+  deleteError.value = null
+  deleteTarget.value = { kind: 'failed-job', id: job.id, name: job.job_name }
+}
+
+function requestModelDelete(model: ModelVersion) {
+  deleteError.value = null
+  deleteTarget.value = { kind: 'model-version', id: model.id, name: model.model_name, jobName: model.version_name }
+}
+
+function closeDeleteDialog() {
+  if (deletingTarget.value) return
+  deleteTarget.value = null
+  deleteError.value = null
+}
+
+async function confirmDelete() {
+  const target = deleteTarget.value
+  if (!target) return
   form.localError = null
   versionDeleteError.value = null
+  deleteError.value = null
+  deletingTarget.value = true
   try {
-    await trainingStore.deleteVersion(version.id)
+    if (target.kind === 'dataset-version') {
+      await trainingStore.deleteVersion(target.id)
+    } else if (target.kind === 'failed-job') {
+      await trainingStore.deleteJob(target.id)
+      if (routeView.value === 'job' && routeId.value === target.id) navigate('/train-tune')
+    } else {
+      await trainingStore.deleteModel(target.id)
+      if (routeView.value === 'result' && routeId.value === target.id) navigate('/train-tune')
+    }
+    deleteTarget.value = null
   } catch (err) {
-    versionDeleteError.value = errorMessage(err, 'Gagal menghapus dataset version')
+    const message = errorMessage(err, 'Gagal menghapus data Train Tune')
+    deleteError.value = message
+    if (target.kind === 'dataset-version') versionDeleteError.value = message
+  } finally {
+    deletingTarget.value = false
   }
 }
 
@@ -371,14 +416,6 @@ function openResultFromJob(job: TrainingJob | null) {
 async function recomputeFailedJob(jobId: string) {
   const job = await trainingStore.recomputeJob(jobId)
   navigate(`/train-tune/jobs/${job.id}`)
-}
-
-async function deleteFailedJob(jobId: string) {
-  if (!window.confirm('Delete this failed training job and its output folder?')) return
-  await trainingStore.deleteJob(jobId)
-  if (routeView.value === 'job' && routeId.value === jobId) {
-    navigate('/train-tune')
-  }
 }
 </script>
 
@@ -600,7 +637,6 @@ async function deleteFailedJob(jobId: string) {
                   <div class="flex flex-wrap items-center gap-(--spacing-md)">
                     <button v-if="builderStep > 1" class="dataset-secondary-button" @click="previousBuilderStep">Back</button>
                     <button v-if="builderStep < builderSteps.length" class="dataset-primary-button" @click="nextBuilderStep">Continue</button>
-                    <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Refresh Summary</button>
                   </div>
                   <p v-if="form.trainingMode === 'high_speed'" class="train-warning">High-Speed Mode uses both RTX 5080 devices. The job only starts when inference is idle, and new inference requests remain blocked until the run finishes.</p>
                   <p v-if="form.localError || trainingStore.error" class="train-error">{{ form.localError || trainingStore.error }}</p>
@@ -615,7 +651,7 @@ async function deleteFailedJob(jobId: string) {
                   <h2 class="text-[24px] tracking-[-0.42px] font-medium text-ink mt-(--spacing-xs)">Training Preview</h2>
                 </div>
                 <div class="flex flex-wrap justify-end gap-(--spacing-sm)">
-                  <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Recompute</button>
+                  <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Refresh Estimate</button>
                   <button class="dataset-primary-button" :disabled="!trainingStore.currentEstimate" @click="submitJob">Start Training Job</button>
                 </div>
               </div>
@@ -652,7 +688,7 @@ async function deleteFailedJob(jobId: string) {
                   </button>
                   <div v-if="job.status === 'failed'" class="train-list-actions">
                     <button class="train-mini-action" @click.stop="recomputeFailedJob(job.id)">Re-compute</button>
-                    <button class="train-mini-action is-danger" @click.stop="deleteFailedJob(job.id)">Delete</button>
+                    <button class="train-mini-action is-danger" @click.stop="requestFailedJobDelete(job)">Delete</button>
                   </div>
                 </div>
                 <div v-if="!trainingStore.jobs.length" class="train-empty">No training jobs yet.</div>
@@ -672,7 +708,7 @@ async function deleteFailedJob(jobId: string) {
                       <span>{{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
                     </div>
                   </button>
-                  <button class="train-mini-action is-danger train-version-delete" @click.stop="deleteDatasetVersion(version)">Delete</button>
+                  <button class="train-mini-action is-danger train-version-delete" @click.stop="requestDatasetVersionDelete(version)">Delete</button>
                 </div>
                 <div v-if="!trainingStore.versions.length" class="train-empty">No dataset versions yet.</div>
               </div>
@@ -685,13 +721,18 @@ async function deleteFailedJob(jobId: string) {
                 <button class="dataset-secondary-button !px-2 !py-1" @click="trainingStore.refreshModels()">Refresh</button>
               </div>
               <div class="train-list">
-                <button v-for="model in trainingStore.models" :key="model.id" class="train-list-row" @click="openResult(model.id)">
-                  <div>
-                    <strong>{{ model.model_name }}</strong>
-                    <span>{{ model.family }} / {{ model.size }}</span>
+                <div v-for="model in trainingStore.models" :key="model.id" class="train-row-shell">
+                  <button class="train-list-row train-list-row-main" @click="openResult(model.id)">
+                    <div>
+                      <strong>{{ model.model_name }}</strong>
+                      <span>{{ model.family }} / {{ model.size }}</span>
+                    </div>
+                    <span class="dataset-status-pill is-completed">{{ model.status }}</span>
+                  </button>
+                  <div class="train-list-actions">
+                    <button class="train-mini-action is-danger" @click.stop="requestModelDelete(model)">Delete</button>
                   </div>
-                  <span class="dataset-status-pill is-completed">{{ model.status }}</span>
-                </button>
+                </div>
                 <div v-if="!trainingStore.models.length" class="train-empty">No trained models yet.</div>
               </div>
             </div>
@@ -713,7 +754,7 @@ async function deleteFailedJob(jobId: string) {
                 <button v-if="trainingStore.selectedJob.status === 'completed'" class="dataset-primary-button" @click="openResultFromJob(trainingStore.selectedJob)">Open Result</button>
                 <template v-else-if="trainingStore.selectedJob.status === 'failed'">
                   <button class="dataset-primary-button" @click="recomputeFailedJob(trainingStore.selectedJob.id)">Re-compute</button>
-                  <button class="dataset-secondary-button" @click="deleteFailedJob(trainingStore.selectedJob.id)">Delete</button>
+                  <button class="dataset-secondary-button" @click="requestFailedJobDelete(trainingStore.selectedJob)">Delete</button>
                 </template>
                 <button v-else-if="!['failed', 'cancelled'].includes(trainingStore.selectedJob.status)" class="dataset-secondary-button" @click="trainingStore.cancelJob(trainingStore.selectedJob.id)">Cancel Job</button>
               </div>
@@ -792,6 +833,17 @@ async function deleteFailedJob(jobId: string) {
                 </div>
               </div>
               <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
+                <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Dataset + Training Configuration</h3>
+                <div class="train-policy-grid">
+                  <div><span>Dataset Version</span><strong>{{ liveSourceVersion?.version_name || trainingStore.selectedJob.dataset_version_name }}</strong><small>{{ liveSourceVersion?.source_name || 'linked snapshot' }}</small></div>
+                  <div><span>Split</span><strong>{{ versionSplit(liveSourceVersion) }}</strong><small>{{ versionSplitCounts(liveSourceVersion) }} images</small></div>
+                  <div><span>Preprocessing</span><strong>{{ versionResize(liveSourceVersion) }}</strong><small>{{ versionOrient(liveSourceVersion) }}</small></div>
+                  <div><span>Augmentation</span><strong>{{ versionAugment(liveSourceVersion) }}</strong><small>immutable profile</small></div>
+                  <div><span>Checkpoint</span><strong>{{ trainingStore.selectedJob.base_checkpoint }}</strong><small>{{ trainingStore.selectedJob.architecture_family }} {{ trainingStore.selectedJob.architecture_size }}</small></div>
+                  <div><span>Run Settings</span><strong>{{ trainingStore.selectedJob.epochs }} epochs / {{ trainingStore.selectedJob.imgsz }} px</strong><small>batch {{ trainingStore.selectedJob.batch }} / workers {{ trainingStore.selectedJob.workers }} / {{ trainingStore.selectedJob.training_mode }}</small></div>
+                </div>
+              </div>
+              <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
                 <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Artifacts</h3>
                 <div class="space-y-(--spacing-sm) text-[13px] text-ink-mute">
                   <div><strong class="text-ink">Output</strong><br />{{ trainingStore.selectedJob.output_dir }}</div>
@@ -813,7 +865,10 @@ async function deleteFailedJob(jobId: string) {
                 <h1 class="text-[32px] leading-[1.1] tracking-[-0.72px] font-medium text-ink">Train Tune Result</h1>
                 <p class="text-[14px] text-ink-mute leading-[1.55] max-w-[760px]">Registered model artifact, linked dataset version, and best metrics from the completed training job.</p>
               </div>
-              <span class="dataset-status-pill is-completed">{{ trainingStore.selectedModel.status }}</span>
+              <div class="flex items-center gap-(--spacing-sm)">
+                <span class="dataset-status-pill is-completed">{{ trainingStore.selectedModel.status }}</span>
+                <button class="dataset-secondary-button" @click="requestModelDelete(trainingStore.selectedModel)">Delete Model</button>
+              </div>
             </div>
           </div>
 
@@ -880,6 +935,15 @@ async function deleteFailedJob(jobId: string) {
                 </div>
               </div>
 
+              <div v-if="resultJob" class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
+                <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Training Configuration</h3>
+                <div class="train-policy-grid">
+                  <div><span>Checkpoint</span><strong>{{ resultJob.base_checkpoint }}</strong><small>{{ resultJob.architecture_family }} {{ resultJob.architecture_size }}</small></div>
+                  <div><span>Run Settings</span><strong>{{ resultJob.epochs }} epochs / {{ resultJob.imgsz }} px</strong><small>batch {{ resultJob.batch }} / workers {{ resultJob.workers }}</small></div>
+                  <div><span>Compute</span><strong>{{ resultJob.training_mode }}</strong><small>{{ resultJob.device_policy }}</small></div>
+                </div>
+              </div>
+
               <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
                 <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Other Model Versions</h3>
                 <div class="train-list">
@@ -896,6 +960,44 @@ async function deleteFailedJob(jobId: string) {
         </section>
       </div>
     </main>
+
+    <Transition
+      enter-active-class="transition ease-out duration-200"
+      enter-from-class="opacity-0 scale-[0.98]"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition ease-in duration-150"
+      leave-to-class="opacity-0 scale-[0.98]"
+    >
+      <div v-if="deleteTarget" class="dataset-dialog-backdrop" @click.self="closeDeleteDialog">
+        <section class="dataset-delete-dialog">
+          <header class="dataset-modal-header">
+            <div>
+              <h3 class="dataset-modal-title">{{ deleteTarget.kind === 'model-version' ? 'Delete Model Version' : deleteTarget.kind === 'failed-job' ? 'Delete Training Job' : 'Delete Dataset Version' }}</h3>
+              <p class="dataset-modal-copy">This action cannot be undone.</p>
+            </div>
+            <button class="dataset-modal-close" :disabled="deletingTarget" @click="closeDeleteDialog" aria-label="Close Train Tune delete dialog">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </header>
+          <div class="dataset-modal-body dataset-form-stack">
+            <p v-if="deleteTarget.kind === 'dataset-version'" class="text-[13px] text-ink-mute leading-relaxed">
+              Delete Dataset Version <span class="font-medium text-ink">{{ deleteTarget.name }}</span> and its immutable snapshot? Versions used by job or model history stay protected.
+            </p>
+            <p v-else-if="deleteTarget.kind === 'failed-job'" class="text-[13px] text-ink-mute leading-relaxed">
+              Delete failed Training Job <span class="font-medium text-ink">{{ deleteTarget.name }}</span>, its metric history, and its output folder?
+            </p>
+            <p v-else class="text-[13px] text-ink-mute leading-relaxed">
+              Delete Model Version <span class="font-medium text-ink">{{ deleteTarget.name }}</span>? Its linked Training Job <span class="font-medium text-ink">{{ deleteTarget.jobName }}</span>, metrics, and output folder will also be removed.
+            </p>
+            <p v-if="deleteError" class="train-error">{{ deleteError }}</p>
+          </div>
+          <footer class="dataset-modal-footer">
+            <button class="dataset-secondary-button" :disabled="deletingTarget" @click="closeDeleteDialog">Cancel</button>
+            <button class="dataset-primary-button" :disabled="deletingTarget" @click="confirmDelete">{{ deletingTarget ? 'Deleting...' : 'Delete' }}</button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
   </div>
 </template>
 
