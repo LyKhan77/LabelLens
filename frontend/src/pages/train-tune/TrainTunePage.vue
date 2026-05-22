@@ -626,7 +626,7 @@ const trainingSteps = [
 }
 .train-choice strong { font-size: 14px; color: var(--color-ink); }
 .train-choice span { font-size: 12px; line-height: 1.45; color: var(--color-ink-mute); }
-.train-choice.is-active { border-color: color-mix(in srgb, var(--color-primary) 48%, white); background: color-mix(in srgb, var(--color-primary) 7%, white); }
+.train-choice.is-active { border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-hairline)); background: color-mix(in srgb, var(--color-primary) 10%, var(--color-canvas-soft)); }
 
 .train-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--color-ink-mute); }
 .train-field-span { grid-column: span 2; }
