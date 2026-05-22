@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import gc
 import logging
+import os
+import shutil
 import threading
 import time
 
@@ -36,7 +38,16 @@ class SAMService:
             self._loading = True
             try:
                 logger.info("Loading SAM2.1 on cuda:%s...", self.device)
-                self.model = SAM(SAM_MODEL)
+                model_path = f"models/{SAM_MODEL}"
+                local_exists = os.path.isfile(model_path)
+                source = model_path if local_exists else SAM_MODEL
+                self.model = SAM(source)
+                # If auto-downloaded, move to models/
+                if not local_exists:
+                    os.makedirs("models", exist_ok=True)
+                    cwd_spawn = SAM_MODEL
+                    if os.path.isfile(cwd_spawn):
+                        shutil.move(cwd_spawn, model_path)
                 self._loaded = True
                 logger.info("SAM2.1 loaded successfully.")
             except Exception:
