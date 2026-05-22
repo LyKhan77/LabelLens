@@ -3,11 +3,13 @@ import { computed, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import ExportDialog from './ExportDialog.vue'
 import BatchUploadDialog from './BatchUploadDialog.vue'
+import UploadDataDialog from './UploadDataDialog.vue'
 import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
 
 const store = useDatasetStore()
 const showExport = ref(false)
 const showBatch = ref(false)
+const showUpload = ref(false)
 const galleryFilter = ref<'all' | 'review' | 'accepted' | 'unlabeled'>('all')
 const gallerySearch = ref('')
 const selectedImageIds = ref<Set<string>>(new Set())
@@ -199,6 +201,13 @@ watch(
 
       <div class="dataset-actions">
         <button
+          v-if="store.images.length"
+          class="h-9 px-4 text-[13px] font-medium text-ink border border-hairline rounded-(--radius-sm) bg-canvas hover:bg-canvas-soft hover:border-hairline-strong hover:-translate-y-px transition-all cursor-pointer"
+          @click="showUpload = true"
+        >
+          Upload Data
+        </button>
+        <button
           class="h-9 px-4 text-[13px] font-medium text-ink border border-hairline rounded-(--radius-sm) bg-canvas hover:bg-canvas-soft hover:border-hairline-strong hover:-translate-y-px transition-all cursor-pointer"
           @click="showBatch = true"
         >
@@ -374,7 +383,7 @@ watch(
       <p class="text-[12px] text-ink-mute mb-5">Upload images or a video, then run Rapid Inference.</p>
       <button
         class="px-4 py-2.5 text-[13px] font-medium text-on-primary bg-primary rounded-(--radius-sm) hover:bg-primary-deep shadow-[0_1px_3px_rgba(0,0,0,0.06)] transition-all cursor-pointer"
-        @click="showBatch = true"
+        @click="showUpload = true"
       >
         Upload Data
       </button>
@@ -402,6 +411,7 @@ watch(
 
     <ExportDialog v-if="showExport" @close="showExport = false" />
     <BatchUploadDialog v-if="showBatch" @close="showBatch = false" />
+    <UploadDataDialog v-if="showUpload" @close="showUpload = false" />
 
     <Transition
       enter-active-class="transition ease-out duration-200"
