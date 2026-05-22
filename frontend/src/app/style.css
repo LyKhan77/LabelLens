@@ -1720,6 +1720,12 @@
     line-height: 1.45;
   }
 
+  .dataset-upload-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
   .dataset-upload-files,
   .dataset-panel-block,
   .dataset-model-row,
