@@ -208,3 +208,8 @@ export function createTrainingWS(jobId: string): WebSocket {
   const host = window.location.host
   return new WebSocket(`${protocol}//${host}/api/ws/training/${jobId}`)
 }
+
+export async function getModelVersion(modelId: string): Promise<ModelVersion> {
+  const res = await api.get(`/training/models/${modelId}`)
+  return res.data
+}

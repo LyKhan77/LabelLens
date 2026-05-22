@@ -9,6 +9,7 @@ export const useTrainingStore = defineStore('training', () => {
   const models = ref<ModelVersion[]>([])
   const selectedVersion = ref<DatasetVersion | null>(null)
   const selectedJob = ref<TrainingJob | null>(null)
+  const selectedModel = ref<ModelVersion | null>(null)
   const jobMetrics = ref<TrainingMetricPoint[]>([])
   const liveEvents = ref<TrainingEvent[]>([])
   const currentEstimate = ref<TrainingEstimate | null>(null)
@@ -64,6 +65,9 @@ export const useTrainingStore = defineStore('training', () => {
 
   async function refreshModels() {
     models.value = await api.listModelVersions()
+    if (selectedModel.value) {
+      selectedModel.value = models.value.find((model) => model.id === selectedModel.value?.id) ?? selectedModel.value
+    }
   }
 
   async function refreshVersions() {
@@ -77,14 +81,34 @@ export const useTrainingStore = defineStore('training', () => {
     const job = await api.createTrainingJob(payload)
     jobs.value = [job, ...jobs.value]
     selectedJob.value = job
+    selectedModel.value = null
     connectJob(job.id)
     return job
   }
 
-  async function selectJob(jobId: string) {
+  async function selectJob(jobId: string, options: { connect?: boolean } = {}) {
     selectedJob.value = await api.getTrainingJob(jobId)
+    selectedModel.value = null
     jobMetrics.value = await api.listTrainingMetrics(jobId)
-    connectJob(jobId)
+    if (options.connect !== false) {
+      connectJob(jobId)
+    } else {
+      disconnectJob()
+    }
+    return selectedJob.value
+  }
+
+  async function selectModel(modelId: string) {
+    selectedModel.value = await api.getModelVersion(modelId)
+    const jobId = selectedModel.value.job_id
+    if (jobId) {
+      await selectJob(jobId, { connect: false })
+    } else {
+      selectedJob.value = null
+      jobMetrics.value = []
+      disconnectJob()
+    }
+    return selectedModel.value
   }
 
   async function cancelJob(jobId: string) {
@@ -97,6 +121,10 @@ export const useTrainingStore = defineStore('training', () => {
     if (selectedJob.value?.id === jobId) {
       selectedJob.value = { ...selectedJob.value, ...patch }
     }
+  }
+
+  function findModelByJobId(jobId: string) {
+    return models.value.find((model) => model.job_id === jobId) ?? null
   }
 
   function connectJob(jobId: string) {
@@ -118,7 +146,7 @@ export const useTrainingStore = defineStore('training', () => {
     socket.onmessage = async (event) => {
       try {
         const payload: TrainingEvent = JSON.parse(event.data)
-        liveEvents.value = [...liveEvents.value.slice(-59), payload]
+        liveEvents.value = [...liveEvents.value.slice(-119), payload]
         if (payload.event === 'metric_update') {
           const point: TrainingMetricPoint = {
             epoch: payload.epoch ?? 0,
@@ -135,10 +163,7 @@ export const useTrainingStore = defineStore('training', () => {
             eta_sec: payload.eta_sec,
           }
           jobMetrics.value = [...jobMetrics.value.filter((item) => item.epoch !== point.epoch), point].sort((a, b) => a.epoch - b.epoch)
-          mergeJob(jobId, {
-            status: 'running',
-            metrics_latest: point,
-          })
+          mergeJob(jobId, { status: 'running', metrics_latest: point })
         }
         if (payload.event === 'job_started') {
           mergeJob(jobId, { status: payload.phase === 'preparing' ? 'preparing' : 'running' })
@@ -150,10 +175,7 @@ export const useTrainingStore = defineStore('training', () => {
           await refreshJobs()
           await refreshModels()
         }
-        if (payload.event === 'job_failed') {
-          await refreshJobs()
-        }
-        if (payload.event === 'job_cancelled') {
+        if (payload.event === 'job_failed' || payload.event === 'job_cancelled') {
           await refreshJobs()
         }
       } catch (err) {
@@ -170,12 +192,23 @@ export const useTrainingStore = defineStore('training', () => {
     liveConnected.value = false
   }
 
+  function resetSelection() {
+    selectedVersion.value = null
+    selectedJob.value = null
+    selectedModel.value = null
+    jobMetrics.value = []
+    liveEvents.value = []
+    currentEstimate.value = null
+    disconnectJob()
+  }
+
   return {
     versions,
     jobs,
     models,
     selectedVersion,
     selectedJob,
+    selectedModel,
     jobMetrics,
     liveEvents,
     currentEstimate,
@@ -191,8 +224,11 @@ export const useTrainingStore = defineStore('training', () => {
     refreshVersions,
     createJob,
     selectJob,
+    selectModel,
     cancelJob,
     connectJob,
     disconnectJob,
+    findModelByJobId,
+    resetSelection,
   }
 })

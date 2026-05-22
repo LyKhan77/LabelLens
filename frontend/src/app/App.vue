@@ -24,7 +24,7 @@ onUnmounted(() => window.removeEventListener('popstate', syncPath))
 <template>
   <div class="h-screen flex flex-col bg-canvas">
     <DatasetsPage v-if="path === '/datasets'" />
-    <TrainTunePage v-else-if="path === '/train-tune'" />
+    <TrainTunePage v-else-if="path.startsWith('/train-tune')" :path="path" />
     <WorkspacePage v-else-if="path === '/workspace' && store.modelLoaded" />
     <ModeSelectPage v-else />
   </div>

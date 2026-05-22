@@ -60,9 +60,6 @@ function navigate(path: string) {
         <button class="px-3 py-1.5 text-[13px] rounded-(--radius-sm) border border-hairline text-ink-mute hover:text-ink hover:bg-canvas-soft transition-colors cursor-pointer" @click="navigate('/datasets')">
           Open Dataset Manager
         </button>
-        <button class="px-3 py-1.5 text-[13px] rounded-(--radius-sm) border border-primary/30 text-primary hover:bg-primary/5 transition-colors cursor-pointer" @click="navigate('/train-tune')">
-          Open Train Tune
-        </button>
       </div>
 
       <div class="flex justify-center">
