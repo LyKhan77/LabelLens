@@ -25,10 +25,13 @@ class TrainingRouterTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.datasets_root = f'{self.tmp.name}/datasets'
         self.training_root = f'{self.tmp.name}/train_tune'
+        self.workspace_root = f'{self.tmp.name}/traintune-workspace'
         self.dataset_patcher = patch('backend.services.dataset.DATASETS_DIR', self.datasets_root)
         self.training_patcher = patch('backend.services.training.TRAIN_TUNE_DIR', self.training_root)
+        self.workspace_patcher = patch('backend.services.training.TRAIN_TUNE_WORKSPACE_DIR', self.workspace_root)
         self.dataset_patcher.start()
         self.training_patcher.start()
+        self.workspace_patcher.start()
         training_service._ensure_root()
         self.client = TestClient(app)
         dataset_service.create_project('demo', ['bolt'])
@@ -43,6 +46,7 @@ class TrainingRouterTest(unittest.TestCase):
         while activity_service.inference_active():
             activity_service.stop_inference()
         activity_service.set_high_speed_training(False)
+        self.workspace_patcher.stop()
         self.training_patcher.stop()
         self.dataset_patcher.stop()
         self.tmp.cleanup()
@@ -107,6 +111,45 @@ class TrainingRouterTest(unittest.TestCase):
             self.assertGreaterEqual(len(metrics), 1)
             models = self.client.get('/api/training/models').json()
             self.assertTrue(any(model['job_id'] == job_id for model in models))
+
+    def test_failed_job_can_be_recomputed_and_deleted_via_api(self):
+        version = training_service.create_dataset_version_from_live_dataset(
+            'demo',
+            {
+                'version_name': 'demo-v1',
+                'split_config': {'train': 70, 'val': 20, 'test': 10},
+                'preprocessing_config': {},
+                'augmentation_config': {'profile': 'baseline'},
+            },
+        )
+        job = training_service.create_training_job(
+            {
+                'job_name': 'v1',
+                'dataset_version_id': version['id'],
+                'family': 'yolo11',
+                'size': 'n',
+                'base_checkpoint': 'mock',
+                'epochs': 3,
+                'imgsz': 640,
+                'batch': 4,
+                'workers': 2,
+                'training_mode': 'standard',
+            },
+            inference_active=False,
+        )
+        training_service.fail_training_job(job['id'], 'boom')
+
+        with patch('backend.routers.training.training_runtime.notify_job_queued'):
+            recompute_response = self.client.post(f'/api/training/jobs/{job["id"]}/recompute')
+        self.assertEqual(recompute_response.status_code, 200)
+        retry = recompute_response.json()
+        self.assertNotEqual(retry['id'], job['id'])
+        self.assertTrue(retry['output_dir'].startswith(self.workspace_root))
+
+        delete_response = self.client.delete(f'/api/training/jobs/{job["id"]}')
+        self.assertEqual(delete_response.status_code, 200)
+        missing_response = self.client.get(f'/api/training/jobs/{job["id"]}')
+        self.assertEqual(missing_response.status_code, 404)
 
     def test_high_speed_job_endpoint_rejects_when_inference_is_active(self):
         version = training_service.create_dataset_version_from_live_dataset(

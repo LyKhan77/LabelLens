@@ -116,6 +116,26 @@ export const useTrainingStore = defineStore('training', () => {
     await refreshJobs()
   }
 
+  async function recomputeJob(jobId: string) {
+    const job = await api.recomputeTrainingJob(jobId)
+    jobs.value = [job, ...jobs.value]
+    selectedJob.value = job
+    selectedModel.value = null
+    connectJob(job.id)
+    return job
+  }
+
+  async function deleteJob(jobId: string) {
+    await api.deleteTrainingJob(jobId)
+    jobs.value = jobs.value.filter((job) => job.id !== jobId)
+    if (selectedJob.value?.id === jobId) {
+      selectedJob.value = null
+      jobMetrics.value = []
+      liveEvents.value = []
+      disconnectJob()
+    }
+  }
+
   function mergeJob(jobId: string, patch: Partial<TrainingJob>) {
     jobs.value = jobs.value.map((job) => (job.id === jobId ? { ...job, ...patch } : job))
     if (selectedJob.value?.id === jobId) {
@@ -226,6 +246,8 @@ export const useTrainingStore = defineStore('training', () => {
     selectJob,
     selectModel,
     cancelJob,
+    recomputeJob,
+    deleteJob,
     connectJob,
     disconnectJob,
     findModelByJobId,

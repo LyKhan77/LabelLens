@@ -193,6 +193,15 @@ export async function cancelTrainingJob(jobId: string): Promise<TrainingJob> {
   return res.data
 }
 
+export async function recomputeTrainingJob(jobId: string): Promise<TrainingJob> {
+  const res = await api.post(`/training/jobs/${jobId}/recompute`)
+  return res.data
+}
+
+export async function deleteTrainingJob(jobId: string): Promise<void> {
+  await api.delete(`/training/jobs/${jobId}`)
+}
+
 export async function listTrainingMetrics(jobId: string): Promise<TrainingMetricPoint[]> {
   const res = await api.get(`/training/jobs/${jobId}/metrics`)
   return res.data

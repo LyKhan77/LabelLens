@@ -12,7 +12,7 @@
 ## Key Features - ALWAYS Update this section based on Changes or Features Made
 
 - **Feature Modes Page** — Deterministic landing page at `/` with mode selection: Free Inference (LRPC, 1200+ LVIS categories), Prompt Inference (text/visual), or Train Tune, then navigates to the matching workspace
-- **Train Tune Workspace** — dedicated `/train-tune` builder with immutable dataset versions from live dataset projects or exported zips, wide summary-first run configuration, dedicated `/train-tune/jobs/:id` live progress pages, dedicated `/train-tune/results/:id` result pages, Standard vs High-Speed GPU modes, real-time metrics history, and model version registry
+- **Train Tune Workspace** — dedicated `/train-tune` builder with immutable dataset versions from live dataset projects or exported zips, wide summary-first run configuration, dedicated `/train-tune/jobs/:id` live progress pages, dedicated `/train-tune/results/:id` result pages, Standard vs High-Speed GPU modes, real-time metrics history, failed-job re-compute/delete actions, output artifacts under `traintune-workspace/`, and model version registry
 - **Free Inference Mode** — Prompt-free detection using YOLOE LRPC internal vocabulary (separate `yoloe-26l-seg-pf.pt` weights, no user prompts needed)
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming

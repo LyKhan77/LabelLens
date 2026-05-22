@@ -128,6 +128,29 @@ async def cancel_training_job(job_id: str):
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.post('/training/jobs/{job_id}/recompute')
+async def recompute_training_job(job_id: str):
+    try:
+        job = training_service.recompute_training_job(job_id, inference_active=activity_service.inference_active())
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    training_runtime.notify_job_queued()
+    return job
+
+
+@router.delete('/training/jobs/{job_id}')
+async def delete_training_job(job_id: str):
+    try:
+        training_service.delete_training_job(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {'ok': True}
+
+
 @router.get('/training/jobs/{job_id}/metrics')
 async def get_training_metrics(job_id: str):
     return training_service.list_training_metrics(job_id)

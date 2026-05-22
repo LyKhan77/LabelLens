@@ -26,14 +26,18 @@ class TrainingServiceTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.datasets_root = os.path.join(self.tmp.name, "datasets")
         self.training_root = os.path.join(self.tmp.name, "train_tune")
+        self.workspace_root = os.path.join(self.tmp.name, "traintune-workspace")
         self.dataset_patcher = patch("backend.services.dataset.DATASETS_DIR", self.datasets_root)
         self.training_patcher = patch("backend.services.training.TRAIN_TUNE_DIR", self.training_root)
+        self.workspace_patcher = patch("backend.services.training.TRAIN_TUNE_WORKSPACE_DIR", self.workspace_root)
         self.dataset_patcher.start()
         self.training_patcher.start()
+        self.workspace_patcher.start()
         self.dataset_service = DatasetService()
         self.training_service = TrainingService(self.dataset_service)
 
     def tearDown(self):
+        self.workspace_patcher.stop()
         self.training_patcher.stop()
         self.dataset_patcher.stop()
         self.tmp.cleanup()
@@ -142,6 +146,109 @@ class TrainingServiceTest(unittest.TestCase):
                 },
                 inference_active=True,
             )
+
+    def test_create_training_job_uses_unique_workspace_output_dir(self):
+        self.dataset_service.create_project("demo", ["bolt"])
+        self.dataset_service.save_image(
+            "demo",
+            jpg_bytes(),
+            [{"box": [2, 4, 20, 18], "label": "bolt", "confidence": 0.91}],
+            original_filename="panel-top.jpg",
+        )
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "demo",
+            {
+                "version_name": "demo-v1",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"auto_orient": True},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+
+        first = self.training_service.create_training_job(
+            {
+                "job_name": "v1",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "yolo11n.pt",
+                "epochs": 10,
+                "imgsz": 640,
+                "batch": 8,
+                "workers": 2,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+        second = self.training_service.create_training_job(
+            {
+                "job_name": "v1",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "yolo11n.pt",
+                "epochs": 10,
+                "imgsz": 640,
+                "batch": 8,
+                "workers": 2,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+
+        self.assertTrue(first["output_dir"].startswith(self.workspace_root))
+        self.assertTrue(second["output_dir"].startswith(self.workspace_root))
+        self.assertNotEqual(first["output_dir"], second["output_dir"])
+        self.assertIn('v1-', os.path.basename(first["output_dir"]))
+
+    def test_failed_job_can_be_recomputed_and_deleted(self):
+        self.dataset_service.create_project("demo", ["bolt"])
+        self.dataset_service.save_image(
+            "demo",
+            jpg_bytes(),
+            [{"box": [2, 4, 20, 18], "label": "bolt", "confidence": 0.91}],
+            original_filename="panel-top.jpg",
+        )
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "demo",
+            {
+                "version_name": "demo-v1",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"auto_orient": True},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "v1",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "yolo11n.pt",
+                "epochs": 10,
+                "imgsz": 640,
+                "batch": 8,
+                "workers": 2,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+        os.makedirs(job["output_dir"], exist_ok=True)
+        with open(os.path.join(job["output_dir"], 'partial.txt'), 'w') as f:
+            f.write('partial')
+        self.training_service.fail_training_job(job["id"], 'boom')
+
+        retry = self.training_service.recompute_training_job(job["id"], inference_active=False)
+        self.assertNotEqual(retry["id"], job["id"])
+        self.assertEqual(retry["job_name"], job["job_name"])
+        self.assertNotEqual(retry["output_dir"], job["output_dir"])
+
+        self.training_service.delete_training_job(job["id"])
+        self.assertFalse(os.path.exists(self.training_service._job_path(job["id"])))
+        self.assertFalse(os.path.exists(self.training_service._metrics_path(job["id"])))
+        self.assertFalse(os.path.exists(job["output_dir"]))
 
     def test_complete_training_job_persists_metrics_history_and_model_version(self):
         self.dataset_service.create_project("demo", ["bolt"])

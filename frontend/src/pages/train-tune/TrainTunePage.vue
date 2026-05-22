@@ -217,6 +217,19 @@ function openResultFromJob(job: TrainingJob | null) {
   if (model) openResult(model.id)
 }
 
+async function recomputeFailedJob(jobId: string) {
+  const job = await trainingStore.recomputeJob(jobId)
+  navigate(`/train-tune/jobs/${job.id}`)
+}
+
+async function deleteFailedJob(jobId: string) {
+  if (!window.confirm('Delete this failed training job and its output folder?')) return
+  await trainingStore.deleteJob(jobId)
+  if (routeView.value === 'job' && routeId.value === jobId) {
+    navigate('/train-tune')
+  }
+}
+
 const trainingSteps = [
   { title: 'Source', text: 'Live dataset project atau export zip.' },
   { title: 'Versioning', text: 'Snapshot immutable + split train/val/test.' },
@@ -410,13 +423,19 @@ const trainingSteps = [
                 <button class="dataset-secondary-button !px-2 !py-1" @click="trainingStore.refreshJobs()">Refresh</button>
               </div>
               <div class="train-list">
-                <button v-for="job in trainingStore.jobs" :key="job.id" class="train-list-row" @click="openJob(job.id)">
-                  <div>
-                    <strong>{{ job.job_name }}</strong>
-                    <span>{{ job.architecture_family }} / {{ job.architecture_size }} / {{ job.training_mode }}</span>
+                <div v-for="job in trainingStore.jobs" :key="job.id" class="train-row-shell">
+                  <button class="train-list-row train-list-row-main" @click="openJob(job.id)">
+                    <div>
+                      <strong>{{ job.job_name }}</strong>
+                      <span>{{ job.architecture_family }} / {{ job.architecture_size }} / {{ job.training_mode }}</span>
+                    </div>
+                    <span :class="['dataset-status-pill', `is-${job.status}`]">{{ job.status }}</span>
+                  </button>
+                  <div v-if="job.status === 'failed'" class="train-list-actions">
+                    <button class="train-mini-action" @click.stop="recomputeFailedJob(job.id)">Re-compute</button>
+                    <button class="train-mini-action is-danger" @click.stop="deleteFailedJob(job.id)">Delete</button>
                   </div>
-                  <span :class="['dataset-status-pill', `is-${job.status}`]">{{ job.status }}</span>
-                </button>
+                </div>
                 <div v-if="!trainingStore.jobs.length" class="train-empty">No training jobs yet.</div>
               </div>
             </div>
@@ -462,17 +481,23 @@ const trainingSteps = [
           <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-xxl) py-(--spacing-xxl)">
             <div class="flex flex-wrap items-start justify-between gap-(--spacing-lg)">
               <div>
-                <button class="train-link" @click="navigate('/train-tune')">Back to Train Tune Builder</button>
+                <button class="train-link train-link-inline" @click="navigate('/train-tune')"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6" /></svg><span>Back to Train Tune Builder</span></button>
                 <h1 class="text-[32px] leading-[1.1] tracking-[-0.72px] font-medium text-ink mt-(--spacing-sm)">Live Progress Training</h1>
                 <p class="text-[14px] text-ink-mute leading-[1.55] max-w-[780px]">Monitor the active training run, watch epoch metrics stream in live, inspect checkpoints, and jump into the final registered result when the job completes.</p>
               </div>
-              <div class="flex items-center gap-(--spacing-md)">
+              <div class="flex items-center gap-(--spacing-md) flex-wrap">
                 <span :class="['dataset-status-pill', `is-${trainingStore.selectedJob.status}`]">{{ trainingStore.selectedJob.status }}</span>
                 <button v-if="trainingStore.selectedJob.status === 'completed'" class="dataset-primary-button" @click="openResultFromJob(trainingStore.selectedJob)">Open Result</button>
+                <template v-else-if="trainingStore.selectedJob.status === 'failed'">
+                  <button class="dataset-primary-button" @click="recomputeFailedJob(trainingStore.selectedJob.id)">Re-compute</button>
+                  <button class="dataset-secondary-button" @click="deleteFailedJob(trainingStore.selectedJob.id)">Delete</button>
+                </template>
                 <button v-else-if="!['failed', 'cancelled'].includes(trainingStore.selectedJob.status)" class="dataset-secondary-button" @click="trainingStore.cancelJob(trainingStore.selectedJob.id)">Cancel Job</button>
               </div>
             </div>
           </div>
+
+          <div v-if="trainingStore.selectedJob.failure_reason" class="train-error">{{ trainingStore.selectedJob.failure_reason }}</div>
 
           <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-(--spacing-lg)">
             <div class="space-y-(--spacing-lg)">
@@ -539,7 +564,7 @@ const trainingSteps = [
       <div v-else-if="routeView === 'result' && trainingStore.selectedModel" class="max-w-[1340px] mx-auto px-(--spacing-xl) py-(--spacing-xl)">
         <section class="space-y-(--spacing-lg)">
           <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-xxl) py-(--spacing-xxl)">
-            <button class="train-link" @click="navigate('/train-tune')">Back to Train Tune Builder</button>
+            <button class="train-link train-link-inline" @click="navigate('/train-tune')"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6" /></svg><span>Back to Train Tune Builder</span></button>
             <div class="flex flex-wrap items-start justify-between gap-(--spacing-lg) mt-(--spacing-sm)">
               <div>
                 <h1 class="text-[32px] leading-[1.1] tracking-[-0.72px] font-medium text-ink">Train Tune Result</h1>
@@ -662,6 +687,13 @@ const trainingSteps = [
 .train-list-row span { display: block; font-size: 12px; line-height: 1.45; color: var(--color-ink-mute); }
 .train-empty { font-size: 12px; color: var(--color-ink-mute); padding: 4px 0; }
 .train-link { background: transparent; border: 0; padding: 0; font-size: 12px; color: var(--color-primary-deep); cursor: pointer; }
+.train-link-inline { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.train-row-shell { display: flex; flex-direction: column; gap: 8px; }
+.train-list-row-main { width: 100%; }
+.train-list-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.train-mini-action { min-height: 28px; padding: 0 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink-mute); font-size: 11px; cursor: pointer; transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease; }
+.train-mini-action:hover { border-color: var(--color-hairline-strong); color: var(--color-ink); background: var(--color-canvas-soft); }
+.train-mini-action.is-danger { color: #991b1b; }
 .train-metric-table { display: flex; flex-direction: column; gap: 0; }
 .train-metric-head, .train-metric-row { display: grid; grid-template-columns: 72px repeat(6, minmax(0, 1fr)); gap: 12px; }
 .train-metric-head { padding-bottom: 10px; border-bottom: 1px solid var(--color-hairline); font-size: 12px; color: var(--color-ink-mute); font-weight: 500; }

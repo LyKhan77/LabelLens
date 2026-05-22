@@ -13,6 +13,7 @@ from pathlib import Path
 from backend.services.dataset import DATASETS_DIR, DatasetService, dataset_service
 
 TRAIN_TUNE_DIR = os.path.join(DATASETS_DIR, '_train_tune')
+TRAIN_TUNE_WORKSPACE_DIR = os.path.abspath(os.getenv('TRAIN_TUNE_WORKSPACE_DIR', 'traintune-workspace'))
 
 
 class TrainingService:
@@ -24,6 +25,7 @@ class TrainingService:
     def _ensure_root(self):
         for path in (
             self._root(),
+            self._workspace_root(),
             self._versions_dir(),
             self._jobs_dir(),
             self._metrics_dir(),
@@ -33,6 +35,9 @@ class TrainingService:
 
     def _root(self) -> str:
         return TRAIN_TUNE_DIR
+
+    def _workspace_root(self) -> str:
+        return TRAIN_TUNE_WORKSPACE_DIR
 
     def _versions_dir(self) -> str:
         return os.path.join(self._root(), 'dataset_versions')
@@ -407,7 +412,7 @@ class TrainingService:
         job_id = uuid.uuid4().hex
         queue_position = sum(1 for job in self.list_training_jobs() if job.get('status') in {'queued', 'preparing', 'running'}) + 1
         output_slug = self._slugify(config.get('job_name', 'train-tune-job'), f'train-tune-{job_id[:8]}')
-        output_dir = os.path.join(self._root(), 'runs', output_slug)
+        output_dir = os.path.join(self._workspace_root(), f'{output_slug}-{job_id[:8]}')
         payload = {
             'id': job_id,
             'job_name': config.get('job_name', output_slug),
@@ -459,6 +464,37 @@ class TrainingService:
 
     def cancel_training_job(self, job_id: str) -> dict:
         return self.update_training_job(job_id, status='cancelled', finished_at=datetime.now().isoformat())
+
+    def delete_training_job(self, job_id: str) -> None:
+        job = self.get_training_job(job_id)
+        if job.get('status') != 'failed':
+            raise RuntimeError('Only failed training jobs can be deleted')
+        output_dir = job.get('output_dir')
+        if output_dir and os.path.isdir(output_dir):
+            shutil.rmtree(output_dir, ignore_errors=True)
+        for path in (self._job_path(job_id), self._metrics_path(job_id)):
+            if os.path.exists(path):
+                os.remove(path)
+
+    def recompute_training_job(self, job_id: str, inference_active: bool = False) -> dict:
+        job = self.get_training_job(job_id)
+        if job.get('status') != 'failed':
+            raise RuntimeError('Only failed training jobs can be re-computed')
+        return self.create_training_job(
+            {
+                'job_name': job.get('job_name') or 'train-tune-job',
+                'dataset_version_id': job['dataset_version_id'],
+                'family': job.get('architecture_family', 'yolo11'),
+                'size': job.get('architecture_size', 'n'),
+                'base_checkpoint': job.get('base_checkpoint', ''),
+                'epochs': job.get('epochs', 50),
+                'imgsz': job.get('imgsz', 640),
+                'batch': job.get('batch', 8),
+                'workers': job.get('workers', 2),
+                'training_mode': job.get('training_mode', 'standard'),
+            },
+            inference_active=inference_active,
+        )
 
     def fail_training_job(self, job_id: str, reason: str) -> dict:
         return self.update_training_job(job_id, status='failed', failure_reason=reason, finished_at=datetime.now().isoformat())
