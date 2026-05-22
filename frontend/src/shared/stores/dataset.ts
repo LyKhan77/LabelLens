@@ -162,6 +162,18 @@ export const useDatasetStore = defineStore('dataset', () => {
     })
   }
 
+  async function generateSamMask(
+    imgId: string,
+    box: [number, number, number, number],
+  ) {
+    if (!currentProject.value) return null
+    try {
+      return await api.generateSamMask(currentProject.value, imgId, box)
+    } catch {
+      return null
+    }
+  }
+
   async function saveToDataset(name: string, file: File, detections: unknown[], source = 'inference') {
     return api.saveToDataset(name, file, detections, source)
   }
@@ -363,6 +375,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     updateDetection,
     deleteDetection,
     inferNextVisualPrompt,
+    generateSamMask,
     saveToDataset,
     removeImage,
     removeImages,

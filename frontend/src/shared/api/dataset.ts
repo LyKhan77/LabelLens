@@ -346,3 +346,12 @@ export async function saveStream(
   })
   return res.data
 }
+
+export async function generateSamMask(
+  name: string,
+  imgId: string,
+  box: [number, number, number, number],
+): Promise<{ mask?: number[][]; mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }; inference_ms: number }> {
+  const res = await api.post(`/datasets/${name}/images/${imgId}/sam-mask`, { box })
+  return res.data
+}
