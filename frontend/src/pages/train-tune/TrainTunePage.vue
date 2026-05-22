@@ -5,7 +5,7 @@ import { useInferenceStore } from '../../shared/stores/inference'
 import { useBackendStatus } from '../../shared/composables/useBackendStatus'
 import { useTheme } from '../../shared/composables/useTheme'
 import { useTrainingStore } from '../../shared/stores/training'
-import type { DatasetVersion, TrainingJob } from '../../shared/api/training'
+import type { DatasetVersion, TrainingJob, TrainingMetricPoint } from '../../shared/api/training'
 
 const props = defineProps<{ path: string }>()
 
@@ -17,6 +17,7 @@ const { theme, toggle } = useTheme()
 
 const form = reactive(reactiveState())
 const versionDeleteError = ref<string | null>(null)
+const builderStep = ref(1)
 
 function reactiveState() {
   return {
@@ -61,6 +62,9 @@ const latestMetric = computed(() => trainingStore.selectedJob?.metrics_latest ??
 const resultSourceVersion = computed(() => trainingStore.versions.find((version) => version.id === trainingStore.selectedModel?.dataset_version_id) ?? null)
 const resultJob = computed(() => trainingStore.selectedJob)
 const builderSummary = computed(() => trainingStore.selectedVersion?.summary ?? null)
+const sourceReady = computed(() => form.sourceType === 'live' ? Boolean(form.selectedDataset) : Boolean(form.zipFile))
+const architectureReady = computed(() => Boolean(form.baseCheckpoint) && form.epochs > 0 && form.imgsz > 0 && form.batch > 0 && form.workers > 0)
+const splitReady = computed(() => totalSplit.value === 100)
 const splitSegments = computed(() => [
   { label: 'Train', value: form.splitTrain, className: 'is-train' },
   { label: 'Val', value: form.splitVal, className: 'is-val' },
@@ -84,6 +88,22 @@ const preprocessingSummary = computed(() => `${form.resizeMode === 'keep' ? 'Kee
 const augmentationSummary = computed(() => form.augmentationProfile === 'baseline'
   ? 'Baseline keeps the training recipe conservative for first-pass runs.'
   : 'Standard stores the broader augmentation preset for stronger variation.')
+const metricTrends = [
+  { key: 'map50', label: 'mAP50', tone: 'is-quality' },
+  { key: 'map50_95', label: 'mAP50-95', tone: 'is-quality' },
+  { key: 'precision', label: 'Precision', tone: 'is-balance' },
+  { key: 'recall', label: 'Recall', tone: 'is-balance' },
+  { key: 'train_loss', label: 'Train Loss', tone: 'is-loss' },
+  { key: 'val_loss', label: 'Val Loss', tone: 'is-loss' },
+] as const
+const builderSteps = [
+  { title: 'Dataset Source', short: 'Source' },
+  { title: 'Select Architecture', short: 'Architecture' },
+  { title: 'Split, Prep, Augment', short: 'Policy' },
+  { title: 'Snapshot Preview', short: 'Preview' },
+  { title: 'Create Dataset Version', short: 'Create' },
+]
+type MetricTrendKey = typeof metricTrends[number]['key']
 
 function defaultCheckpoint(family: 'yolo11' | 'yolo26', size: 'n' | 's' | 'm' | 'l') {
   return family === 'yolo11' ? `yolo11${size}.pt` : `yolo26${size}.pt`
@@ -91,6 +111,93 @@ function defaultCheckpoint(family: 'yolo11' | 'yolo26', size: 'n' | 's' | 'm' | 
 
 function syncCheckpoint() {
   form.baseCheckpoint = defaultCheckpoint(form.family, form.size)
+}
+
+function configText(value: unknown, fallback = 'N/A') {
+  if (typeof value === 'string' && value) return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return fallback
+}
+
+function versionSplit(version: DatasetVersion | null | undefined) {
+  if (!version) return 'N/A'
+  return `${version.split_config.train} / ${version.split_config.val} / ${version.split_config.test}`
+}
+
+function versionSplitCounts(version: DatasetVersion | null | undefined) {
+  if (!version) return 'N/A'
+  return `${configText(version.split_counts.train, '0')} / ${configText(version.split_counts.val, '0')} / ${configText(version.split_counts.test, '0')}`
+}
+
+function versionResize(version: DatasetVersion | null | undefined) {
+  return configText(version?.preprocessing_config.resize_mode, 'keep') === 'fit' ? 'Fit to train size' : 'Keep original'
+}
+
+function versionOrient(version: DatasetVersion | null | undefined) {
+  return configText(version?.preprocessing_config.auto_orient, 'true') === 'false' ? 'Auto orient disabled' : 'Auto orient enabled'
+}
+
+function versionAugment(version: DatasetVersion | null | undefined) {
+  return configText(version?.augmentation_config.profile, 'baseline')
+}
+
+function metricValue(point: TrainingMetricPoint | null | undefined, key: MetricTrendKey) {
+  return point?.[key] ?? null
+}
+
+function metricLabel(value: number | null) {
+  if (value === null || Number.isNaN(value)) return 'N/A'
+  return value >= 10 ? value.toFixed(2) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function sparklinePoints(points: TrainingMetricPoint[], key: MetricTrendKey) {
+  if (!points.length) return ''
+  const values = points.map((point) => point[key]).filter((value) => Number.isFinite(value))
+  if (!values.length) return ''
+  const width = 180
+  const height = 54
+  const pad = 5
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min || Math.max(Math.abs(max), 1)
+  return values.map((value, index) => {
+    const x = values.length === 1 ? width / 2 : pad + (index / (values.length - 1)) * (width - pad * 2)
+    const y = height - pad - ((value - min) / span) * (height - pad * 2)
+    return `${x.toFixed(2)},${y.toFixed(2)}`
+  }).join(' ')
+}
+
+function resultMetricValue(key: MetricTrendKey) {
+  return metricValue(trainingStore.selectedModel?.metrics_best ?? trainingStore.jobMetrics.at(-1), key)
+}
+
+function nextBuilderStep() {
+  form.localError = null
+  if (builderStep.value === 1 && !sourceReady.value) {
+    form.localError = form.sourceType === 'live' ? 'Pilih dataset project dulu.' : 'Pilih export zip dulu.'
+    return
+  }
+  if (builderStep.value === 2 && !architectureReady.value) {
+    form.localError = 'Lengkapi training configuration dulu.'
+    return
+  }
+  if (builderStep.value === 3 && !splitReady.value) {
+    form.localError = 'Split train/val/test harus total 100.'
+    return
+  }
+  builderStep.value = Math.min(builderStep.value + 1, builderSteps.length)
+}
+
+function previousBuilderStep() {
+  form.localError = null
+  builderStep.value = Math.max(builderStep.value - 1, 1)
+}
+
+function openBuilderStep(step: number) {
+  if (step <= builderStep.value) {
+    form.localError = null
+    builderStep.value = step
+  }
 }
 
 function onZipChange(event: Event) {
@@ -166,6 +273,7 @@ async function buildVersion() {
     if (!form.jobName) {
       form.jobName = `${version.version_name}-${form.family}-${form.size}`
     }
+    builderStep.value = builderSteps.length
     await refreshEstimate()
   } catch (err) {
     form.localError = err instanceof Error ? err.message : 'Gagal membuat dataset version'
@@ -231,9 +339,10 @@ async function openResult(modelId: string) {
   navigate(`/train-tune/results/${modelId}`)
 }
 
-function pickVersion(version: DatasetVersion) {
+async function pickVersion(version: DatasetVersion) {
   trainingStore.selectedVersion = version
   versionDeleteError.value = null
+  await refreshEstimate()
 }
 
 function errorMessage(err: unknown, fallback: string) {
@@ -271,13 +380,6 @@ async function deleteFailedJob(jobId: string) {
     navigate('/train-tune')
   }
 }
-
-const trainingSteps = [
-  { title: 'Source', text: 'Live dataset project atau export zip.' },
-  { title: 'Versioning', text: 'Snapshot immutable + split train/val/test.' },
-  { title: 'Prep', text: 'Preprocessing dan augmentation preset.' },
-  { title: 'Run Config', text: 'Family YOLO, checkpoint, GPU mode, batch.' },
-]
 </script>
 
 <template>
@@ -331,15 +433,23 @@ const trainingSteps = [
                 </p>
               </div>
 
-              <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md) mb-(--spacing-xxl)">
-                <div v-for="stepItem in trainingSteps" :key="stepItem.title" class="border border-hairline rounded-(--radius-md) px-(--spacing-lg) py-(--spacing-lg)">
-                  <div class="text-[12px] font-medium text-primary mb-(--spacing-xs)">{{ stepItem.title }}</div>
-                  <p class="text-[12px] leading-[1.45] text-ink-mute">{{ stepItem.text }}</p>
-                </div>
+              <div class="train-stepper mb-(--spacing-xxl)">
+                <button
+                  v-for="(stepItem, index) in builderSteps"
+                  :key="stepItem.title"
+                  type="button"
+                  class="train-step"
+                  :class="{ 'is-active': builderStep === index + 1, 'is-complete': builderStep > index + 1 }"
+                  :disabled="index + 1 > builderStep"
+                  @click="openBuilderStep(index + 1)"
+                >
+                  <span>{{ index + 1 }}</span>
+                  <strong>{{ stepItem.short }}</strong>
+                </button>
               </div>
 
               <div class="space-y-(--spacing-xxl)">
-                <section class="space-y-(--spacing-md)">
+                <section v-if="builderStep === 1" class="space-y-(--spacing-md)">
                   <div class="flex items-center justify-between gap-(--spacing-md)">
                     <div>
                       <h2 class="text-[18px] font-medium text-ink">Dataset Source</h2>
@@ -375,7 +485,7 @@ const trainingSteps = [
                   </div>
                 </section>
 
-                <section class="space-y-(--spacing-md)">
+                <section v-else-if="builderStep === 3" class="space-y-(--spacing-md)">
                   <div>
                     <h2 class="text-[18px] font-medium text-ink">Versioning, Split, and Prep</h2>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Deterministic split, preprocessing profile, and augmentation preset are stored inside the immutable dataset version.</p>
@@ -434,22 +544,9 @@ const trainingSteps = [
                       <p class="train-version-note">{{ augmentationSummary }}</p>
                     </div>
                   </div>
-                  <div class="train-version-preview">
-                    <div class="train-preview-title">
-                      <span>Snapshot Preview</span>
-                      <strong>Immutable Dataset Version</strong>
-                    </div>
-                    <div class="train-preview-grid">
-                      <div><span>Source</span><strong>{{ previewSourceName }}</strong></div>
-                      <div><span>Version</span><strong>{{ previewVersionName }}</strong></div>
-                      <div><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong></div>
-                      <div><span>Prep</span><strong>{{ form.resizeMode === 'keep' ? 'Keep size' : 'Fit size' }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
-                      <div><span>Augment</span><strong>{{ form.augmentationProfile }}</strong></div>
-                    </div>
-                  </div>
                 </section>
 
-                <section class="space-y-(--spacing-md)">
+                <section v-else-if="builderStep === 2" class="space-y-(--spacing-md)">
                   <div>
                     <h2 class="text-[18px] font-medium text-ink">Training Configuration</h2>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO family, detection checkpoint, and GPU mode used to schedule this bbox training run.</p>
@@ -468,11 +565,42 @@ const trainingSteps = [
                   <p class="train-version-note">Train Tune versions currently store bbox labels. Use a detection checkpoint here; segmentation checkpoints require mask labels and are rejected by the worker.</p>
                 </section>
 
+                <section v-else-if="builderStep === 4" class="space-y-(--spacing-md)">
+                  <div>
+                    <h2 class="text-[18px] font-medium text-ink">Snapshot Preview</h2>
+                    <p class="text-[13px] text-ink-mute leading-[1.45]">Confirm the immutable Dataset Version policy before storing this snapshot.</p>
+                  </div>
+                  <div class="train-version-preview">
+                    <div class="train-preview-title">
+                      <span>Snapshot Draft</span>
+                      <strong>{{ previewVersionName }}</strong>
+                    </div>
+                    <div class="train-preview-grid">
+                      <div><span>Source</span><strong>{{ previewSourceName }}</strong></div>
+                      <div><span>Architecture</span><strong>{{ form.family }} {{ form.size }} / {{ form.baseCheckpoint }}</strong></div>
+                      <div><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong></div>
+                      <div><span>Prep</span><strong>{{ form.resizeMode === 'keep' ? 'Keep size' : 'Fit size' }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
+                      <div><span>Augment</span><strong>{{ form.augmentationProfile }}</strong></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section v-else class="space-y-(--spacing-md)">
+                  <div class="train-create-panel">
+                    <div>
+                      <span>Create immutable snapshot</span>
+                      <strong>{{ previewVersionName }}</strong>
+                      <p>Split, preprocessing, and augmentation cannot be edited after creation. Delete and create a new version for a changed policy.</p>
+                    </div>
+                    <button class="dataset-primary-button" @click="buildVersion">Create Dataset Version</button>
+                  </div>
+                </section>
+
                 <section class="space-y-(--spacing-md) border-t border-hairline pt-(--spacing-xl)">
                   <div class="flex flex-wrap items-center gap-(--spacing-md)">
-                    <button class="dataset-primary-button" @click="buildVersion">Create Dataset Version</button>
+                    <button v-if="builderStep > 1" class="dataset-secondary-button" @click="previousBuilderStep">Back</button>
+                    <button v-if="builderStep < builderSteps.length" class="dataset-primary-button" @click="nextBuilderStep">Continue</button>
                     <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Refresh Summary</button>
-                    <button class="dataset-primary-button" :disabled="!trainingStore.currentEstimate" @click="submitJob">Queue Training Job</button>
                   </div>
                   <p v-if="form.trainingMode === 'high_speed'" class="train-warning">High-Speed Mode uses both RTX 5080 devices. The job only starts when inference is idle, and new inference requests remain blocked until the run finishes.</p>
                   <p v-if="form.localError || trainingStore.error" class="train-error">{{ form.localError || trainingStore.error }}</p>
@@ -486,7 +614,10 @@ const trainingSteps = [
                   <span class="text-[12px] uppercase tracking-[0.16em] text-primary font-medium">Summary</span>
                   <h2 class="text-[24px] tracking-[-0.42px] font-medium text-ink mt-(--spacing-xs)">Training Preview</h2>
                 </div>
-                <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Recompute</button>
+                <div class="flex flex-wrap justify-end gap-(--spacing-sm)">
+                  <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Recompute</button>
+                  <button class="dataset-primary-button" :disabled="!trainingStore.currentEstimate" @click="submitJob">Start Training Job</button>
+                </div>
               </div>
 
               <div v-if="builderSummary" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
@@ -494,12 +625,13 @@ const trainingSteps = [
                 <div class="train-stat"><span>Usable Images</span><strong>{{ builderSummary.usable_labeled_images }}</strong><small>{{ builderSummary.original_file_count }} original files</small></div>
                 <div class="train-stat"><span>Annotations</span><strong>{{ builderSummary.total_annotations }}</strong><small>{{ builderSummary.average_annotations_per_image }} avg / image</small></div>
                 <div class="train-stat"><span>Classes</span><strong>{{ builderSummary.class_count }}</strong><small>{{ builderSummary.classes.join(', ') }}</small></div>
-                <div class="train-stat"><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong><small>train / val / test</small></div>
-                <div class="train-stat"><span>Preprocessing</span><strong>{{ form.resizeMode === 'keep' ? 'Keep original' : 'Fit to train size' }}</strong><small>{{ form.autoOrient ? 'Auto orient enabled' : 'Auto orient disabled' }}</small></div>
-                <div class="train-stat"><span>Augmentation</span><strong>{{ form.augmentationProfile }}</strong><small>{{ form.trainingMode === 'high_speed' ? '2x RTX 5080' : '1x RTX 5080' }}</small></div>
+                <div class="train-stat"><span>Split Policy</span><strong>{{ versionSplit(trainingStore.selectedVersion) }}</strong><small>{{ versionSplitCounts(trainingStore.selectedVersion) }} images train / val / test</small></div>
+                <div class="train-stat"><span>Preprocessing</span><strong>{{ versionResize(trainingStore.selectedVersion) }}</strong><small>{{ versionOrient(trainingStore.selectedVersion) }}</small></div>
+                <div class="train-stat"><span>Augmentation</span><strong>{{ versionAugment(trainingStore.selectedVersion) }}</strong><small>Locked in Dataset Version</small></div>
+                <div class="train-stat"><span>Training Config</span><strong>{{ form.family }} {{ form.size }} / {{ form.epochs }} epochs</strong><small>{{ form.trainingMode === 'high_speed' ? '2x RTX 5080' : '1x RTX 5080' }} · batch {{ form.batch }}</small></div>
                 <div class="train-stat" v-if="trainingStore.currentEstimate"><span>Estimate</span><strong>{{ trainingStore.currentEstimate.estimated_time_range_minutes[0] }}-{{ trainingStore.currentEstimate.estimated_time_range_minutes[1] }} min</strong><small>{{ trainingStore.currentEstimate.estimated_disk_usage_mb }} MB · {{ trainingStore.currentEstimate.estimated_vram_tier }} VRAM tier</small></div>
               </div>
-              <div v-else class="text-[13px] text-ink-mute">Build or select a dataset version first to generate the final run summary.</div>
+              <div v-else class="text-[13px] text-ink-mute">Create or select a Dataset Version first. Split, preprocessing, and augmentation stay locked after the snapshot is stored.</div>
             </div>
           </div>
 
@@ -533,16 +665,14 @@ const trainingSteps = [
                 <button class="dataset-secondary-button !px-2 !py-1" @click="trainingStore.refreshVersions()">Refresh</button>
               </div>
               <div class="train-list">
-                <div v-for="version in trainingStore.versions" :key="version.id" class="train-row-shell">
-                  <button class="train-list-row train-list-row-main" @click="pickVersion(version)">
+                <div v-for="version in trainingStore.versions" :key="version.id" class="train-version-card" :class="trainingStore.selectedVersion?.id === version.id ? 'is-selected' : ''">
+                  <button class="train-version-select" @click="pickVersion(version)">
                     <div>
                       <strong>{{ version.version_name }}</strong>
                       <span>{{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
                     </div>
                   </button>
-                  <div class="train-list-actions">
-                    <button class="train-mini-action is-danger" @click.stop="deleteDatasetVersion(version)">Delete</button>
-                  </div>
+                  <button class="train-mini-action is-danger train-version-delete" @click.stop="deleteDatasetVersion(version)">Delete</button>
                 </div>
                 <div v-if="!trainingStore.versions.length" class="train-empty">No dataset versions yet.</div>
               </div>
@@ -608,12 +738,32 @@ const trainingSteps = [
               <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-xxl) py-(--spacing-xxl)">
                 <div class="flex items-center justify-between gap-(--spacing-md) mb-(--spacing-lg)">
                   <div>
-                    <h2 class="text-[20px] font-medium text-ink">Metrics History</h2>
+                    <h2 class="text-[20px] font-medium text-ink">Metric Trends</h2>
+                    <p class="text-[13px] text-ink-mute leading-[1.45]">Compact evaluation and loss curves from the live epoch stream.</p>
+                  </div>
+                  <span class="text-[12px] text-ink-mute">{{ trainingStore.jobMetrics.length }} points</span>
+                </div>
+                <div class="train-trend-grid">
+                  <div v-for="trend in metricTrends" :key="trend.key" :class="['train-trend-card', trend.tone]">
+                    <div class="train-trend-head"><span>{{ trend.label }}</span><strong>{{ metricLabel(metricValue(latestMetric, trend.key)) }}</strong></div>
+                    <svg v-if="trainingStore.jobMetrics.length" class="train-sparkline" viewBox="0 0 180 54" preserveAspectRatio="none" aria-hidden="true">
+                      <path d="M5 49 H175" />
+                      <polyline :points="sparklinePoints(trainingStore.jobMetrics, trend.key)" />
+                    </svg>
+                    <div v-else class="train-trend-empty">Waiting for epochs</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-xxl) py-(--spacing-xxl)">
+                <div class="flex items-center justify-between gap-(--spacing-md) mb-(--spacing-lg)">
+                  <div>
+                    <h2 class="text-[20px] font-medium text-ink">Epoch History</h2>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Append-only epoch history for the current training run.</p>
                   </div>
                   <span class="text-[12px] text-ink-mute">{{ trainingStore.jobMetrics.length }} epochs captured</span>
                 </div>
-                <div class="train-metric-table">
+                <div class="train-metric-table train-metric-scroll">
                   <div class="train-metric-head"><span>Epoch</span><span>Train Loss</span><span>Val Loss</span><span>mAP50</span><span>mAP50-95</span><span>Precision</span><span>Recall</span></div>
                   <div v-for="point in trainingStore.jobMetrics" :key="point.epoch" class="train-metric-row">
                     <span>{{ point.epoch }}</span><span>{{ point.train_loss }}</span><span>{{ point.val_loss }}</span><span>{{ point.map50 }}</span><span>{{ point.map50_95 }}</span><span>{{ point.precision }}</span><span>{{ point.recall }}</span>
@@ -697,6 +847,16 @@ const trainingSteps = [
                   <div class="train-stat"><span>Val Loss</span><strong>{{ trainingStore.selectedModel.metrics_best.val_loss }}</strong></div>
                 </div>
                 <div v-else class="train-empty">No best metrics recorded yet.</div>
+                <div class="train-trend-grid mt-(--spacing-lg)">
+                  <div v-for="trend in metricTrends" :key="trend.key" :class="['train-trend-card', trend.tone]">
+                    <div class="train-trend-head"><span>{{ trend.label }}</span><strong>{{ metricLabel(resultMetricValue(trend.key)) }}</strong></div>
+                    <svg v-if="trainingStore.jobMetrics.length" class="train-sparkline" viewBox="0 0 180 54" preserveAspectRatio="none" aria-hidden="true">
+                      <path d="M5 49 H175" />
+                      <polyline :points="sparklinePoints(trainingStore.jobMetrics, trend.key)" />
+                    </svg>
+                    <div v-else class="train-trend-empty">No epoch trend recorded</div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -705,8 +865,18 @@ const trainingSteps = [
                 <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Result Context</h3>
                 <div class="space-y-(--spacing-sm) text-[13px] text-ink-mute">
                   <div><strong class="text-ink">Created</strong><br />{{ trainingStore.selectedModel.created_at }}</div>
-                  <div><strong class="text-ink">Dataset Version Path</strong><br />{{ resultSourceVersion?.storage_path || 'N/A' }}</div>
-                  <div><strong class="text-ink">Job Output Path</strong><br />{{ resultJob?.output_dir || 'N/A' }}</div>
+                  <div class="train-path-row"><strong class="text-ink">Dataset Version Path</strong><span>{{ resultSourceVersion?.storage_path || 'N/A' }}</span></div>
+                  <div class="train-path-row"><strong class="text-ink">Job Output Path</strong><span>{{ resultJob?.output_dir || 'N/A' }}</span></div>
+                </div>
+              </div>
+
+              <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
+                <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Dataset Version Configuration</h3>
+                <div class="train-policy-grid">
+                  <div><span>Version</span><strong>{{ resultSourceVersion?.version_name || trainingStore.selectedModel.dataset_version_id }}</strong><small>{{ resultSourceVersion?.source_name || 'linked snapshot' }}</small></div>
+                  <div><span>Split</span><strong>{{ versionSplit(resultSourceVersion) }}</strong><small>{{ versionSplitCounts(resultSourceVersion) }} images</small></div>
+                  <div><span>Preprocessing</span><strong>{{ versionResize(resultSourceVersion) }}</strong><small>{{ versionOrient(resultSourceVersion) }}</small></div>
+                  <div><span>Augmentation</span><strong>{{ versionAugment(resultSourceVersion) }}</strong><small>immutable profile</small></div>
                 </div>
               </div>
 
@@ -730,6 +900,18 @@ const trainingSteps = [
 </template>
 
 <style scoped>
+.train-stepper { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.train-step { min-width: 0; min-height: 58px; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); color: var(--color-ink-mute); background: var(--color-canvas); text-align: left; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease; }
+.train-step:disabled { cursor: default; opacity: 0.55; }
+.train-step span { width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; border-radius: 999px; border: 1px solid var(--color-hairline-strong); font-size: 12px; }
+.train-step strong { min-width: 0; font-size: 12px; font-weight: 500; line-height: 1.25; color: inherit; }
+.train-step.is-active { border-color: color-mix(in srgb, var(--color-primary) 44%, var(--color-hairline)); color: var(--color-ink); background: color-mix(in srgb, var(--color-primary) 10%, var(--color-canvas)); }
+.train-step.is-active span, .train-step.is-complete span { border-color: color-mix(in srgb, var(--color-primary) 54%, var(--color-hairline)); color: var(--color-primary-deep); background: color-mix(in srgb, var(--color-primary) 14%, var(--color-canvas)); }
+.train-create-panel { min-height: 142px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px; border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--color-hairline)); border-radius: var(--radius-md); background: color-mix(in srgb, var(--color-primary) 8%, var(--color-canvas)); }
+.train-create-panel div { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.train-create-panel span { color: var(--color-primary-deep); font-size: 12px; font-weight: 500; text-transform: uppercase; }
+.train-create-panel strong { color: var(--color-ink); font-size: 20px; font-weight: 500; word-break: break-word; }
+.train-create-panel p { max-width: 560px; margin: 0; color: var(--color-ink-mute); font-size: 13px; line-height: 1.5; }
 .train-choice {
   display: flex;
   flex-direction: column;
@@ -804,6 +986,13 @@ const trainingSteps = [
 .train-list-row strong { display: block; font-size: 13px; color: var(--color-ink); }
 .train-list-row span { display: block; font-size: 12px; line-height: 1.45; color: var(--color-ink-mute); }
 .train-empty { font-size: 12px; color: var(--color-ink-mute); padding: 4px 0; }
+.train-version-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas); transition: border-color 160ms ease, background-color 160ms ease; }
+.train-version-card:hover, .train-version-card.is-selected { border-color: var(--color-hairline-strong); background: var(--color-canvas-soft); }
+.train-version-card.is-selected { border-color: color-mix(in srgb, var(--color-primary) 48%, var(--color-hairline)); }
+.train-version-select { min-width: 0; padding: 6px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.train-version-select strong { display: block; color: var(--color-ink); font-size: 13px; line-height: 1.35; word-break: break-word; }
+.train-version-select span { display: block; color: var(--color-ink-mute); font-size: 12px; line-height: 1.45; }
+.train-version-delete { align-self: stretch; }
 .train-link { background: transparent; border: 0; padding: 0; font-size: 12px; color: var(--color-primary-deep); cursor: pointer; }
 .train-link-inline { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
 .train-row-shell { display: flex; flex-direction: column; gap: 8px; }
@@ -813,9 +1002,28 @@ const trainingSteps = [
 .train-mini-action:hover { border-color: var(--color-hairline-strong); color: var(--color-ink); background: var(--color-canvas-soft); }
 .train-mini-action.is-danger { color: #991b1b; }
 .train-metric-table { display: flex; flex-direction: column; gap: 0; }
+.train-metric-scroll { max-height: 430px; overflow: auto; border-top: 1px solid var(--color-hairline); }
 .train-metric-head, .train-metric-row { display: grid; grid-template-columns: 72px repeat(6, minmax(0, 1fr)); gap: 12px; }
-.train-metric-head { padding-bottom: 10px; border-bottom: 1px solid var(--color-hairline); font-size: 12px; color: var(--color-ink-mute); font-weight: 500; }
+.train-metric-head { position: sticky; top: 0; z-index: 1; padding: 10px 0; border-bottom: 1px solid var(--color-hairline); font-size: 12px; color: var(--color-ink-mute); background: var(--color-canvas); font-weight: 500; }
 .train-metric-row { padding: 12px 0; border-bottom: 1px solid var(--color-hairline-cool); font-size: 13px; color: var(--color-ink); }
+.train-trend-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.train-trend-card { min-width: 0; display: flex; flex-direction: column; gap: 10px; min-height: 112px; padding: 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); }
+.train-trend-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.train-trend-head span { color: var(--color-ink-mute); font-size: 12px; }
+.train-trend-head strong { color: var(--color-ink); font-size: 16px; font-weight: 500; }
+.train-sparkline { width: 100%; height: 54px; overflow: visible; }
+.train-sparkline path { fill: none; stroke: var(--color-hairline-strong); stroke-width: 1; stroke-dasharray: 2 4; }
+.train-sparkline polyline { fill: none; stroke: #059669; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.train-trend-card.is-balance .train-sparkline polyline { stroke: #2563eb; }
+.train-trend-card.is-loss .train-sparkline polyline { stroke: #d97706; }
+.train-trend-empty { min-height: 54px; display: flex; align-items: center; color: var(--color-ink-mute); font-size: 12px; }
+.train-path-row { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.train-path-row span { min-width: 0; overflow-wrap: anywhere; word-break: break-word; line-height: 1.45; }
+.train-policy-grid { display: grid; gap: 10px; }
+.train-policy-grid div { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas-soft); }
+.train-policy-grid span { color: var(--color-ink-mute); font-size: 11px; text-transform: uppercase; }
+.train-policy-grid strong { color: var(--color-ink); font-size: 13px; font-weight: 500; word-break: break-word; }
+.train-policy-grid small { color: var(--color-ink-mute); font-size: 12px; line-height: 1.4; word-break: break-word; }
 .train-log-block { display: flex; flex-direction: column; gap: 8px; max-height: 540px; overflow: auto; }
 .train-log-row { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); }
 .train-log-row strong { font-size: 12px; color: var(--color-ink); }
@@ -826,6 +1034,9 @@ const trainingSteps = [
 .dataset-status-pill.is-failed, .dataset-status-pill.is-cancelled { color: #991b1b; background: #fee2e2; border-color: #fecaca; }
 
 @media (max-width: 1024px) {
+  .train-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .train-create-panel { flex-direction: column; align-items: flex-start; }
+  .train-trend-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .train-field-span { grid-column: span 1; }
   .train-stat-wide { grid-column: span 1; }
   .train-version-flow { grid-template-columns: 1fr; }
@@ -835,5 +1046,10 @@ const trainingSteps = [
   .train-preview-title { width: 100%; padding-right: 0; padding-bottom: 12px; border-right: 0; border-bottom: 1px solid var(--color-hairline); }
   .train-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .train-metric-head, .train-metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .train-stepper, .train-trend-grid { grid-template-columns: 1fr; }
+  .train-version-delete { align-self: center; }
 }
 </style>
