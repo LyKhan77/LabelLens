@@ -369,8 +369,8 @@ async function saveAnnotation() {
   try {
     let maskData: Record<string, unknown> = {}
 
-    // Auto-generate mask via SAM if available and loaded
-    if (samStatus.value?.loaded && samStatus.value?.enabled) {
+    // Auto-generate mask via SAM (backend lazy-loads on first call)
+    if (samStatus.value?.enabled !== false) {
       try {
         const maskResult = await store.generateSamMask(store.selectedImage, draftBox.value)
         if (maskResult) {
