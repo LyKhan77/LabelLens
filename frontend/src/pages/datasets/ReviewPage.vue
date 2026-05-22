@@ -4,6 +4,7 @@ import { useDatasetStore } from '../../shared/stores/dataset'
 import { useInferenceStore } from '../../shared/stores/inference'
 import type { DetectionAnnotation, DatasetOverlayDetection } from '../../shared/api/dataset'
 import EditableAnnotationOverlay from './EditableAnnotationOverlay.vue'
+import { getSamStatus } from '../../shared/api/sam'
 
 const emit = defineEmits<{ back: [] }>()
 const store = useDatasetStore()
@@ -16,6 +17,7 @@ const editorMode = ref<'idle' | 'add' | 'edit'>('idle')
 const draftLabel = ref('')
 const draftBox = ref<[number, number, number, number] | null>(null)
 const savingAnnotation = ref(false)
+const samStatus = ref<{ enabled: boolean; loaded: boolean } | null>(null)
 let objectUrl = ''
 
 type AssistedCandidate = DatasetOverlayDetection & { candidateId: number }
@@ -365,17 +367,34 @@ async function saveAnnotation() {
   if (!store.selectedImage || !draftBox.value || !draftLabel.value.trim()) return
   savingAnnotation.value = true
   try {
+    let maskData: Record<string, unknown> = {}
+
+    // Auto-generate mask via SAM if available and loaded
+    if (samStatus.value?.loaded && samStatus.value?.enabled) {
+      try {
+        const maskResult = await store.generateSamMask(store.selectedImage, draftBox.value)
+        if (maskResult) {
+          if (maskResult.mask) maskData.mask = maskResult.mask
+          if (maskResult.mask_rle) maskData.mask_rle = maskResult.mask_rle
+        }
+      } catch {
+        // Mask generation failure is non-fatal
+      }
+    }
+
     if (editorMode.value === 'add') {
       await store.addDetection(store.selectedImage, {
         label: draftLabel.value.trim(),
         box: draftBox.value,
         accepted: true,
+        ...maskData,
       })
       resetEditor()
     } else if (editorMode.value === 'edit' && selectedDetectionId.value !== null) {
       await store.updateDetection(store.selectedImage, selectedDetectionId.value, {
         label: draftLabel.value.trim(),
         box: draftBox.value,
+        ...maskData,
       })
       const id = selectedDetectionId.value
       selectDetection(id)
@@ -546,6 +565,9 @@ onMounted(async () => {
   if (store.reviewingImageId && (!store.selectedImage || store.selectedImage !== store.reviewingImageId)) {
     await store.selectImage(store.reviewingImageId)
   }
+  try {
+    samStatus.value = await getSamStatus()
+  } catch { /* SAM unavailable */ }
 })
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
@@ -646,7 +668,7 @@ onUnmounted(() => {
 
                   <div class="dataset-canvas-editor-actions">
                     <button class="dataset-primary-button" :disabled="!canSaveAnnotation || savingAnnotation" @click="saveAnnotation">
-                      {{ savingAnnotation ? 'Saving...' : 'Save' }}
+                      {{ savingAnnotation ? (samStatus?.loaded ? 'Generating mask...' : 'Saving...') : 'Save' }}
                     </button>
                     <button
                       v-if="editorMode === 'edit'"
