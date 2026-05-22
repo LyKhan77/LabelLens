@@ -42,6 +42,25 @@ class TrainingServiceTest(unittest.TestCase):
         self.dataset_patcher.stop()
         self.tmp.cleanup()
 
+    def _create_demo_version(self):
+        self.dataset_service.create_project("delete-demo", ["bolt"])
+        self.dataset_service.save_image(
+            "delete-demo",
+            jpg_bytes(),
+            [{"box": [2, 4, 20, 18], "label": "bolt", "confidence": 0.91}],
+            original_filename="panel-top.jpg",
+        )
+        return self.training_service.create_dataset_version_from_live_dataset(
+            "delete-demo",
+            {
+                "version_name": "delete-demo-v1",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"auto_orient": True},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+
     def test_create_dataset_version_from_live_dataset_builds_immutable_snapshot(self):
         self.dataset_service.create_project("demo", ["bolt", "nut"])
         saved = self.dataset_service.save_image(
@@ -110,6 +129,63 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertEqual(version["split_counts"]["test"], 1)
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "images", "train", "train-a.jpg")))
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "labels", "test", "test-a.txt")))
+
+    def test_delete_dataset_version_removes_unused_snapshot(self):
+        version = self._create_demo_version()
+
+        self.training_service.delete_dataset_version(version["id"])
+
+        self.assertFalse(os.path.exists(version["storage_path"]))
+        with self.assertRaises(FileNotFoundError):
+            self.training_service.get_dataset_version(version["id"])
+
+    def test_delete_dataset_version_blocks_snapshot_used_by_training_job(self):
+        version = self._create_demo_version()
+        self.training_service.create_training_job(
+            {
+                "job_name": "delete-guard",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "yolo11n.pt",
+                "epochs": 1,
+                "imgsz": 640,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "referenced by training history"):
+            self.training_service.delete_dataset_version(version["id"])
+
+        self.assertTrue(os.path.exists(version["storage_path"]))
+
+    def test_delete_dataset_version_blocks_snapshot_used_by_model_version(self):
+        version = self._create_demo_version()
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "model-delete-guard",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "yolo11n.pt",
+                "epochs": 1,
+                "imgsz": 640,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+        self.training_service.complete_training_job(job["id"], best_model_path="best.pt")
+        os.remove(self.training_service._job_path(job["id"]))
+
+        with self.assertRaisesRegex(RuntimeError, "referenced by training history"):
+            self.training_service.delete_dataset_version(version["id"])
+
+        self.assertTrue(os.path.exists(version["storage_path"]))
 
     def test_create_training_job_rejects_high_speed_when_inference_is_active(self):
         self.dataset_service.create_project("demo", ["bolt"])

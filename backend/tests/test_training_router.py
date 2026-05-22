@@ -69,6 +69,53 @@ class TrainingRouterTest(unittest.TestCase):
         self.assertEqual(payload['source_type'], 'live_dataset')
         self.assertEqual(payload['summary']['usable_labeled_images'], 1)
 
+    def test_delete_dataset_version_endpoint_removes_unused_version(self):
+        version = training_service.create_dataset_version_from_live_dataset(
+            'demo',
+            {
+                'version_name': 'demo-delete',
+                'split_config': {'train': 70, 'val': 20, 'test': 10},
+                'preprocessing_config': {},
+                'augmentation_config': {'profile': 'baseline'},
+            },
+        )
+
+        response = self.client.delete(f'/api/training/dataset-versions/{version["id"]}')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get(f'/api/training/dataset-versions/{version["id"]}').status_code, 404)
+
+    def test_delete_dataset_version_endpoint_blocks_used_version(self):
+        version = training_service.create_dataset_version_from_live_dataset(
+            'demo',
+            {
+                'version_name': 'demo-used',
+                'split_config': {'train': 70, 'val': 20, 'test': 10},
+                'preprocessing_config': {},
+                'augmentation_config': {'profile': 'baseline'},
+            },
+        )
+        training_service.create_training_job(
+            {
+                'job_name': 'used-version',
+                'dataset_version_id': version['id'],
+                'family': 'yolo11',
+                'size': 'n',
+                'base_checkpoint': 'mock',
+                'epochs': 1,
+                'imgsz': 640,
+                'batch': 2,
+                'workers': 1,
+                'training_mode': 'standard',
+            },
+            inference_active=False,
+        )
+
+        response = self.client.delete(f'/api/training/dataset-versions/{version["id"]}')
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('referenced by training history', response.json()['detail'])
+
 
     def test_mock_job_runtime_completes_and_registers_model(self):
         version = training_service.create_dataset_version_from_live_dataset(

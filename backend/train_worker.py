@@ -90,6 +90,9 @@ def actual_train(job: dict, version: dict):
     def train_runner():
         try:
             model = YOLO(job['base_checkpoint'])
+            model_task = getattr(model, 'task', 'unknown')
+            if model_task != 'detect':
+                raise ValueError(f'Train Tune detection runs require a detection checkpoint; got {model_task} checkpoint.')
             model.train(
                 data=version['dataset_yaml'],
                 epochs=int(job.get('epochs', 50)),

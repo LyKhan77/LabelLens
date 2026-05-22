@@ -184,6 +184,14 @@ class TrainingService:
             raise FileNotFoundError(f'Dataset version {version_id} not found')
         return payload
 
+    def delete_dataset_version(self, version_id: str) -> None:
+        self.get_dataset_version(version_id)
+        used_by_job = any(job.get('dataset_version_id') == version_id for job in self.list_training_jobs())
+        used_by_model = any(model.get('dataset_version_id') == version_id for model in self.list_model_versions())
+        if used_by_job or used_by_model:
+            raise RuntimeError('Dataset version is referenced by training history and cannot be deleted')
+        shutil.rmtree(self._version_dir(version_id))
+
     def create_dataset_version_from_live_dataset(self, dataset_name: str, config: dict) -> dict:
         pdir = self.dataset_service._project_dir(dataset_name)
         ann_dir = os.path.join(pdir, 'annotations')

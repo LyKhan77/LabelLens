@@ -33,6 +33,17 @@ async def get_dataset_version(version_id: str):
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.delete('/training/dataset-versions/{version_id}')
+async def delete_dataset_version(version_id: str):
+    try:
+        training_service.delete_dataset_version(version_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {'ok': True}
+
+
 @router.post('/training/dataset-versions/live')
 async def create_live_dataset_version(
     dataset_name: str = Form(...),
