@@ -13,14 +13,22 @@ const inferenceStore = useInferenceStore()
 const { connected } = useBackendStatus()
 const { theme, toggle } = useTheme()
 
-function goInference() {
-  window.history.pushState({}, '', '/')
+function navigate(path: string) {
+  window.history.pushState({}, '', path)
   window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+function goInference() {
+  navigate('/workspace')
+}
+
+function goTrainTune() {
+  navigate('/train-tune')
 }
 
 function switchMode() {
   inferenceStore.switchMode()
-  goInference()
+  navigate('/')
 }
 
 onMounted(() => {
@@ -45,6 +53,12 @@ onMounted(() => {
           @click="goInference"
         >
           Inference
+        </button>
+        <button
+          class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink"
+          @click="goTrainTune"
+        >
+          Train Tune
         </button>
         <button
           class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink"
@@ -95,6 +109,12 @@ onMounted(() => {
           @click="goInference"
         >
           Inference
+        </button>
+        <button
+          class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink"
+          @click="goTrainTune"
+        >
+          Train Tune
         </button>
         <button
           class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink"

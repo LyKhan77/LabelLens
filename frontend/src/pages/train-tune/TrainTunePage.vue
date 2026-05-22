@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import { useInferenceStore } from '../../shared/stores/inference'
 import { useBackendStatus } from '../../shared/composables/useBackendStatus'
@@ -16,6 +16,7 @@ const { connected } = useBackendStatus()
 const { theme, toggle } = useTheme()
 
 const form = reactive(reactiveState())
+const versionDeleteError = ref<string | null>(null)
 
 function reactiveState() {
   return {
@@ -60,9 +61,32 @@ const latestMetric = computed(() => trainingStore.selectedJob?.metrics_latest ??
 const resultSourceVersion = computed(() => trainingStore.versions.find((version) => version.id === trainingStore.selectedModel?.dataset_version_id) ?? null)
 const resultJob = computed(() => trainingStore.selectedJob)
 const builderSummary = computed(() => trainingStore.selectedVersion?.summary ?? null)
+const splitSegments = computed(() => [
+  { label: 'Train', value: form.splitTrain, className: 'is-train' },
+  { label: 'Val', value: form.splitVal, className: 'is-val' },
+  { label: 'Test', value: form.splitTest, className: 'is-test' },
+])
+const previewSourceName = computed(() => {
+  if (form.sourceType === 'live') return form.selectedDataset || 'Select a dataset project'
+  return form.zipFile?.name || 'Select an export zip'
+})
+const previewVersionName = computed(() => {
+  if (form.versionName) return form.versionName
+  if (form.sourceType === 'live' && form.selectedDataset) return `${form.selectedDataset}-snapshot`
+  if (form.sourceType === 'zip' && form.zipFile) return form.zipFile.name.replace(/\.zip$/i, '')
+  return 'Auto-named after source selection'
+})
+const splitPolicySummary = computed(() => {
+  if (form.sourceType === 'zip' && form.splitMode === 'existing') return 'Keep train/val/test folders from the imported zip.'
+  return `Create deterministic ${form.splitTrain}/${form.splitVal}/${form.splitTest} train/val/test snapshot folders.`
+})
+const preprocessingSummary = computed(() => `${form.resizeMode === 'keep' ? 'Keep original image size' : 'Fit images to training resolution'}; ${form.autoOrient ? 'auto orient on' : 'auto orient off'}.`)
+const augmentationSummary = computed(() => form.augmentationProfile === 'baseline'
+  ? 'Baseline keeps the training recipe conservative for first-pass runs.'
+  : 'Standard stores the broader augmentation preset for stronger variation.')
 
 function defaultCheckpoint(family: 'yolo11' | 'yolo26', size: 'n' | 's' | 'm' | 'l') {
-  return family === 'yolo11' ? `yolo11${size}.pt` : `models/yoloe-26${size}-seg.pt`
+  return family === 'yolo11' ? `yolo11${size}.pt` : `yolo26${size}.pt`
 }
 
 function syncCheckpoint() {
@@ -209,6 +233,24 @@ async function openResult(modelId: string) {
 
 function pickVersion(version: DatasetVersion) {
   trainingStore.selectedVersion = version
+  versionDeleteError.value = null
+}
+
+function errorMessage(err: unknown, fallback: string) {
+  const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+  if (typeof detail === 'string') return detail
+  return err instanceof Error ? err.message : fallback
+}
+
+async function deleteDatasetVersion(version: DatasetVersion) {
+  if (!window.confirm(`Delete dataset version "${version.version_name}"? This removes its immutable snapshot.`)) return
+  form.localError = null
+  versionDeleteError.value = null
+  try {
+    await trainingStore.deleteVersion(version.id)
+  } catch (err) {
+    versionDeleteError.value = errorMessage(err, 'Gagal menghapus dataset version')
+  }
 }
 
 function openResultFromJob(job: TrainingJob | null) {
@@ -249,14 +291,11 @@ const trainingSteps = [
       </button>
 
       <div class="flex items-center gap-3">
-        <button class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink" @click="navigate('/')">
-          Mode Select
+        <button class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink" @click="goInference">
+          Switch Mode
         </button>
         <button class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink" @click="navigate('/datasets')">
           Datasets
-        </button>
-        <button class="px-2 py-1 text-xs rounded-(--radius-sm) border border-hairline hover:bg-canvas-soft transition-colors cursor-pointer text-ink-mute hover:text-ink" :disabled="!inferenceStore.modelLoaded" @click="navigate('/workspace')">
-          Workspace
         </button>
 
         <div class="hidden sm:flex items-center gap-2">
@@ -341,24 +380,71 @@ const trainingSteps = [
                     <h2 class="text-[18px] font-medium text-ink">Versioning, Split, and Prep</h2>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Deterministic split, preprocessing profile, and augmentation preset are stored inside the immutable dataset version.</p>
                   </div>
-                  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
-                    <label v-if="form.sourceType === 'zip'" class="train-field">
-                      <span>Split Mode</span>
-                      <select v-model="form.splitMode">
-                        <option value="existing">Use existing split</option>
-                        <option value="regenerate">Regenerate split</option>
-                      </select>
-                    </label>
-                    <label class="train-field"><span>Train %</span><input v-model.number="form.splitTrain" type="number" min="0" max="100" /></label>
-                    <label class="train-field"><span>Val %</span><input v-model.number="form.splitVal" type="number" min="0" max="100" /></label>
-                    <label class="train-field"><span>Test %</span><input v-model.number="form.splitTest" type="number" min="0" max="100" /></label>
-                    <label class="train-field"><span>Resize Mode</span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="fit">Fit to train resolution</option></select></label>
-                    <label class="train-field"><span>Auto Orient</span><select v-model="form.autoOrient"><option :value="true">Enabled</option><option :value="false">Disabled</option></select></label>
-                    <label class="train-field"><span>Augmentation</span><select v-model="form.augmentationProfile"><option value="baseline">Baseline</option><option value="standard">Standard</option></select></label>
-                    <div class="train-stat">
-                      <span>Split Total</span>
-                      <strong>{{ totalSplit }}%</strong>
-                      <small :class="totalSplit === 100 ? 'text-primary' : 'text-red-500'">{{ totalSplit === 100 ? 'Valid' : 'Must total 100' }}</small>
+                  <div class="train-version-flow">
+                    <div class="train-version-lane train-version-split">
+                      <div class="train-version-title">
+                        <strong>Train / Val / Test</strong>
+                        <span>{{ splitPolicySummary }}</span>
+                      </div>
+                      <div class="train-split-bar" aria-label="Dataset split preview">
+                        <span
+                          v-for="segment in splitSegments"
+                          :key="segment.label"
+                          :class="['train-split-segment', segment.className]"
+                          :style="{ flexBasis: `${Math.max(0, segment.value)}%` }"
+                        >{{ segment.label }} {{ segment.value }}%</span>
+                      </div>
+                      <div class="train-version-fields is-split">
+                        <label v-if="form.sourceType === 'zip'" class="train-field">
+                          <span>Split Mode</span>
+                          <select v-model="form.splitMode">
+                            <option value="existing">Use existing split</option>
+                            <option value="regenerate">Regenerate split</option>
+                          </select>
+                        </label>
+                        <label class="train-field"><span>Train %</span><input v-model.number="form.splitTrain" type="number" min="0" max="100" /></label>
+                        <label class="train-field"><span>Val %</span><input v-model.number="form.splitVal" type="number" min="0" max="100" /></label>
+                        <label class="train-field"><span>Test %</span><input v-model.number="form.splitTest" type="number" min="0" max="100" /></label>
+                      </div>
+                      <div :class="['train-version-status', totalSplit === 100 ? 'is-valid' : 'is-invalid']">
+                        <span>Split total</span>
+                        <strong>{{ totalSplit }}%</strong>
+                        <small>{{ totalSplit === 100 ? 'Ready for snapshot' : 'Train, val, and test must total 100%' }}</small>
+                      </div>
+                    </div>
+
+                    <div class="train-version-lane">
+                      <div class="train-version-title">
+                        <strong>Preprocessing</strong>
+                        <span>Stored with the snapshot before the run is queued.</span>
+                      </div>
+                      <div class="train-version-fields">
+                        <label class="train-field"><span>Resize Mode</span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="fit">Fit to train resolution</option></select></label>
+                        <label class="train-field"><span>Auto Orient</span><select v-model="form.autoOrient"><option :value="true">Enabled</option><option :value="false">Disabled</option></select></label>
+                      </div>
+                      <p class="train-version-note">{{ preprocessingSummary }}</p>
+                    </div>
+
+                    <div class="train-version-lane">
+                      <div class="train-version-title">
+                        <strong>Augmentation</strong>
+                        <span>Preset kept in version metadata for repeatable run setup.</span>
+                      </div>
+                      <label class="train-field"><span>Profile</span><select v-model="form.augmentationProfile"><option value="baseline">Baseline</option><option value="standard">Standard</option></select></label>
+                      <p class="train-version-note">{{ augmentationSummary }}</p>
+                    </div>
+                  </div>
+                  <div class="train-version-preview">
+                    <div class="train-preview-title">
+                      <span>Snapshot Preview</span>
+                      <strong>Immutable Dataset Version</strong>
+                    </div>
+                    <div class="train-preview-grid">
+                      <div><span>Source</span><strong>{{ previewSourceName }}</strong></div>
+                      <div><span>Version</span><strong>{{ previewVersionName }}</strong></div>
+                      <div><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong></div>
+                      <div><span>Prep</span><strong>{{ form.resizeMode === 'keep' ? 'Keep size' : 'Fit size' }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
+                      <div><span>Augment</span><strong>{{ form.augmentationProfile }}</strong></div>
                     </div>
                   </div>
                 </section>
@@ -366,12 +452,12 @@ const trainingSteps = [
                 <section class="space-y-(--spacing-md)">
                   <div>
                     <h2 class="text-[18px] font-medium text-ink">Training Configuration</h2>
-                    <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO family, checkpoint, and GPU mode used to schedule this run.</p>
+                    <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO family, detection checkpoint, and GPU mode used to schedule this bbox training run.</p>
                   </div>
                   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
                     <label class="train-field"><span>Family</span><select v-model="form.family"><option value="yolo11">YOLO11</option><option value="yolo26">YOLO26</option></select></label>
                     <label class="train-field"><span>Size</span><select v-model="form.size"><option value="n">n</option><option value="s">s</option><option value="m">m</option><option value="l">l</option></select></label>
-                    <label class="train-field train-field-span"><span>Base Checkpoint</span><input v-model="form.baseCheckpoint" placeholder="yolo11n.pt" /></label>
+                    <label class="train-field train-field-span"><span>Base Detection Checkpoint</span><input v-model="form.baseCheckpoint" placeholder="yolo26n.pt" /></label>
                     <label class="train-field"><span>Job Name</span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
                     <label class="train-field"><span>Training Mode</span><select v-model="form.trainingMode"><option value="standard">Standard · 1x RTX 5080</option><option value="high_speed">High-Speed · 2x RTX 5080</option></select></label>
                     <label class="train-field"><span>Epochs</span><input v-model.number="form.epochs" type="number" min="1" /></label>
@@ -379,6 +465,7 @@ const trainingSteps = [
                     <label class="train-field"><span>Batch</span><input v-model.number="form.batch" type="number" min="1" /></label>
                     <label class="train-field"><span>Workers</span><input v-model.number="form.workers" type="number" min="1" /></label>
                   </div>
+                  <p class="train-version-note">Train Tune versions currently store bbox labels. Use a detection checkpoint here; segmentation checkpoints require mask labels and are rejected by the worker.</p>
                 </section>
 
                 <section class="space-y-(--spacing-md) border-t border-hairline pt-(--spacing-xl)">
@@ -446,14 +533,20 @@ const trainingSteps = [
                 <button class="dataset-secondary-button !px-2 !py-1" @click="trainingStore.refreshVersions()">Refresh</button>
               </div>
               <div class="train-list">
-                <button v-for="version in trainingStore.versions" :key="version.id" class="train-list-row" @click="pickVersion(version)">
-                  <div>
-                    <strong>{{ version.version_name }}</strong>
-                    <span>{{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
+                <div v-for="version in trainingStore.versions" :key="version.id" class="train-row-shell">
+                  <button class="train-list-row train-list-row-main" @click="pickVersion(version)">
+                    <div>
+                      <strong>{{ version.version_name }}</strong>
+                      <span>{{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
+                    </div>
+                  </button>
+                  <div class="train-list-actions">
+                    <button class="train-mini-action is-danger" @click.stop="deleteDatasetVersion(version)">Delete</button>
                   </div>
-                </button>
+                </div>
                 <div v-if="!trainingStore.versions.length" class="train-empty">No dataset versions yet.</div>
               </div>
+              <p v-if="versionDeleteError" class="train-error mt-(--spacing-md)">{{ versionDeleteError }}</p>
             </div>
 
             <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
@@ -664,6 +757,31 @@ const trainingSteps = [
   padding: 0 12px;
 }
 .train-field input[type='file'] { padding: 10px 12px; }
+.train-version-flow { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); overflow: hidden; }
+.train-version-lane { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; border-left: 1px solid var(--color-hairline); }
+.train-version-lane:first-child { border-left: 0; }
+.train-version-title { display: flex; flex-direction: column; gap: 4px; }
+.train-version-title strong, .train-preview-title strong { color: var(--color-ink); font-size: 14px; font-weight: 500; }
+.train-version-title span, .train-preview-title span { color: var(--color-ink-mute); font-size: 12px; line-height: 1.45; }
+.train-version-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.train-version-fields.is-split { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+.train-split-bar { display: flex; align-items: stretch; min-height: 42px; border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-sm); background: var(--color-canvas); overflow: hidden; }
+.train-split-segment { min-width: 0; display: flex; align-items: center; padding: 0 10px; color: #171717; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.train-split-segment.is-train { background: #bbf7d0; }
+.train-split-segment.is-val { background: #fde68a; }
+.train-split-segment.is-test { background: #ddd6fe; }
+.train-version-status { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 8px; min-height: 32px; color: var(--color-ink-mute); font-size: 12px; }
+.train-version-status strong { color: var(--color-ink); font-size: 13px; }
+.train-version-status small { min-width: 0; font-size: 12px; line-height: 1.4; }
+.train-version-status.is-valid small { color: var(--color-primary-deep); }
+.train-version-status.is-invalid small { color: #b91c1c; }
+.train-version-note { margin: 0; min-height: 38px; padding: 10px 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); color: var(--color-ink-mute); background: var(--color-canvas); font-size: 12px; line-height: 1.5; }
+.train-version-preview { display: flex; align-items: stretch; gap: 16px; padding: 14px 16px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas); }
+.train-preview-title { width: min(180px, 100%); display: flex; flex-direction: column; justify-content: center; gap: 4px; padding-right: 16px; border-right: 1px solid var(--color-hairline); }
+.train-preview-grid { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.train-preview-grid div { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.train-preview-grid span { color: var(--color-ink-mute); font-size: 11px; text-transform: uppercase; }
+.train-preview-grid strong { color: var(--color-ink); font-size: 13px; font-weight: 500; line-height: 1.4; word-break: break-word; }
 .train-stat {
   display: flex;
   flex-direction: column;
@@ -710,6 +828,12 @@ const trainingSteps = [
 @media (max-width: 1024px) {
   .train-field-span { grid-column: span 1; }
   .train-stat-wide { grid-column: span 1; }
+  .train-version-flow { grid-template-columns: 1fr; }
+  .train-version-lane { border-left: 0; border-top: 1px solid var(--color-hairline); }
+  .train-version-lane:first-child { border-top: 0; }
+  .train-version-preview { flex-direction: column; }
+  .train-preview-title { width: 100%; padding-right: 0; padding-bottom: 12px; border-right: 0; border-bottom: 1px solid var(--color-hairline); }
+  .train-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .train-metric-head, .train-metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 </style>

@@ -110,6 +110,10 @@ export async function listDatasetVersions(): Promise<DatasetVersion[]> {
   return res.data
 }
 
+export async function deleteDatasetVersion(versionId: string): Promise<void> {
+  await api.delete(`/training/dataset-versions/${versionId}`)
+}
+
 export async function createLiveDatasetVersion(params: {
   datasetName: string
   versionName: string

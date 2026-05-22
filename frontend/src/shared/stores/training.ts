@@ -51,6 +51,15 @@ export const useTrainingStore = defineStore('training', () => {
     return version
   }
 
+  async function deleteVersion(versionId: string) {
+    await api.deleteDatasetVersion(versionId)
+    versions.value = versions.value.filter((version) => version.id !== versionId)
+    if (selectedVersion.value?.id === versionId) {
+      selectedVersion.value = null
+      currentEstimate.value = null
+    }
+  }
+
   async function estimate(payload: Parameters<typeof api.estimateTraining>[0]) {
     currentEstimate.value = await api.estimateTraining(payload)
     return currentEstimate.value
@@ -86,9 +95,11 @@ export const useTrainingStore = defineStore('training', () => {
     return job
   }
 
-  async function selectJob(jobId: string, options: { connect?: boolean } = {}) {
+  async function selectJob(jobId: string, options: { connect?: boolean; clearModel?: boolean } = {}) {
     selectedJob.value = await api.getTrainingJob(jobId)
-    selectedModel.value = null
+    if (options.clearModel !== false) {
+      selectedModel.value = null
+    }
     jobMetrics.value = await api.listTrainingMetrics(jobId)
     if (options.connect !== false) {
       connectJob(jobId)
@@ -102,7 +113,7 @@ export const useTrainingStore = defineStore('training', () => {
     selectedModel.value = await api.getModelVersion(modelId)
     const jobId = selectedModel.value.job_id
     if (jobId) {
-      await selectJob(jobId, { connect: false })
+      await selectJob(jobId, { connect: false, clearModel: false })
     } else {
       selectedJob.value = null
       jobMetrics.value = []
@@ -238,6 +249,7 @@ export const useTrainingStore = defineStore('training', () => {
     hydrate,
     createLiveVersion,
     importVersion,
+    deleteVersion,
     estimate,
     refreshJobs,
     refreshModels,
