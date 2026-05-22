@@ -33,6 +33,36 @@ const jobComplete = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let displayTimer: ReturnType<typeof setInterval> | null = null
 
+const VALID_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.mp4', '.avi', '.mov'])
+
+function isValidMediaFile(name: string): boolean {
+  const dot = name.lastIndexOf('.')
+  return dot >= 0 && VALID_EXTENSIONS.has(name.slice(dot).toLowerCase())
+}
+
+async function scanEntries(entries: FileSystemEntry[]): Promise<File[]> {
+  const results: File[] = []
+
+  async function processEntry(entry: FileSystemEntry): Promise<void> {
+    if (entry.isFile) {
+      const fileEntry = entry as FileSystemFileEntry
+      const file: File = await new Promise((resolve, reject) => fileEntry.file(resolve, reject))
+      if (isValidMediaFile(file.name)) results.push(file)
+    } else if (entry.isDirectory) {
+      const dirReader = (entry as FileSystemDirectoryEntry).createReader()
+      const batch: FileSystemEntry[] = await new Promise((resolve, reject) => {
+        dirReader.readEntries(resolve, reject)
+      })
+      for (const child of batch) {
+        await processEntry(child)
+      }
+    }
+  }
+
+  await Promise.all(entries.map(processEntry))
+  return results
+}
+
 const imageFiles = computed(() => files.value.filter((f) => f.type.startsWith('image/')))
 const videoFiles = computed(() => files.value.filter((f) => f.type.startsWith('video/')))
 const hasMixedMedia = computed(() => imageFiles.value.length > 0 && videoFiles.value.length > 0)
