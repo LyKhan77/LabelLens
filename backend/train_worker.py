@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 
 
@@ -22,6 +23,12 @@ def parse_args():
 def read_json(path: str) -> dict:
     with open(path) as f:
         return json.load(f)
+
+
+def emit_traceback(exc: Exception, context: str):
+    emit({'event': 'log_line', 'line': f'[{context}] {exc}'})
+    for line in traceback.format_exc().strip().splitlines():
+        emit({'event': 'log_line', 'line': line})
 
 
 def simulate(job: dict):
@@ -97,6 +104,7 @@ def actual_train(job: dict, version: dict):
             )
         except Exception as exc:  # pragma: no cover - runtime path
             state['error'] = str(exc)
+            emit_traceback(exc, 'train_runner')
         finally:
             state['done'] = True
 
@@ -157,5 +165,6 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as exc:  # pragma: no cover - worker protection
+        emit_traceback(exc, 'worker')
         emit({'event': 'job_failed', 'error': str(exc)})
         sys.exit(1)
