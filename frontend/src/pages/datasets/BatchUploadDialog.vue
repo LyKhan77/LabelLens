@@ -15,6 +15,7 @@ const phase = ref<'upload' | 'configure' | 'progress' | 'done'>('upload')
 const files = ref<File[]>([])
 const sampleFps = ref(1)
 const isDragging = ref(false)
+const folderScanning = ref(false)
 const uploading = ref(false)
 const uploadMessage = ref('')
 const error = ref('')
@@ -61,6 +62,15 @@ async function scanEntries(entries: FileSystemEntry[]): Promise<File[]> {
 
   await Promise.all(entries.map(processEntry))
   return results
+}
+
+function onFolderSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files) return
+  const valid = Array.from(input.files).filter((f) => isValidMediaFile(f.name))
+  files.value = [...files.value, ...valid]
+  error.value = ''
+  input.value = ''
 }
 
 const imageFiles = computed(() => files.value.filter((f) => f.type.startsWith('image/')))
@@ -297,13 +307,17 @@ onUnmounted(() => {
               @dragover.prevent="isDragging = true"
               @dragleave="isDragging = false"
               @drop.prevent="onDrop"
-              @click="($refs.fileInput as HTMLInputElement)?.click()"
             >
-              <input ref="fileInput" type="file" multiple accept="image/*,video/*" class="hidden" @change="(e) => files.push(...Array.from((e.target as HTMLInputElement).files ?? []))" />
+              <input ref="fileInput" type="file" multiple accept="image/*,video/*" class="hidden" @change="(e) => { files.push(...Array.from((e.target as HTMLInputElement).files ?? [])); error = '' }" />
+              <input ref="folderInput" type="file" webkitdirectory directory multiple class="hidden" @change="onFolderSelect" />
               <svg class="w-9 h-9 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
               <div>
-                <p>Drop images or one video here</p>
-                <small>Images are stored raw first. Video is sampled once until EOF.</small>
+                <p>Drop images, videos, or a folder here</p>
+                <small>Images are stored raw first. Video is sampled once until EOF. Folders are scanned recursively.</small>
+              </div>
+              <div class="dataset-upload-actions">
+                <button class="dataset-secondary-button" @click.stop="($refs.fileInput as HTMLInputElement)?.click()">Select Files</button>
+                <button class="dataset-secondary-button" @click.stop="($refs.folderInput as HTMLInputElement)?.click()">Select Folder</button>
               </div>
             </div>
 
