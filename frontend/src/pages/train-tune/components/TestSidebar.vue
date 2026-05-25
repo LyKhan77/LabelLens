@@ -4,6 +4,8 @@ import { useTestModel } from '../../../shared/composables/useTestModel'
 import { useDatasetStore } from '../../../shared/stores/dataset'
 import { computed } from 'vue'
 
+const emit = defineEmits<{ openAutoLabel: [] }>()
+
 const store = useInferenceStore()
 const { testModelInfo, loaded, loading, error: modelError, classNames, modelArch } = useTestModel()
 const datasetStore = useDatasetStore()
@@ -138,7 +140,7 @@ function runInference() {
       <button
         class="w-full py-2 text-sm font-medium rounded-md bg-blue-500 hover:bg-blue-600 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!store.detections.length"
-        @click="datasetStore.autoLabelActive = true"
+        @click="emit('openAutoLabel')"
       >
         Save to Dataset
       </button>

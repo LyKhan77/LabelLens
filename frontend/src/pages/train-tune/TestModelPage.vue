@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useInferenceStore } from '../../shared/stores/inference'
 import { useTestModel } from '../../shared/composables/useTestModel'
 import TestSidebar from './components/TestSidebar.vue'
@@ -10,6 +10,7 @@ const props = defineProps<{ modelId: string }>()
 
 const store = useInferenceStore()
 const { loadTestModel, loaded, reset } = useTestModel()
+const showAutoLabelModal = ref(false)
 
 function navigate(path: string) {
   window.history.pushState({}, '', path)
@@ -54,11 +55,11 @@ onUnmounted(() => {
 
     <!-- Body: Sidebar + Viewer -->
     <div class="flex flex-1 min-h-0 overflow-hidden">
-      <TestSidebar />
+      <TestSidebar @open-auto-label="showAutoLabelModal = true" />
       <Viewer />
     </div>
 
     <!-- Auto-label modal (reused from workspace) -->
-    <AutoLabelModal />
+    <AutoLabelModal v-if="showAutoLabelModal" @close="showAutoLabelModal = false" />
   </div>
 </template>
