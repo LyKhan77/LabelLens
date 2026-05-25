@@ -9,7 +9,7 @@ os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
 import cv2
 import numpy as np
 import torch
-from ultralytics import YOLOE
+from ultralytics import YOLO, YOLOE
 from ultralytics.models.yolo.yoloe.predict import YOLOEVPSegPredictor
 
 from backend.config import DEVICE
@@ -24,7 +24,7 @@ MODEL_MODES = {
 
 class ModelService:
     def __init__(self):
-        self.model: YOLOE | None = None
+        self.model: YOLOE | YOLO | None = None
         self.current_mode: str | None = None
         self.model_path: str | None = None
         self.current_classes: list[str] = []
@@ -63,12 +63,31 @@ class ModelService:
         self.current_classes = []
         self._vpe_labels = []
 
+    def load_custom_model(self, model_path: str, class_names: list[str]):
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Custom model not found: {model_path}")
+
+        if self.model is not None:
+            del self.model
+            self.model = None
+            gc.collect()
+            torch.cuda.empty_cache()
+
+        self.model = YOLO(model_path)
+
+        self._is_seg_model = "seg" in model_path.lower()
+        self.current_mode = "custom"
+        self.model_path = model_path
+        self.current_classes = list(class_names)
+        self._vpe_labels = []
+
     def get_status(self) -> dict:
         return {
             "mode": self.current_mode,
             "loaded": self.model is not None,
             "model_name": os.path.basename(self.model_path) if self.model_path else None,
             "device": f"cuda:{self.device}",
+            "class_names": self.current_classes if self.current_mode == "custom" else [],
         }
 
     def _require_model(self):
@@ -82,6 +101,14 @@ class ModelService:
         conf: float = 0.5,
     ) -> dict:
         self._require_model()
+        if self.current_mode == "custom":
+            t0 = time.perf_counter()
+            results = self.model.predict(
+                image, conf=conf, device=self.device, verbose=False, retina_masks=True
+            )
+            inference_ms = (time.perf_counter() - t0) * 1000
+            return self._parse_results(results, inference_ms)
+
         if set(labels) != set(self.current_classes):
             self.model.set_classes(labels)
             self.current_classes = list(labels)
