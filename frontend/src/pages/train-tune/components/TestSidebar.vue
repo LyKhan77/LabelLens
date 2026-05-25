@@ -118,6 +118,22 @@ function runInference() {
         />
       </div>
 
+      <!-- Auto-label toggle -->
+      <div class="space-y-1.5">
+        <label class="flex items-center gap-2 text-xs text-ink-mute cursor-pointer">
+          <input
+            type="checkbox"
+            class="accent-primary"
+            :checked="datasetStore.autoLabelActive"
+            @change="datasetStore.autoLabelActive ? datasetStore.disableAutoLabel() : emit('openAutoLabel')"
+          />
+          Auto-Label to Dataset
+        </label>
+        <p v-if="datasetStore.autoLabelActive" class="text-[10px] text-primary pl-5">
+          {{ datasetStore.autoLabelDataset }} · {{ datasetStore.autoLabelFps }} fps
+        </p>
+      </div>
+
       <!-- Display toggles -->
       <div class="space-y-1.5">
         <label class="flex items-center gap-2 text-xs text-ink-mute cursor-pointer">
@@ -136,7 +152,7 @@ function runInference() {
     </div>
 
     <!-- Action buttons (sticky bottom) -->
-    <div class="p-3 border-t border-hairline space-y-2">
+    <div class="p-3 border-t border-hairline">
       <button
         class="w-full py-2 text-sm font-medium rounded-md text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         :class="store.isRunning ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'"
@@ -144,13 +160,6 @@ function runInference() {
         @click="store.isRunning ? store.stopInference() : runInference()"
       >
         {{ store.isRunning ? 'Stop' : 'Run Inference' }}
-      </button>
-      <button
-        class="w-full py-2 text-sm font-medium rounded-md bg-blue-500 hover:bg-blue-600 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-        :disabled="!store.detections.length"
-        @click="emit('openAutoLabel')"
-      >
-        Save to Dataset
       </button>
     </div>
   </aside>
