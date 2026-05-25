@@ -121,6 +121,56 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertEqual(meta["class_to_id"], {"car": 0})
         self.assertEqual(stats["accepted"], 1)
 
+    def test_create_project_assigns_class_colors_to_initial_classes(self):
+        meta = self.service.create_project("demo", ["car", "truck"])
+
+        self.assertEqual(set(meta["class_colors"]), {"car", "truck"})
+        self.assertRegex(meta["class_colors"]["car"], r"^#[0-9A-F]{6}$")
+        self.assertRegex(meta["class_colors"]["truck"], r"^#[0-9A-F]{6}$")
+        self.assertNotEqual(meta["class_colors"]["car"], meta["class_colors"]["truck"])
+
+        listed = self.service.list_projects()[0]
+        self.assertEqual(listed["class_colors"], meta["class_colors"])
+
+    def test_new_classes_receive_persisted_colors_from_rapid_inference_and_manual_labels(self):
+        self.service.create_project("demo")
+        saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))
+
+        self.service.label_image(
+            "demo",
+            saved["img_id"],
+            [
+                {"box": [4, 6, 28, 30], "label": "car", "confidence": 0.91},
+                {"box": [30, 10, 50, 32], "label": "truck", "confidence": 0.72},
+            ],
+        )
+        self.service.add_detection(
+            "demo",
+            saved["img_id"],
+            {"label": "bottle", "box": [8, 8, 20, 24]},
+        )
+
+        meta = self.service._read_meta("demo")
+
+        self.assertEqual(set(meta["class_colors"]), {"car", "truck", "bottle"})
+        self.assertEqual(len(set(meta["class_colors"].values())), 3)
+        for color in meta["class_colors"].values():
+            self.assertRegex(color, r"^#[0-9A-F]{6}$")
+
+    def test_update_class_color_persists_hex_color(self):
+        self.service.create_project("demo", ["car"])
+
+        meta = self.service.update_class_color("demo", "car", "#7C3AED")
+
+        self.assertEqual(meta["class_colors"]["car"], "#7C3AED")
+        self.assertEqual(self.service._read_meta("demo")["class_colors"]["car"], "#7C3AED")
+
+    def test_update_class_color_rejects_invalid_color(self):
+        self.service.create_project("demo", ["car"])
+
+        with self.assertRaises(ValueError):
+            self.service.update_class_color("demo", "car", "purple")
+
     def test_add_assisted_detection_persists_visual_prompt_metadata(self):
         self.service.create_project("demo")
         saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))

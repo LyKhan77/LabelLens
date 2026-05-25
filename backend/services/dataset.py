@@ -12,6 +12,25 @@ import cv2
 import numpy as np
 
 DATASETS_DIR = "datasets"
+CLASS_COLOR_PALETTE = [
+    "#3ECF8E",
+    "#2563EB",
+    "#F59E0B",
+    "#EF4444",
+    "#8B5CF6",
+    "#14B8A6",
+    "#EC4899",
+    "#84CC16",
+    "#06B6D4",
+    "#F97316",
+    "#6366F1",
+    "#22C55E",
+    "#EAB308",
+    "#A855F7",
+    "#0EA5E9",
+    "#F43F5E",
+]
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 class DatasetService:
@@ -41,6 +60,24 @@ class DatasetService:
     def _next_img_id(self, meta: dict) -> str:
         counter = meta.get("next_id", 1)
         return f"img_{counter:04d}"
+
+    def _default_class_color(self, index: int) -> str:
+        return CLASS_COLOR_PALETTE[index % len(CLASS_COLOR_PALETTE)]
+
+    def _ensure_class_colors(self, meta: dict) -> bool:
+        class_to_id = meta.get("class_to_id", {})
+        class_colors = meta.setdefault("class_colors", {})
+        changed = False
+        for label, class_id in sorted(class_to_id.items(), key=lambda item: item[1]):
+            if label and label not in class_colors:
+                class_colors[label] = self._default_class_color(int(class_id))
+                changed = True
+        return changed
+
+    def _normalize_color(self, color) -> str:
+        if not isinstance(color, str) or not HEX_COLOR_RE.match(color.strip()):
+            raise ValueError("color must be a #RRGGBB hex value")
+        return color.strip().upper()
 
     def _recalc_stats(self, name: str) -> dict:
         ann_dir = os.path.join(self._project_dir(name), "annotations")
@@ -81,11 +118,14 @@ class DatasetService:
             if not os.path.isfile(meta_path):
                 continue
             meta = self._read_meta(name)
+            if self._ensure_class_colors(meta):
+                self._write_meta(name, meta)
             stats = self._recalc_stats(name)
             projects.append({
                 "name": name,
                 "created": meta.get("created"),
                 "class_to_id": meta.get("class_to_id", {}),
+                "class_colors": meta.get("class_colors", {}),
                 "stats": stats,
             })
         return projects
@@ -99,12 +139,14 @@ class DatasetService:
 
         classes = classes or []
         class_to_id = {c: i for i, c in enumerate(classes)}
+        class_colors = {c: self._default_class_color(i) for c, i in class_to_id.items()}
 
         meta = {
             "name": name,
             "created": datetime.now().isoformat(),
             "next_id": 1,
             "class_to_id": class_to_id,
+            "class_colors": class_colors,
         }
         self._write_meta(name, meta)
         return meta
@@ -172,6 +214,7 @@ class DatasetService:
             if label and label not in class_to_id:
                 class_to_id[label] = len(class_to_id)
         meta["class_to_id"] = class_to_id
+        self._ensure_class_colors(meta)
 
         # Add accepted flag and id to detections
         annotated_dets = []
@@ -313,6 +356,7 @@ class DatasetService:
         ann["detections"] = annotated_dets
 
         meta["class_to_id"] = class_to_id
+        self._ensure_class_colors(meta)
         self._write_meta(name, meta)
 
         with open(ann_path, "w") as f:
@@ -439,8 +483,25 @@ class DatasetService:
         if label not in class_to_id:
             class_to_id[label] = len(class_to_id)
             meta["class_to_id"] = class_to_id
-            self._write_meta(name, meta)
+        self._ensure_class_colors(meta)
+        self._write_meta(name, meta)
         return class_to_id[label]
+
+    def update_class_color(self, name: str, label: str, color: str) -> dict:
+        pdir = self._project_dir(name)
+        if not os.path.isdir(pdir):
+            raise FileNotFoundError(f"Dataset '{name}' not found")
+        label = self._clean_label(label)
+        normalized_color = self._normalize_color(color)
+        meta = self._read_meta(name)
+        class_to_id = meta.get("class_to_id", {})
+        if label not in class_to_id:
+            class_to_id[label] = len(class_to_id)
+            meta["class_to_id"] = class_to_id
+        self._ensure_class_colors(meta)
+        meta["class_colors"][label] = normalized_color
+        self._write_meta(name, meta)
+        return meta
 
     def _clean_label(self, label) -> str:
         if not isinstance(label, str):

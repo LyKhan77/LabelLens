@@ -182,6 +182,21 @@ async def delete_dataset(name: str):
     return {"deleted": name}
 
 
+@router.patch("/datasets/{name}/class-colors")
+async def update_class_color(name: str, payload: dict = Body(...)):
+    try:
+        meta = dataset_service.update_class_color(
+            name,
+            payload.get("label"),
+            payload.get("color"),
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return meta
+
+
 @router.get("/datasets/{name}/images")
 async def list_images(name: str, page: int = 1, limit: int = 20):
     try:
