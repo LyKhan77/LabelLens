@@ -28,6 +28,7 @@ const visualAnnotations = ref<BBoxAnnotation[]>([])
 const loadingModel = ref(false)
 
 const job = ref<DatasetLabelJobStatus | null>(null)
+const classColors = computed(() => datasetStore.currentProjectData?.class_colors ?? {})
 const highlightedItemIndex = ref(0)
 const jobComplete = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -429,6 +430,7 @@ onUnmounted(() => {
                   :show-bbox="true"
                   :show-labels="true"
                   :show-masks="true"
+                  :class-colors="classColors"
                 />
                 <span v-else>Waiting for first frame</span>
               </div>

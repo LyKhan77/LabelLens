@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
   selectedId?: number | null
   draftBox?: Box | null
   editorOpen?: boolean
+  classColors?: Record<string, string>
 }>(), {
   alt: '',
   width: null,
@@ -28,6 +29,7 @@ const props = withDefaults(defineProps<{
   selectedId: null,
   draftBox: null,
   editorOpen: false,
+  classColors: () => ({}),
 })
 
 const emit = defineEmits<{
@@ -40,20 +42,28 @@ const stageRef = ref<HTMLElement | null>(null)
 const planeRef = ref<HTMLElement | null>(null)
 const stageSize = ref({ width: 0, height: 0 })
 const hoverPoint = ref<{ x: number; y: number } | null>(null)
+const zoom = ref(1)
+const panOffset = ref({ x: 0, y: 0 })
+const isStageActive = ref(false)
+const spacePressed = ref(false)
 let observer: ResizeObserver | null = null
 let drag: { action: DragAction; pointerId: number; start: { x: number; y: number }; box: Box } | null = null
+let panDrag: { pointerId: number; startClient: { x: number; y: number }; startPan: { x: number; y: number } } | null = null
 
 const imageWidth = computed(() => Math.max(1, props.width ?? 16))
 const imageHeight = computed(() => Math.max(1, props.height ?? 9))
 const visibleDetections = computed(() => props.detections ?? [])
 const selectedDetection = computed(() => visibleDetections.value.find((d) => d.id === props.selectedId))
 const activeBox = computed<Box | null>(() => props.draftBox ?? (selectedDetection.value?.box as Box | undefined) ?? null)
+const zoomPercent = computed(() => `${Math.round(zoom.value * 100)}%`)
+const canPan = computed(() => zoom.value > 1.01)
 
 const planeStyle = computed(() => {
   const stageWidth = stageSize.value.width
   const stageHeight = stageSize.value.height
+  const transform = `translate(${panOffset.value.x}px, ${panOffset.value.y}px) scale(${zoom.value})`
   if (!stageWidth || !stageHeight) {
-    return { width: '100%', height: '100%', left: '0px', top: '0px' }
+    return { width: '100%', height: '100%', left: '0px', top: '0px', transform }
   }
 
   const imageAspect = imageWidth.value / imageHeight.value
@@ -74,21 +84,25 @@ const planeStyle = computed(() => {
     height: `${height}px`,
     left: `${(stageWidth - width) / 2}px`,
     top: `${(stageHeight - height) / 2}px`,
+    transform,
   }
 })
 
-const COLORS = ['#3ecf8e', '#24b47e', '#707070', '#9a9a9a', '#6b01c2', '#644fc1', '#ffdb13', '#212121']
+const COLORS = ['#3ECF8E', '#2563EB', '#F59E0B', '#EF4444', '#8B5CF6', '#14B8A6', '#EC4899', '#84CC16']
 function classColor(label: string): string {
+  if (props.classColors[label]) return props.classColors[label]
   let hash = 0
   for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
   return COLORS[Math.abs(hash) % COLORS.length]
 }
 function clamp(value: number, min: number, max: number): number { return Math.min(Math.max(value, min), max) }
-
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+}
 
 const guideStyle = computed(() => {
   const point = hoverPoint.value
-  if (!point || drag) return null
+  if (!point || drag || panDrag) return null
   return {
     '--guide-x': `${(point.x / imageWidth.value) * 100}%`,
     '--guide-y': `${(point.y / imageHeight.value) * 100}%`,
@@ -97,14 +111,36 @@ const guideStyle = computed(() => {
 
 const popoverStyle = computed(() => {
   const box = activeBox.value
-  if (!box) return {}
+  const plane = planeRef.value
+  if (!box || !plane) return {}
+
   const [x1, y1, x2, y2] = normalizeBox(box)
-  const anchorX = x2 > imageWidth.value * 0.72 ? x1 : x2
-  const anchorY = y1 < imageHeight.value * 0.28 ? y2 : y1
+  const planeRect = plane.getBoundingClientRect()
+  const renderedBox = {
+    left: planeRect.left + (x1 / imageWidth.value) * planeRect.width,
+    top: planeRect.top + (y1 / imageHeight.value) * planeRect.height,
+    right: planeRect.left + (x2 / imageWidth.value) * planeRect.width,
+    bottom: planeRect.top + (y2 / imageHeight.value) * planeRect.height,
+  }
+
+  const margin = 10
+  const viewportWidth = window.innerWidth || stageSize.value.width
+  const viewportHeight = window.innerHeight || stageSize.value.height
+  const width = Math.min(280, Math.max(220, viewportWidth - margin * 2))
+  const estimatedHeight = 190
+  let left = renderedBox.right + margin
+  if (left + width > viewportWidth - margin) left = renderedBox.left - width - margin
+  left = clamp(left, margin, Math.max(margin, viewportWidth - width - margin))
+
+  let top = renderedBox.top
+  if (top + estimatedHeight > viewportHeight - margin) top = renderedBox.top - estimatedHeight - margin
+  if (top < margin) top = viewportHeight - estimatedHeight - margin
+  top = clamp(top, margin, Math.max(margin, viewportHeight - estimatedHeight - margin))
+
   return {
-    left: `${(anchorX / imageWidth.value) * 100}%`,
-    top: `${(anchorY / imageHeight.value) * 100}%`,
-    transform: `${x2 > imageWidth.value * 0.72 ? 'translate(calc(-100% - 10px),' : 'translate(10px,'} ${y1 < imageHeight.value * 0.28 ? '10px)' : 'calc(-100% - 10px))'}`,
+    left: `${left}px`,
+    top: `${top}px`,
+    width: `${width}px`,
   }
 })
 
@@ -129,12 +165,13 @@ function normalizedBox(det: DatasetOverlayDetection): Box {
 
 function boxStyle(det: DatasetOverlayDetection) {
   const [x1, y1, x2, y2] = normalizedBox(det)
+  const color = det.id === props.selectedId ? '#ffdb13' : classColor(det.label)
   return {
     left: `${(x1 / imageWidth.value) * 100}%`,
     top: `${(y1 / imageHeight.value) * 100}%`,
     width: `${((x2 - x1) / imageWidth.value) * 100}%`,
     height: `${((y2 - y1) / imageHeight.value) * 100}%`,
-    borderColor: det.id === props.selectedId ? '#ffdb13' : classColor(det.label),
+    borderColor: color,
   }
 }
 
@@ -153,6 +190,7 @@ function activeBoxStyle() {
 function labelStyle(det: DatasetOverlayDetection) {
   const [, y1] = normalizedBox(det)
   return {
+    backgroundColor: classColor(det.label),
     top: y1 < 22 ? '0px' : '0px',
     transform: y1 < 22 ? 'translateY(0)' : 'translateY(calc(-100% - 2px))',
   }
@@ -180,7 +218,48 @@ function emitBox(box: Box) {
   emit('draft-change', next)
 }
 
+function setZoom(nextZoom: number, origin?: { x: number; y: number }) {
+  const previous = zoom.value
+  const next = clamp(Math.round(nextZoom * 100) / 100, 1, 6)
+  if (Math.abs(previous - next) < 0.01) return
+  if (origin && stageRef.value) {
+    const rect = stageRef.value.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    panOffset.value = {
+      x: panOffset.value.x + (1 - next / previous) * (origin.x - centerX - panOffset.value.x),
+      y: panOffset.value.y + (1 - next / previous) * (origin.y - centerY - panOffset.value.y),
+    }
+  }
+  zoom.value = next
+  if (next === 1) panOffset.value = { x: 0, y: 0 }
+}
+
+function zoomBy(delta: number, origin?: { x: number; y: number }) {
+  setZoom(zoom.value + delta, origin)
+}
+
+function resetZoom() {
+  zoom.value = 1
+  panOffset.value = { x: 0, y: 0 }
+}
+
+function onWheel(e: WheelEvent) {
+  if (!isStageActive.value) return
+  zoomBy(e.deltaY < 0 ? 0.2 : -0.2, { x: e.clientX, y: e.clientY })
+}
+
 function onPlanePointerDown(e: PointerEvent) {
+  if (spacePressed.value && canPan.value) {
+    panDrag = {
+      pointerId: e.pointerId,
+      startClient: { x: e.clientX, y: e.clientY },
+      startPan: { ...panOffset.value },
+    }
+    planeRef.value?.setPointerCapture(e.pointerId)
+    e.preventDefault()
+    return
+  }
   const point = pointFromEvent(e)
   if (!point) return
   drag = { action: 'create', pointerId: e.pointerId, start: point, box: [point.x, point.y, point.x, point.y] }
@@ -189,6 +268,10 @@ function onPlanePointerDown(e: PointerEvent) {
 }
 
 function onBoxPointerDown(e: PointerEvent, det: DatasetOverlayDetection) {
+  if (spacePressed.value && canPan.value) {
+    onPlanePointerDown(e)
+    return
+  }
   if (det.id == null) return
   emit('select', det.id)
   const point = pointFromEvent(e)
@@ -236,6 +319,14 @@ function applyDrag(point: { x: number; y: number }) {
 }
 
 function onPointerMove(e: PointerEvent) {
+  if (panDrag && panDrag.pointerId === e.pointerId) {
+    panOffset.value = {
+      x: panDrag.startPan.x + e.clientX - panDrag.startClient.x,
+      y: panDrag.startPan.y + e.clientY - panDrag.startClient.y,
+    }
+    e.preventDefault()
+    return
+  }
   const point = pointFromEvent(e)
   if (!point) return
   hoverPoint.value = point
@@ -245,9 +336,16 @@ function onPointerMove(e: PointerEvent) {
 
 function onPointerLeave() {
   hoverPoint.value = null
+  isStageActive.value = false
+  spacePressed.value = false
 }
 
 function onPointerUp(e: PointerEvent) {
+  if (panDrag && panDrag.pointerId === e.pointerId) {
+    planeRef.value?.releasePointerCapture(e.pointerId)
+    panDrag = null
+    return
+  }
   if (!drag || drag.pointerId !== e.pointerId) return
   const point = pointFromEvent(e)
   if (point) applyDrag(point)
@@ -259,24 +357,65 @@ function onPointerUp(e: PointerEvent) {
   drag = null
 }
 
+function handleKeydown(e: KeyboardEvent) {
+  if (!isStageActive.value || isEditableTarget(e.target)) return
+  if (e.key === ' ' && canPan.value) {
+    spacePressed.value = true
+    e.preventDefault()
+  }
+  if (e.key === '+' || e.key === '=') {
+    zoomBy(0.25)
+    e.preventDefault()
+  }
+  if (e.key === '-' || e.key === '_') {
+    zoomBy(-0.25)
+    e.preventDefault()
+  }
+  if (e.key === '0') {
+    resetZoom()
+    e.preventDefault()
+  }
+}
+
+function handleKeyup(e: KeyboardEvent) {
+  if (e.key === ' ') spacePressed.value = false
+}
+
 onMounted(() => {
   nextTick(updateStageSize)
   if (stageRef.value) {
     observer = new ResizeObserver(updateStageSize)
     observer.observe(stageRef.value)
   }
+  window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('keyup', handleKeyup)
 })
 
 onUnmounted(() => {
   observer?.disconnect()
   observer = null
+  window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('keyup', handleKeyup)
 })
 
-watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateStageSize))
+watch(() => [props.width, props.height, props.imageSrc], () => {
+  resetZoom()
+  nextTick(updateStageSize)
+})
 </script>
 
 <template>
-  <div ref="stageRef" class="dataset-media-stage">
+  <div
+    ref="stageRef"
+    class="dataset-media-stage"
+    :class="{ 'is-zoomed': canPan, 'is-panning': Boolean(panDrag), 'is-space-panning': spacePressed && canPan }"
+    tabindex="0"
+    @mouseenter="isStageActive = true"
+    @mouseleave="onPointerLeave"
+    @focusin="isStageActive = true"
+    @focusout="isStageActive = false"
+    @wheel.prevent="onWheel"
+  >
     <div
       ref="planeRef"
       class="dataset-media-plane dataset-editor-plane"
@@ -285,7 +424,7 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
-      @pointerleave="onPointerLeave"
+      @pointerleave="hoverPoint = null"
     >
       <img class="dataset-media-image" :src="imageSrc" :alt="alt" loading="lazy" @load="updateStageSize" />
 
@@ -339,18 +478,25 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
         <button type="button" class="dataset-editor-handle is-w" @pointerdown.stop="onHandlePointerDown($event, 'w')" />
         <button type="button" class="dataset-editor-handle is-e" @pointerdown.stop="onHandlePointerDown($event, 'e')" />
       </div>
+    </div>
 
-      <div
-        v-if="activeBox && editorOpen && $slots.editor"
-        class="dataset-editor-popover"
-        :style="popoverStyle"
-        @pointerdown.stop
-        @pointermove.stop
-        @pointerup.stop
-        @click.stop
-      >
-        <slot name="editor" />
-      </div>
+    <div class="dataset-zoom-toolbar" @pointerdown.stop @click.stop>
+      <button type="button" aria-label="Zoom out" @click="zoomBy(-0.25)">-</button>
+      <span>{{ zoomPercent }}</span>
+      <button type="button" aria-label="Zoom in" @click="zoomBy(0.25)">+</button>
+      <button type="button" aria-label="Reset zoom" @click="resetZoom">Reset</button>
+    </div>
+
+    <div
+      v-if="activeBox && editorOpen && $slots.editor"
+      class="dataset-editor-popover"
+      :style="popoverStyle"
+      @pointerdown.stop
+      @pointermove.stop
+      @pointerup.stop
+      @click.stop
+    >
+      <slot name="editor" />
     </div>
   </div>
 </template>

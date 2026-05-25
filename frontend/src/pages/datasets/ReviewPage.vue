@@ -39,6 +39,7 @@ const detections = computed(() => annotations.value?.detections ?? [])
 const acceptedCount = computed(() => detections.value.filter((d) => d.accepted).length)
 const rejectedCount = computed(() => detections.value.filter((d) => !d.accepted).length)
 const classCount = computed(() => classes.value.length)
+const classColors = computed(() => store.currentProjectData?.class_colors ?? {})
 const selectedDetection = computed(() => detections.value.find((d) => d.id === selectedDetectionId.value) ?? null)
 const currentImageIndex = computed(() => store.images.findIndex((i) => i.img_id === store.selectedImage))
 const totalImages = computed(() => store.images.length)
@@ -82,13 +83,14 @@ const displayDetections = computed<DatasetOverlayDetection[]>(() => [
   })),
 ])
 
-const COLORS = ['#3ecf8e', '#24b47e', '#707070', '#9a9a9a', '#6b01c2', '#644fc1', '#ffdb13', '#212121']
 function classColor(label: string): string {
-  let hash = 0
-  for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
-  return COLORS[Math.abs(hash) % COLORS.length]
+  return store.classColor(label)
 }
 
+async function updateClassColor(label: string, event: Event) {
+  const color = (event.target as HTMLInputElement).value
+  await store.setClassColor(label, color)
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
@@ -623,6 +625,7 @@ onUnmounted(() => {
               :selected-id="selectedCandidateId ?? selectedDetectionId"
               :draft-box="draftBox"
               :editor-open="editorMode !== 'idle'"
+              :class-colors="classColors"
               @select="handleOverlaySelect"
               @draft-change="updateDraftBox"
               @create-draft="beginNewAnnotation"
@@ -744,7 +747,14 @@ onUnmounted(() => {
                   :class="{ 'opacity-35 line-through': isClassHidden(cls) }"
                   @click="store.toggleClassVisibility(cls)"
                 >
-                  <span class="w-[5px] h-[5px] rounded-full" :style="{ backgroundColor: classColor(cls) }" />
+                  <input
+                    type="color"
+                    class="dataset-class-color-input"
+                    :value="classColor(cls)"
+                    :aria-label="`Set ${cls} color`"
+                    @click.stop
+                    @input.stop="updateClassColor(cls, $event)"
+                  />
                   {{ cls }} ({{ count }})
                 </button>
               </div>

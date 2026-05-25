@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
   showBbox?: boolean
   showLabels?: boolean
   showMasks?: boolean
+  classColors?: Record<string, string>
 }>(), {
   alt: '',
   width: null,
@@ -19,6 +20,7 @@ const props = withDefaults(defineProps<{
   showBbox: true,
   showLabels: false,
   showMasks: false,
+  classColors: () => ({}),
 })
 
 const stageRef = ref<HTMLElement | null>(null)
@@ -57,8 +59,13 @@ const planeStyle = computed(() => {
   }
 })
 
-const COLORS = ['#3ecf8e', '#24b47e', '#ffffff', '#ffdb13', '#644fc1', '#6b01c2', '#9a9a9a', '#212121']
-function detColor(idx: number): string { return COLORS[idx % COLORS.length] }
+const COLORS = ['#3ECF8E', '#2563EB', '#F59E0B', '#EF4444', '#8B5CF6', '#14B8A6', '#EC4899', '#84CC16']
+function classColor(label: string): string {
+  if (props.classColors[label]) return props.classColors[label]
+  let hash = 0
+  for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
+  return COLORS[Math.abs(hash) % COLORS.length]
+}
 function clamp(value: number, min: number, max: number): number { return Math.min(Math.max(value, min), max) }
 
 function updateStageSize() {
@@ -77,21 +84,21 @@ function normalizedBox(det: DatasetOverlayDetection) {
   return { x1, y1, x2, y2 }
 }
 
-function boxStyle(det: DatasetOverlayDetection, idx: number) {
+function boxStyle(det: DatasetOverlayDetection) {
   const { x1, y1, x2, y2 } = normalizedBox(det)
   return {
     left: `${(x1 / imageWidth.value) * 100}%`,
     top: `${(y1 / imageHeight.value) * 100}%`,
     width: `${((x2 - x1) / imageWidth.value) * 100}%`,
     height: `${((y2 - y1) / imageHeight.value) * 100}%`,
-    borderColor: detColor(idx),
+    borderColor: classColor(det.label),
   }
 }
 
-function labelStyle(det: DatasetOverlayDetection, idx: number) {
+function labelStyle(det: DatasetOverlayDetection) {
   const { y1 } = normalizedBox(det)
   return {
-    backgroundColor: detColor(idx),
+    backgroundColor: classColor(det.label),
     top: y1 < 22 ? '0px' : '0px',
     transform: y1 < 22 ? 'translateY(0)' : 'translateY(calc(-100% - 2px))',
   }
@@ -134,9 +141,9 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
           v-for="(det, idx) in visibleDetections.filter((d) => d.mask && d.mask.length)"
           :key="`mask-${det.id ?? idx}`"
           :points="maskPoints(det)"
-          :fill="detColor(idx)"
+          :fill="classColor(det.label)"
           fill-opacity="0.22"
-          :stroke="detColor(idx)"
+          :stroke="classColor(det.label)"
           stroke-opacity="0.55"
           stroke-width="2"
         />
@@ -148,12 +155,12 @@ watch(() => [props.width, props.height, props.imageSrc], () => nextTick(updateSt
           :key="`box-${det.id ?? idx}`"
           class="dataset-media-box"
           :class="{ 'is-rejected': det.accepted === false }"
-          :style="boxStyle(det, idx)"
+          :style="boxStyle(det)"
         >
           <span
             v-if="showLabels"
             class="dataset-media-label"
-            :style="labelStyle(det, idx)"
+            :style="labelStyle(det)"
           >
             {{ det.label }} {{ (det.confidence * 100).toFixed(0) }}%
           </span>

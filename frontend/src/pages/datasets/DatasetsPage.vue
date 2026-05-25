@@ -10,7 +10,7 @@ import ReviewPage from './ReviewPage.vue'
 
 const datasetStore = useDatasetStore()
 const inferenceStore = useInferenceStore()
-const { connected, yoloeStatus, samStatus } = useBackendStatus()
+const { yoloeStatus, samStatus } = useBackendStatus()
 const { theme, toggle } = useTheme()
 
 function navigate(path: string) {

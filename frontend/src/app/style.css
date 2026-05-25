@@ -353,7 +353,21 @@
     overflow: visible;
     border-radius: inherit;
     transform-origin: center;
-    transition: transform 0.3s ease;
+    transition: transform 0.18s ease;
+    will-change: transform;
+  }
+
+  .dataset-media-stage:focus {
+    outline: none;
+  }
+
+  .dataset-media-stage.is-zoomed .dataset-editor-plane {
+    cursor: crosshair;
+  }
+
+  .dataset-media-stage.is-space-panning .dataset-editor-plane,
+  .dataset-media-stage.is-panning .dataset-editor-plane {
+    cursor: grab;
   }
 
   .dataset-media-image {
@@ -1151,8 +1165,8 @@
   }
 
   .dataset-class-filters button {
-    height: 18px;
-    padding: 0 5px;
+    height: 20px;
+    padding: 0 5px 0 3px;
     border: 1px solid var(--color-hairline);
     border-radius: var(--radius-sm);
     background: var(--color-canvas-soft);
@@ -1164,6 +1178,21 @@
     gap: 5px;
     line-height: 1;
   }
+
+  .dataset-class-color-input {
+    width: 13px;
+    height: 13px;
+    padding: 0;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .dataset-class-color-input::-webkit-color-swatch-wrapper { padding: 0; }
+  .dataset-class-color-input::-webkit-color-swatch { border: 0; border-radius: 999px; }
+  .dataset-class-color-input::-moz-color-swatch { border: 0; border-radius: 999px; }
 
   .dataset-prompt-action-bar {
     position: absolute;
@@ -2393,11 +2422,53 @@
 
 
   .dataset-editor-popover {
-    position: absolute;
-    z-index: 9;
-    width: min(280px, calc(100% - 18px));
+    position: fixed;
+    z-index: 60;
+    width: min(280px, calc(100vw - 20px));
     max-width: 280px;
     pointer-events: auto;
+  }
+
+  .dataset-zoom-toolbar {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    z-index: 12;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius-sm);
+    background: rgba(18, 18, 18, 0.72);
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(8px);
+  }
+
+  .dataset-zoom-toolbar button {
+    min-width: 26px;
+    height: 24px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: var(--radius-xs);
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .dataset-zoom-toolbar button:hover {
+    background: rgba(255, 255, 255, 0.22);
+  }
+
+  .dataset-zoom-toolbar span {
+    min-width: 42px;
+    text-align: center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.86);
   }
 
   .dataset-canvas-editor {

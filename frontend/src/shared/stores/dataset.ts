@@ -9,6 +9,19 @@ import type {
 } from '../api/dataset'
 import * as api from '../api/dataset'
 
+const CLASS_COLOR_FALLBACKS = [
+  '#3ECF8E', '#2563EB', '#F59E0B', '#EF4444',
+  '#8B5CF6', '#14B8A6', '#EC4899', '#84CC16',
+  '#06B6D4', '#F97316', '#6366F1', '#22C55E',
+  '#EAB308', '#A855F7', '#0EA5E9', '#F43F5E',
+]
+
+function fallbackClassColor(label: string): string {
+  let hash = 0
+  for (let i = 0; i < label.length; i++) hash = ((hash << 5) - hash + label.charCodeAt(i)) | 0
+  return CLASS_COLOR_FALLBACKS[Math.abs(hash) % CLASS_COLOR_FALLBACKS.length]
+}
+
 export const useDatasetStore = defineStore('dataset', () => {
   // Projects
   const projects = ref<DatasetProject[]>([])
@@ -56,6 +69,18 @@ export const useDatasetStore = defineStore('dataset', () => {
     } finally {
       projectsLoading.value = false
     }
+  }
+
+  function classColor(label: string): string {
+    return currentProjectData.value?.class_colors?.[label] ?? fallbackClassColor(label)
+  }
+
+  async function setClassColor(label: string, color: string) {
+    if (!currentProject.value) return
+    const updated = await api.updateClassColor(currentProject.value, label, color)
+    const idx = projects.value.findIndex((project) => project.name === updated.name)
+    if (idx >= 0) projects.value.splice(idx, 1, updated)
+    else projects.value.push(updated)
   }
 
   async function createProject(name: string, classes: string[] = []) {
@@ -228,6 +253,7 @@ export const useDatasetStore = defineStore('dataset', () => {
       visual,
     )
     await fetchImages(imagesPage.value)
+    await fetchProjects()
     return result
   }
 
@@ -268,6 +294,7 @@ export const useDatasetStore = defineStore('dataset', () => {
       confidence,
     )
     await fetchImages(imagesPage.value)
+    await fetchProjects()
     return result
   }
 
@@ -363,6 +390,8 @@ export const useDatasetStore = defineStore('dataset', () => {
     currentProjectData,
     // Actions
     fetchProjects,
+    classColor,
+    setClassColor,
     createProject,
     deleteProject,
     fetchImages,

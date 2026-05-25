@@ -3,7 +3,7 @@ import { useBackendStatus } from '../../../shared/composables/useBackendStatus'
 import { useTheme } from '../../../shared/composables/useTheme'
 import { useInferenceStore } from '../../../shared/stores/inference'
 
-const { connected, yoloeStatus, samStatus } = useBackendStatus()
+const { yoloeStatus, samStatus } = useBackendStatus()
 const { theme, toggle } = useTheme()
 const store = useInferenceStore()
 </script>

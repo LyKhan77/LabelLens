@@ -4,6 +4,7 @@ export interface DatasetProject {
   name: string
   created: string
   class_to_id: Record<string, number>
+  class_colors: Record<string, string>
   stats: {
     total_images: number
     total_annotations: number
@@ -108,6 +109,11 @@ export async function createDataset(name: string, classes: string[] = []): Promi
 
 export async function deleteDataset(name: string): Promise<unknown> {
   const res = await api.delete(`/datasets/${name}`)
+  return res.data
+}
+
+export async function updateClassColor(name: string, label: string, color: string): Promise<DatasetProject> {
+  const res = await api.patch(`/datasets/${name}/class-colors`, { label, color })
   return res.data
 }
 

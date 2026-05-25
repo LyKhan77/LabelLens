@@ -19,6 +19,7 @@ const showImageDeleteConfirm = ref(false)
 const deletingImages = ref(false)
 
 const project = computed(() => store.currentProjectData)
+const classColors = computed(() => project.value?.class_colors ?? {})
 const totalPages = computed(() => Math.max(1, Math.ceil(store.imagesTotal / store.imagesLimit)))
 const pageStart = computed(() => (store.imagesTotal === 0 ? 0 : (store.imagesPage - 1) * store.imagesLimit + 1))
 const pageEnd = computed(() => Math.min(store.imagesPage * store.imagesLimit, store.imagesTotal))
@@ -318,6 +319,7 @@ watch(
               :show-bbox="true"
               :show-labels="false"
               :show-masks="true"
+              :class-colors="classColors"
             />
 
             <label class="dataset-card-select" @click.stop>

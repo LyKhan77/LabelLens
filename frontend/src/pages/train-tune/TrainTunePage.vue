@@ -528,7 +528,13 @@ async function recomputeFailedJob(jobId: string) {
 
                 <section v-else-if="builderStep === 3" class="space-y-(--spacing-md)">
                   <div>
-                    <h2 class="text-[18px] font-medium text-ink">Versioning, Split, and Prep</h2>
+                    <div class="train-heading-with-info">
+                      <h2 class="text-[18px] font-medium text-ink">Versioning, Split, and Prep</h2>
+                      <span class="train-info-tag">Policy</span>
+                      <span class="train-info" tabindex="0" aria-label="Split, preprocessing, and augmentation rules are locked into the immutable dataset version." data-tip="Split, preprocessing, and augmentation rules are locked into the immutable dataset version.">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                      </span>
+                    </div>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Deterministic split, preprocessing profile, and augmentation preset are stored inside the immutable dataset version.</p>
                   </div>
                   <div class="train-version-flow">
@@ -589,7 +595,13 @@ async function recomputeFailedJob(jobId: string) {
 
                 <section v-else-if="builderStep === 2" class="space-y-(--spacing-md)">
                   <div>
-                    <h2 class="text-[18px] font-medium text-ink">Training Configuration</h2>
+                    <div class="train-heading-with-info">
+                      <h2 class="text-[18px] font-medium text-ink">Training Configuration</h2>
+                      <span class="train-info-tag">Architecture</span>
+                      <span class="train-info" tabindex="0" aria-label="Base YOLO family, size, and checkpoint define detector capacity, speed, VRAM, and starting weights." data-tip="Base YOLO family, size, and checkpoint define detector capacity, speed, VRAM, and starting weights.">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                      </span>
+                    </div>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO family, detection checkpoint, and GPU mode used to schedule this bbox training run.</p>
                   </div>
                   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
@@ -725,15 +737,15 @@ async function recomputeFailedJob(jobId: string) {
                 <button class="dataset-secondary-button !px-2 !py-1" @click="trainingStore.refreshModels()">Refresh</button>
               </div>
               <div class="train-list">
-                <div v-for="model in trainingStore.models" :key="model.id" class="train-row-shell">
-                  <button class="train-list-row train-list-row-main" @click="openResult(model.id)">
+                <div v-for="model in trainingStore.models" :key="model.id" class="train-model-card">
+                  <button class="train-list-row train-model-open" @click="openResult(model.id)">
                     <div>
                       <strong>{{ model.model_name }}</strong>
                       <span>{{ model.family }} / {{ model.size }}</span>
                     </div>
-                    <span class="dataset-status-pill is-completed">{{ model.status }}</span>
                   </button>
-                  <div class="train-list-actions">
+                  <div class="train-model-meta">
+                    <span class="dataset-status-pill is-completed">{{ model.status }}</span>
                     <button class="train-mini-action is-danger" @click.stop="requestModelDelete(model)">Delete</button>
                   </div>
                 </div>
@@ -1045,6 +1057,12 @@ async function recomputeFailedJob(jobId: string) {
   padding: 0 12px;
 }
 .train-field input[type='file'] { padding: 10px 12px; }
+.train-heading-with-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.train-info-tag { display: inline-flex; align-items: center; min-height: 20px; padding: 0 7px; border: 1px solid var(--color-hairline); border-radius: 999px; color: var(--color-ink-mute); background: var(--color-canvas-soft); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.train-info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px solid var(--color-hairline); border-radius: 999px; color: var(--color-ink-mute); background: var(--color-canvas); cursor: help; }
+.train-info svg { width: 12px; height: 12px; }
+.train-info::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 20; width: 260px; max-width: calc(100vw - 32px); padding: 8px 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14); font-size: 11px; line-height: 1.45; text-transform: none; letter-spacing: 0; transform: translateX(-50%) translateY(4px); opacity: 0; pointer-events: none; transition: opacity 140ms ease, transform 140ms ease; }
+.train-info:hover::after, .train-info:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 .train-version-flow { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); overflow: hidden; }
 .train-version-lane { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; border-left: 1px solid var(--color-hairline); }
 .train-version-lane:first-child { border-left: 0; }
@@ -1101,10 +1119,14 @@ async function recomputeFailedJob(jobId: string) {
 .train-version-delete { align-self: stretch; }
 .train-link { background: transparent; border: 0; padding: 0; font-size: 12px; color: var(--color-primary-deep); cursor: pointer; }
 .train-link-inline { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
-.train-row-shell { display: flex; flex-direction: column; gap: 8px; }
+.train-row-shell { display: flex; flex-direction: column; gap: 6px; }
 .train-list-row-main { width: 100%; }
-.train-list-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.train-mini-action { min-height: 28px; padding: 0 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink-mute); font-size: 11px; cursor: pointer; transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease; }
+.train-list-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.train-model-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas); transition: border-color 160ms ease, background-color 160ms ease; }
+.train-model-card:hover { border-color: var(--color-hairline-strong); background: var(--color-canvas-soft); }
+.train-model-open { min-width: 0; padding: 6px; border: 0; background: transparent; }
+.train-model-meta { display: inline-flex; align-items: center; gap: 6px; }
+.train-mini-action { min-height: 24px; padding: 0 8px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink-mute); font-size: 10px; cursor: pointer; transition: border-color 160ms ease, color 160ms ease, background-color 160ms ease; }
 .train-mini-action:hover { border-color: var(--color-hairline-strong); color: var(--color-ink); background: var(--color-canvas-soft); }
 .train-mini-action.is-danger { color: #991b1b; }
 .train-metric-table { display: flex; flex-direction: column; gap: 0; }
@@ -1134,7 +1156,7 @@ async function recomputeFailedJob(jobId: string) {
 .train-log-row { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); }
 .train-log-row strong { font-size: 12px; color: var(--color-ink); }
 .train-log-row span { font-size: 12px; line-height: 1.45; color: var(--color-ink-mute); word-break: break-word; }
-.dataset-status-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 24px; padding: 0 10px; border-radius: 999px; font-size: 11px; text-transform: capitalize; background: var(--color-canvas-soft); color: var(--color-ink-mute); border: 1px solid var(--color-hairline); }
+.dataset-status-pill { display: inline-flex; align-items: center; justify-content: center; min-height: 20px; padding: 0 7px; border-radius: 999px; font-size: 10px; line-height: 1; text-transform: capitalize; white-space: nowrap; background: var(--color-canvas-soft); color: var(--color-ink-mute); border: 1px solid var(--color-hairline); }
 .dataset-status-pill.is-running, .dataset-status-pill.is-preparing { color: var(--color-primary-deep); background: color-mix(in srgb, var(--color-primary) 10%, white); border-color: color-mix(in srgb, var(--color-primary) 35%, white); }
 .dataset-status-pill.is-completed { color: #14532d; background: #dcfce7; border-color: #86efac; }
 .dataset-status-pill.is-failed, .dataset-status-pill.is-cancelled { color: #991b1b; background: #fee2e2; border-color: #fecaca; }
@@ -1157,5 +1179,7 @@ async function recomputeFailedJob(jobId: string) {
 @media (max-width: 640px) {
   .train-stepper, .train-trend-grid { grid-template-columns: 1fr; }
   .train-version-delete { align-self: center; }
+  .train-model-card { grid-template-columns: 1fr; align-items: stretch; }
+  .train-model-meta { justify-content: space-between; }
 }
 </style>
