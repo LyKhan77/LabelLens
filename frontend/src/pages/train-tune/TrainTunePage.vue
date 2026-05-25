@@ -871,6 +871,7 @@ async function recomputeFailedJob(jobId: string) {
               </div>
               <div class="flex items-center gap-(--spacing-sm)">
                 <span class="dataset-status-pill is-completed">{{ trainingStore.selectedModel.status }}</span>
+                <button class="dataset-primary-button" @click="navigate(`/train-tune/test/${trainingStore.selectedModel.id}`)">Test Model</button>
                 <button class="dataset-secondary-button" @click="requestModelDelete(trainingStore.selectedModel)">Delete Model</button>
               </div>
             </div>
