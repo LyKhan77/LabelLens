@@ -12,7 +12,7 @@
 ## Key Features - ALWAYS Update this section based on Changes or Features Made
 
 - **Feature Modes Page** — Deterministic landing page at `/` with mode selection: Free Inference (LRPC, 1200+ LVIS categories), Prompt Inference (text/visual), or Train Tune, then navigates to the matching workspace
-- **Train Tune Workspace** — dedicated `/train-tune` bbox detection builder with stepper-based immutable Dataset Version snapshots, locked split/prep/augmentation summary, modal deletion for unused dataset versions and model versions with linked job history, detection-checkpoint validation, compact metric trends plus scrollable epoch history and dataset/run configuration details on live progress and model result views, dedicated `/train-tune/jobs/:id` live progress pages, dedicated `/train-tune/results/:id` result pages, Standard vs High-Speed GPU modes, failed-job re-compute/delete actions, output artifacts under `traintune-workspace/`, and model version registry
+- **Train Tune Workspace** — dedicated `/train-tune` bbox detection builder with stepper-based immutable Dataset Version snapshots, locked split/prep/augmentation summary, modal deletion for unused dataset versions and model versions with linked job history, compact model/job badges, hover-only Architecture/Policy parameter tips, detection-checkpoint validation, compact metric trends plus scrollable epoch history and dataset/run configuration details on live progress and model result views, dedicated `/train-tune/jobs/:id` live progress pages, dedicated `/train-tune/results/:id` result pages, Standard vs High-Speed GPU modes, failed-job re-compute/delete actions, output artifacts under `traintune-workspace/`, and model version registry
 - **Free Inference Mode** — Prompt-free detection using YOLOE LRPC internal vocabulary (separate `yoloe-26l-seg-pf.pt` weights, no user prompts needed)
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
@@ -22,7 +22,8 @@
 - **Clear Media Workflow** — Media mode switching is locked until inference is stopped and current media input is cleared
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
 - **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Trigger from Workspace Auto-Label modal or batch upload via Dataset Manager. While active on RTSP, continuous viewer-frame annotations are saved until auto-label is stopped (modal, optional MM:SS timer, or Stop Inference). Accept/reject detections, add/edit/delete manual bboxes, and use per-class/per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split, preserving original input filenames in exported artifacts whenever available.
-- **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, delete confirmation modals, Select All Files gallery selection, real overlay paginated thumbnail gallery (25/page), centered modal review with cross-page Prev/Next, compact class/status review controls, manual bbox add/edit/delete annotation editor, simplified multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, granular overlay controls and image delete, Rapid Inference jobs with frame-by-frame `Frame x/y` progress, configurable frame sampling, and zip export.
+- **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, delete confirmation modals, Select All Files gallery selection, real overlay paginated thumbnail gallery (25/page), centered modal review with cross-page Prev/Next, compact class/status review controls, zoomable/pannable review canvas for pixel-level bbox editing, viewport-clamped Edit BBox popover, per-dataset manual class colors, manual bbox add/edit/delete annotation editor, simplified multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, granular overlay controls and image delete, Rapid Inference jobs with frame-by-frame `Frame x/y` progress, configurable frame sampling, and zip export.
+- **SAM2.1 Auto-mask** — SAM2.1 (Hiera Large) runs on GPU 1 independently from YOLOE on GPU 0. Automatically generates mask segmentation when users draw manual bbox annotations in Dataset Manager review. Lazy-loaded, thread-safe, with status/load/unload API endpoints. Non-fatal — bbox saves without mask if SAM unavailable.
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
 
@@ -30,7 +31,7 @@
 LabelLens/
 ├── frontend/src/
 │   ├── shared/
-│   │   ├── api/             (client.ts, detection.ts, ws.ts, dataset.ts, training.ts)
+│   │   ├── api/             (client.ts, detection.ts, ws.ts, dataset.ts, training.ts, sam.ts)
 │   │   ├── composables/     (useBackendStatus.ts, useWebSocket.ts)
 │   │   ├── stores/          (inference.ts, dataset.ts, training.ts — Pinia)
 │   │   └── types/           (index.ts)
@@ -41,11 +42,11 @@ LabelLens/
 │       ├── train-tune/      (TrainTunePage — builder, dedicated live progress route, dedicated result route)
 │       └── workspace/       (components, sections)
 ├── backend/
-│   ├── routers/         (health.py, detection.py, stream.py, dataset.py, training.py)
+│   ├── routers/         (health.py, detection.py, stream.py, dataset.py, training.py, sam.py)
 │   ├── services/        (model.py, video.py, rtsp.py, dataset.py, activity.py, training.py,
-│   │                    training_events.py, training_runtime.py)
+│   │                    training_events.py, training_runtime.py, sam.py)
 │   ├── train_worker.py  (background training worker process for Train Tune jobs)
-│   └── utils/           (drawing.py, encoding.py)
+│   └── utils/           (drawing.py, encoding.py, masks.py, postprocess.py)
 ├── datasets/            (runtime dataset storage, gitignored)
 ├── docs/plans/          (saved implementation plans)
 ├── docs/superpowers/specs/ (design specs)
@@ -55,15 +56,17 @@ LabelLens/
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three inference phases (Image, Video, RTSP) remain scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users always land on `/` (Feature Modes), navigate to `/workspace` after inference model load, while Dataset Manager remains independently available at `/datasets` and Train Tune is independently available at `/train-tune`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated real-overlay thumbnail dataset gallery with Select All Files, Dataset Manager delete confirmation modals, centered modal review with compact class/status controls, image delete, manual bbox add/edit/delete, simplified multi-prompt Infer Next visual-prompt candidate auto-save review, direct saved-label delete, cross-page Prev/Next, Rapid Inference job polling with frame-by-frame progress, workspace RTSP auto-label continuous save with optional timer, and Train Tune bbox detection stepper versioning / locked Dataset Version summary / compact metric trends / scrollable epoch history / result metadata / queue / model registry are functional.
+**Condition:** In active development. All three inference phases (Image, Video, RTSP) remain scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users always land on `/` (Feature Modes), navigate to `/workspace` after inference model load, while Dataset Manager remains independently available at `/datasets` and Train Tune is independently available at `/train-tune`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated real-overlay thumbnail dataset gallery with Select All Files, Dataset Manager delete confirmation modals, centered modal review with compact class/status controls, zoom/pan review canvas, viewport-clamped bbox editor popover, persisted per-dataset class colors, image delete, manual bbox add/edit/delete, simplified multi-prompt Infer Next visual-prompt candidate auto-save review, direct saved-label delete, cross-page Prev/Next, Rapid Inference job polling with frame-by-frame progress, workspace RTSP auto-label continuous save with optional timer, and Train Tune bbox detection stepper versioning / locked Dataset Version summary / compact metric trends / hover-only Architecture/Policy tips / scrollable epoch history / result metadata / queue / model registry are functional.
 
 ``` 
 In THIS (**Being Developed**) section, always double-check features or items that have been completed. Make sure the features are working and set them aside or remove them from the list. 
 ```
 
 **Being Developed:**
-- Train Tune / Custom Model Reuse: bbox detection stepper versioning, locked Dataset Version preview, modal Dataset Version/Model Version deletion, detection checkpoint validation, queueing, Standard vs High-Speed GPU policy, live websocket progress, compact metric trends, dataset/run configuration detail panels, scrollable epoch history, and model registry are implemented — custom trained models are not yet wired back into the existing `/workspace` inference flow
-- Auto-Labelling / Rapid Inference: Standalone Dataset Manager page, project overview/delete controls, image bulk/card/review delete controls, Select All Files, real overlay paginated thumbnail gallery, centered modal review with cross-page navigation, compact class/status controls, manual bbox add/edit/delete, simplified multi-prompt Infer Next visual-prompt candidates with per-candidate Accept/Reject plus Accept All & Continue, direct saved-label delete, batch label jobs with frame-by-frame progress, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights
+
+- SAM2.1 Auto-mask: Backend (SAMService on GPU 1, lazy load, thread-safe) + Frontend (auto-mask on manual bbox save in ReviewPage) + API endpoints (status/load/unload, dataset-scoped mask generation) implemented — needs `models/sam2.1_l.pt` placement and end-to-end testing with SAM2.1 weights on GPU 1 (RTX 5080)
+- Train Tune / Custom Model Reuse: bbox detection stepper versioning, locked Dataset Version preview, modal Dataset Version/Model Version deletion, compact model/job cards, Architecture/Policy hover tips, detection checkpoint validation, queueing, Standard vs High-Speed GPU policy, live websocket progress, compact metric trends, dataset/run configuration detail panels, scrollable epoch history, and model registry are implemented — custom trained models are not yet wired back into the existing `/workspace` inference flow
+- Auto-Labelling / Rapid Inference: Standalone Dataset Manager page, project overview/delete controls, image bulk/card/review delete controls, Select All Files, real overlay paginated thumbnail gallery, centered modal review with cross-page navigation, compact class/status controls, zoomable/pannable canvas, viewport-clamped bbox editor, persisted manual class colors, manual bbox add/edit/delete, simplified multi-prompt Infer Next visual-prompt candidates with per-candidate Accept/Reject plus Accept All & Continue, direct saved-label delete, batch label jobs with frame-by-frame progress, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights
 - Free Mode Inference: Backend + Frontend complete — needs `models/yoloe-26l-seg-pf.pt` placement and testing
 - Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights
 - Phase 2 (Video Processing): Backend + Frontend complete — needs testing with sample videos
