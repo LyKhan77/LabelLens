@@ -91,7 +91,7 @@ This section contains critical agent behavior guidelines. Any changes require ex
 - Do not re-read files that have already been read in this session unless necessary.
 - Minimize non-essential tool calls.
 - Save every plan or specification to the `docs/plans/` folder so you can track which plans have been created or are currently being created. This allows you to resume the session if the AI agent's token expires. USE `Superpowers` skill to provide the plan.
-- Be sure to update `@CLAUDE.md` as well if you have updated `@AGENTS.md`, and vice versa. 
+- Be sure to update `@AGENTS.md` as well if you have updated `@CLAUDE.md`, and vice versa. 
 
 ===========================
 
