@@ -528,19 +528,13 @@ async function recomputeFailedJob(jobId: string) {
 
                 <section v-else-if="builderStep === 3" class="space-y-(--spacing-md)">
                   <div>
-                    <div class="train-heading-with-info">
-                      <h2 class="text-[18px] font-medium text-ink">Versioning, Split, and Prep</h2>
-                      <span class="train-info-tag">Policy</span>
-                      <span class="train-info" tabindex="0" aria-label="Split, preprocessing, and augmentation rules are locked into the immutable dataset version." data-tip="Split, preprocessing, and augmentation rules are locked into the immutable dataset version.">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-                      </span>
-                    </div>
+                    <h2 class="text-[18px] font-medium text-ink">Versioning, Split, and Prep</h2>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Deterministic split, preprocessing profile, and augmentation preset are stored inside the immutable dataset version.</p>
                   </div>
                   <div class="train-version-flow">
                     <div class="train-version-lane train-version-split">
                       <div class="train-version-title">
-                        <strong>Train / Val / Test</strong>
+                        <strong class="train-label-with-info">Train / Val / Test <span class="train-param-help" tabindex="0" aria-label="Train/Val/Test controls how images are split for learning, validation, and final holdout evaluation." data-tip="Train learns model weights, Val checks each epoch, Test is held out for final evaluation.">?</span></strong>
                         <span>{{ splitPolicySummary }}</span>
                       </div>
                       <div class="train-split-bar" aria-label="Dataset split preview">
@@ -553,15 +547,15 @@ async function recomputeFailedJob(jobId: string) {
                       </div>
                       <div class="train-version-fields is-split">
                         <label v-if="form.sourceType === 'zip'" class="train-field">
-                          <span>Split Mode</span>
+                          <span class="train-label-with-info">Split Mode <span class="train-param-help" tabindex="0" aria-label="Use existing zip folders or regenerate deterministic train validation test folders." data-tip="Use existing zip folders, or regenerate a deterministic split from all labeled images.">?</span></span>
                           <select v-model="form.splitMode">
                             <option value="existing">Use existing split</option>
                             <option value="regenerate">Regenerate split</option>
                           </select>
                         </label>
-                        <label class="train-field"><span>Train %</span><input v-model.number="form.splitTrain" type="number" min="0" max="100" /></label>
-                        <label class="train-field"><span>Val %</span><input v-model.number="form.splitVal" type="number" min="0" max="100" /></label>
-                        <label class="train-field"><span>Test %</span><input v-model.number="form.splitTest" type="number" min="0" max="100" /></label>
+                        <label class="train-field"><span class="train-label-with-info">Train % <span class="train-param-help" tabindex="0" aria-label="Training image percentage." data-tip="Images used to update model weights during training.">?</span></span><input v-model.number="form.splitTrain" type="number" min="0" max="100" /></label>
+                        <label class="train-field"><span class="train-label-with-info">Val % <span class="train-param-help" tabindex="0" aria-label="Validation image percentage." data-tip="Images used to measure each epoch and choose the best checkpoint.">?</span></span><input v-model.number="form.splitVal" type="number" min="0" max="100" /></label>
+                        <label class="train-field"><span class="train-label-with-info">Test % <span class="train-param-help" tabindex="0" aria-label="Test image percentage." data-tip="Held-out images reserved for final evaluation after training.">?</span></span><input v-model.number="form.splitTest" type="number" min="0" max="100" /></label>
                       </div>
                       <div :class="['train-version-status', totalSplit === 100 ? 'is-valid' : 'is-invalid']">
                         <span>Split total</span>
@@ -572,22 +566,22 @@ async function recomputeFailedJob(jobId: string) {
 
                     <div class="train-version-lane">
                       <div class="train-version-title">
-                        <strong>Preprocessing</strong>
+                        <strong class="train-label-with-info">Preprocessing <span class="train-param-help" tabindex="0" aria-label="Preprocessing controls image normalization before snapshot training." data-tip="Controls image orientation and resize handling before the immutable snapshot is trained.">?</span></strong>
                         <span>Stored with the snapshot before the run is queued.</span>
                       </div>
                       <div class="train-version-fields">
-                        <label class="train-field"><span>Resize Mode</span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="fit">Fit to train resolution</option></select></label>
-                        <label class="train-field"><span>Auto Orient</span><select v-model="form.autoOrient"><option :value="true">Enabled</option><option :value="false">Disabled</option></select></label>
+                        <label class="train-field"><span class="train-label-with-info">Resize Mode <span class="train-param-help" tabindex="0" aria-label="Resize behavior before training." data-tip="Keep original dimensions or fit images to the selected training resolution.">?</span></span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="fit">Fit to train resolution</option></select></label>
+                        <label class="train-field"><span class="train-label-with-info">Auto Orient <span class="train-param-help" tabindex="0" aria-label="Apply EXIF orientation before training." data-tip="Applies EXIF orientation so images train in the same direction users see them.">?</span></span><select v-model="form.autoOrient"><option :value="true">Enabled</option><option :value="false">Disabled</option></select></label>
                       </div>
                       <p class="train-version-note">{{ preprocessingSummary }}</p>
                     </div>
 
                     <div class="train-version-lane">
                       <div class="train-version-title">
-                        <strong>Augmentation</strong>
+                        <strong class="train-label-with-info">Augmentation <span class="train-param-help" tabindex="0" aria-label="Augmentation expands training variation." data-tip="Adds controlled visual variation so the detector generalizes better.">?</span></strong>
                         <span>Preset kept in version metadata for repeatable run setup.</span>
                       </div>
-                      <label class="train-field"><span>Profile</span><select v-model="form.augmentationProfile"><option value="baseline">Baseline</option><option value="standard">Standard</option></select></label>
+                      <label class="train-field"><span class="train-label-with-info">Profile <span class="train-param-help" tabindex="0" aria-label="Augmentation profile." data-tip="Baseline is conservative; Standard applies broader variation for stronger robustness.">?</span></span><select v-model="form.augmentationProfile"><option value="baseline">Baseline</option><option value="standard">Standard</option></select></label>
                       <p class="train-version-note">{{ augmentationSummary }}</p>
                     </div>
                   </div>
@@ -595,25 +589,19 @@ async function recomputeFailedJob(jobId: string) {
 
                 <section v-else-if="builderStep === 2" class="space-y-(--spacing-md)">
                   <div>
-                    <div class="train-heading-with-info">
-                      <h2 class="text-[18px] font-medium text-ink">Training Configuration</h2>
-                      <span class="train-info-tag">Architecture</span>
-                      <span class="train-info" tabindex="0" aria-label="Base YOLO family, size, and checkpoint define detector capacity, speed, VRAM, and starting weights." data-tip="Base YOLO family, size, and checkpoint define detector capacity, speed, VRAM, and starting weights.">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
-                      </span>
-                    </div>
+                    <h2 class="text-[18px] font-medium text-ink">Training Configuration</h2>
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO family, detection checkpoint, and GPU mode used to schedule this bbox training run.</p>
                   </div>
                   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
-                    <label class="train-field"><span>Family</span><select v-model="form.family"><option value="yolo11">YOLO11</option><option value="yolo26">YOLO26</option></select></label>
-                    <label class="train-field"><span>Size</span><select v-model="form.size"><option value="n">n</option><option value="s">s</option><option value="m">m</option><option value="l">l</option></select></label>
-                    <label class="train-field train-field-span"><span>Base Detection Checkpoint</span><input v-model="form.baseCheckpoint" placeholder="yolo26n.pt" /></label>
-                    <label class="train-field"><span>Job Name</span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
-                    <label class="train-field"><span>Training Mode</span><select v-model="form.trainingMode"><option value="standard">Standard · 1x RTX 5080</option><option value="high_speed">High-Speed · 2x RTX 5080</option></select></label>
-                    <label class="train-field"><span>Epochs</span><input v-model.number="form.epochs" type="number" min="1" /></label>
-                    <label class="train-field"><span>Image Size</span><input v-model.number="form.imgsz" type="number" min="320" step="32" /></label>
-                    <label class="train-field"><span>Batch</span><input v-model.number="form.batch" type="number" min="1" /></label>
-                    <label class="train-field"><span>Workers</span><input v-model.number="form.workers" type="number" min="1" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Family <span class="train-param-help" tabindex="0" aria-label="YOLO architecture family." data-tip="Selects the YOLO detector family used as the base architecture.">?</span></span><select v-model="form.family"><option value="yolo11">YOLO11</option><option value="yolo26">YOLO26</option></select></label>
+                    <label class="train-field"><span class="train-label-with-info">Size <span class="train-param-help" tabindex="0" aria-label="Model size tier." data-tip="Larger sizes can improve accuracy but use more VRAM and train slower.">?</span></span><select v-model="form.size"><option value="n">n</option><option value="s">s</option><option value="m">m</option><option value="l">l</option></select></label>
+                    <label class="train-field train-field-span"><span class="train-label-with-info">Base Detection Checkpoint <span class="train-param-help" tabindex="0" aria-label="Starting model weights." data-tip="Detection checkpoint used as starting weights. Segmentation checkpoints are rejected for bbox-only training.">?</span></span><input v-model="form.baseCheckpoint" placeholder="yolo26n.pt" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Job Name <span class="train-param-help" tabindex="0" aria-label="Human-readable run name." data-tip="Name used to identify this run and its output artifact folder.">?</span></span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses both GPUs and waits until inference is idle.">?</span></span><select v-model="form.trainingMode"><option value="standard">Standard · 1x RTX 5080</option><option value="high_speed">High-Speed · 2x RTX 5080</option></select></label>
+                    <label class="train-field"><span class="train-label-with-info">Epochs <span class="train-param-help" tabindex="0" aria-label="Number of full training passes." data-tip="How many full passes through the training split the worker runs.">?</span></span><input v-model.number="form.epochs" type="number" min="1" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Image Size <span class="train-param-help" tabindex="0" aria-label="Training image resolution." data-tip="Input resolution in pixels. Higher values keep detail but cost more VRAM.">?</span></span><input v-model.number="form.imgsz" type="number" min="320" step="32" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Batch <span class="train-param-help" tabindex="0" aria-label="Images per training step." data-tip="Number of images processed per step. Higher batch can be faster but uses more VRAM.">?</span></span><input v-model.number="form.batch" type="number" min="1" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Workers <span class="train-param-help" tabindex="0" aria-label="Data loader worker count." data-tip="Parallel workers used to load and prepare training images.">?</span></span><input v-model.number="form.workers" type="number" min="1" /></label>
                   </div>
                   <p class="train-version-note">Train Tune versions currently store bbox labels. Use a detection checkpoint here; segmentation checkpoints require mask labels and are rejected by the worker.</p>
                 </section>
@@ -1057,12 +1045,11 @@ async function recomputeFailedJob(jobId: string) {
   padding: 0 12px;
 }
 .train-field input[type='file'] { padding: 10px 12px; }
-.train-heading-with-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.train-info-tag { display: inline-flex; align-items: center; min-height: 20px; padding: 0 7px; border: 1px solid var(--color-hairline); border-radius: 999px; color: var(--color-ink-mute); background: var(--color-canvas-soft); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
-.train-info { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px solid var(--color-hairline); border-radius: 999px; color: var(--color-ink-mute); background: var(--color-canvas); cursor: help; }
-.train-info svg { width: 12px; height: 12px; }
-.train-info::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 20; width: 260px; max-width: calc(100vw - 32px); padding: 8px 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14); font-size: 11px; line-height: 1.45; text-transform: none; letter-spacing: 0; transform: translateX(-50%) translateY(4px); opacity: 0; pointer-events: none; transition: opacity 140ms ease, transform 140ms ease; }
-.train-info:hover::after, .train-info:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+.train-label-with-info { display: inline-flex !important; align-items: center; gap: 5px; min-width: 0; }
+.train-param-help { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; flex: 0 0 auto; border: 1px solid var(--color-hairline-strong); border-radius: 999px; color: var(--color-ink-mute); background: var(--color-canvas); cursor: help; font-size: 10px; font-weight: 700; line-height: 1; text-transform: none; }
+.train-param-help::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 7px); z-index: 30; width: 250px; max-width: calc(100vw - 32px); padding: 8px 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16); font-size: 11px; font-weight: 500; line-height: 1.45; text-transform: none; letter-spacing: 0; transform: translateX(-50%) translateY(4px); opacity: 0; pointer-events: none; transition: opacity 140ms ease, transform 140ms ease; }
+.train-param-help:hover::after, .train-param-help:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+.train-param-help:hover, .train-param-help:focus-visible { border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-hairline)); color: var(--color-primary-deep); }
 .train-version-flow { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); overflow: hidden; }
 .train-version-lane { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; border-left: 1px solid var(--color-hairline); }
 .train-version-lane:first-child { border-left: 0; }

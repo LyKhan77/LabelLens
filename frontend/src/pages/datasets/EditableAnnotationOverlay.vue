@@ -46,6 +46,7 @@ const zoom = ref(1)
 const panOffset = ref({ x: 0, y: 0 })
 const isStageActive = ref(false)
 const spacePressed = ref(false)
+const isDraggingAnnotation = ref(false)
 let observer: ResizeObserver | null = null
 let drag: { action: DragAction; pointerId: number; start: { x: number; y: number }; box: Box } | null = null
 let panDrag: { pointerId: number; startClient: { x: number; y: number }; startPan: { x: number; y: number } } | null = null
@@ -263,6 +264,7 @@ function onPlanePointerDown(e: PointerEvent) {
   const point = pointFromEvent(e)
   if (!point) return
   drag = { action: 'create', pointerId: e.pointerId, start: point, box: [point.x, point.y, point.x, point.y] }
+  isDraggingAnnotation.value = true
   planeRef.value?.setPointerCapture(e.pointerId)
   e.preventDefault()
 }
@@ -277,6 +279,7 @@ function onBoxPointerDown(e: PointerEvent, det: DatasetOverlayDetection) {
   const point = pointFromEvent(e)
   if (!point) return
   drag = { action: 'move', pointerId: e.pointerId, start: point, box: normalizeBox((props.draftBox ?? det.box) as Box) }
+  isDraggingAnnotation.value = true
   planeRef.value?.setPointerCapture(e.pointerId)
   e.preventDefault()
 }
@@ -286,6 +289,7 @@ function onHandlePointerDown(e: PointerEvent, action: DragAction) {
   const box = activeBox.value
   if (!point || !box) return
   drag = { action, pointerId: e.pointerId, start: point, box: normalizeBox(box) }
+  isDraggingAnnotation.value = true
   planeRef.value?.setPointerCapture(e.pointerId)
   e.preventDefault()
 }
@@ -330,7 +334,10 @@ function onPointerMove(e: PointerEvent) {
   const point = pointFromEvent(e)
   if (!point) return
   hoverPoint.value = point
-  if (!drag || drag.pointerId !== e.pointerId) return
+  if (!drag || drag.pointerId !== e.pointerId) {
+    isDraggingAnnotation.value = false
+    return
+  }
   applyDrag(point)
 }
 
@@ -355,6 +362,7 @@ function onPointerUp(e: PointerEvent) {
   }
   planeRef.value?.releasePointerCapture(e.pointerId)
   drag = null
+  isDraggingAnnotation.value = false
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -468,15 +476,17 @@ watch(() => [props.width, props.height, props.imageSrc], () => {
         </button>
       </template>
 
-      <div v-if="activeBox" class="dataset-editor-active-box" :style="activeBoxStyle()">
-        <button type="button" class="dataset-editor-handle is-nw" @pointerdown.stop="onHandlePointerDown($event, 'nw')" />
-        <button type="button" class="dataset-editor-handle is-ne" @pointerdown.stop="onHandlePointerDown($event, 'ne')" />
-        <button type="button" class="dataset-editor-handle is-sw" @pointerdown.stop="onHandlePointerDown($event, 'sw')" />
-        <button type="button" class="dataset-editor-handle is-se" @pointerdown.stop="onHandlePointerDown($event, 'se')" />
-        <button type="button" class="dataset-editor-handle is-n" @pointerdown.stop="onHandlePointerDown($event, 'n')" />
-        <button type="button" class="dataset-editor-handle is-s" @pointerdown.stop="onHandlePointerDown($event, 's')" />
-        <button type="button" class="dataset-editor-handle is-w" @pointerdown.stop="onHandlePointerDown($event, 'w')" />
-        <button type="button" class="dataset-editor-handle is-e" @pointerdown.stop="onHandlePointerDown($event, 'e')" />
+      <div v-if="activeBox" class="dataset-editor-active-box" :class="{ 'is-dragging': isDraggingAnnotation }" :style="activeBoxStyle()">
+        <template v-if="!isDraggingAnnotation">
+          <button type="button" class="dataset-editor-handle is-nw" @pointerdown.stop="onHandlePointerDown($event, 'nw')" />
+          <button type="button" class="dataset-editor-handle is-ne" @pointerdown.stop="onHandlePointerDown($event, 'ne')" />
+          <button type="button" class="dataset-editor-handle is-sw" @pointerdown.stop="onHandlePointerDown($event, 'sw')" />
+          <button type="button" class="dataset-editor-handle is-se" @pointerdown.stop="onHandlePointerDown($event, 'se')" />
+          <button type="button" class="dataset-editor-handle is-n" @pointerdown.stop="onHandlePointerDown($event, 'n')" />
+          <button type="button" class="dataset-editor-handle is-s" @pointerdown.stop="onHandlePointerDown($event, 's')" />
+          <button type="button" class="dataset-editor-handle is-w" @pointerdown.stop="onHandlePointerDown($event, 'w')" />
+          <button type="button" class="dataset-editor-handle is-e" @pointerdown.stop="onHandlePointerDown($event, 'e')" />
+        </template>
       </div>
     </div>
 
