@@ -20,3 +20,14 @@ export async function getModelStatus() {
     device: string
   }
 }
+
+export async function loadCustomModel(modelId: string) {
+  const res = await api.post('/model/load-custom', { model_id: modelId })
+  return res.data as {
+    mode: string | null
+    loaded: boolean
+    model_name: string | null
+    device: string
+    class_names: string[]
+  }
+}
