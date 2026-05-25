@@ -92,6 +92,14 @@ function runInference() {
             class="w-full text-xs px-2 py-1.5 rounded border border-hairline bg-canvas text-ink"
           />
         </div>
+        <button
+          v-if="store.hasMediaInput"
+          class="w-full py-1 text-xs font-medium rounded border border-hairline text-ink-mute hover:text-ink hover:bg-canvas-soft transition-colors cursor-pointer"
+          @click="store.clearMediaInput()"
+        >
+          Clear Media
+        </button>
+        <p v-if="store.error && store.canSwitchMediaMode === false" class="text-xs text-red-500">{{ store.error }}</p>
       </div>
 
       <!-- Confidence slider -->
