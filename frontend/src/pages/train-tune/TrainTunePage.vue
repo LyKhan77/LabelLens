@@ -1050,7 +1050,9 @@ async function recomputeFailedJob(jobId: string) {
 .train-param-help::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 7px); z-index: 30; width: 250px; max-width: calc(100vw - 32px); padding: 8px 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16); font-size: 11px; font-weight: 500; line-height: 1.45; text-transform: none; letter-spacing: 0; transform: translateX(-50%) translateY(4px); opacity: 0; pointer-events: none; transition: opacity 140ms ease, transform 140ms ease; }
 .train-param-help:hover::after, .train-param-help:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 .train-param-help:hover, .train-param-help:focus-visible { border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-hairline)); color: var(--color-primary-deep); }
-.train-version-flow { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); overflow: hidden; }
+.train-version-flow { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); overflow: visible; }
+.train-version-flow .train-param-help::after { left: 0; top: calc(100% + 7px); bottom: auto; width: min(230px, calc(100vw - 32px)); transform: translateY(-4px); }
+.train-version-flow .train-param-help:hover::after, .train-version-flow .train-param-help:focus-visible::after { transform: translateY(0); }
 .train-version-lane { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; border-left: 1px solid var(--color-hairline); }
 .train-version-lane:first-child { border-left: 0; }
 .train-version-title { display: flex; flex-direction: column; gap: 4px; }
