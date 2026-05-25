@@ -120,16 +120,23 @@ function runInference() {
 
       <!-- Auto-label toggle -->
       <div class="space-y-1.5">
-        <label class="flex items-center gap-2 text-xs text-ink-mute cursor-pointer">
-          <input
-            type="checkbox"
-            class="accent-primary"
-            :checked="datasetStore.autoLabelActive"
-            @change="datasetStore.autoLabelActive ? datasetStore.disableAutoLabel() : emit('openAutoLabel')"
-          />
-          Auto-Label to Dataset
+        <label class="flex items-center justify-between cursor-pointer">
+          <span class="text-xs text-ink-mute">Auto-Label to Dataset</span>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="datasetStore.autoLabelActive"
+            class="relative w-8 h-4.5 rounded-full transition-colors cursor-pointer"
+            :class="datasetStore.autoLabelActive ? 'bg-primary' : 'bg-hairline-strong'"
+            @click="datasetStore.autoLabelActive ? datasetStore.disableAutoLabel() : emit('openAutoLabel')"
+          >
+            <span
+              class="absolute top-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform"
+              :class="datasetStore.autoLabelActive ? 'translate-x-3.5' : ''"
+            />
+          </button>
         </label>
-        <p v-if="datasetStore.autoLabelActive" class="text-[10px] text-primary pl-5">
+        <p v-if="datasetStore.autoLabelActive" class="text-[10px] text-primary">
           {{ datasetStore.autoLabelDataset }} · {{ datasetStore.autoLabelFps }} fps
         </p>
       </div>
