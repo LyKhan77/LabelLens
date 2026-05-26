@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 
 from backend.services.activity import activity_service
-from backend.services.training import training_service
+from backend.services.training import MissingSegmentationMasksError, training_service
 from backend.services.training_events import training_event_hub
 from backend.services.training_runtime import training_runtime
 
@@ -52,6 +52,7 @@ async def create_live_dataset_version(
     preprocessing_config: str = Form('{}'),
     augmentation_config: str = Form('{"profile": "baseline"}'),
     resize_mode: str = Form('keep'),
+    task_type: str = Form('detect'),
 ):
     try:
         return training_service.create_dataset_version_from_live_dataset(
@@ -62,8 +63,15 @@ async def create_live_dataset_version(
                 'preprocessing_config': _parse_json(preprocessing_config, 'preprocessing_config', {}),
                 'augmentation_config': _parse_json(augmentation_config, 'augmentation_config', {'profile': 'baseline'}),
                 'resize_mode': resize_mode,
+                'task_type': task_type,
             },
         )
+    except MissingSegmentationMasksError as exc:
+        raise HTTPException(400, {
+            'code': 'missing_segmentation_masks',
+            'message': str(exc),
+            'missing': exc.missing,
+        }) from exc
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -76,6 +84,7 @@ async def import_dataset_version(
     split_config: str = Form('{"train": 70, "val": 20, "test": 10}'),
     preprocessing_config: str = Form('{}'),
     augmentation_config: str = Form('{"profile": "baseline"}'),
+    task_type: str = Form('detect'),
 ):
     try:
         return training_service.create_dataset_version_from_zip(
@@ -87,6 +96,7 @@ async def import_dataset_version(
                 'split_config': _parse_json(split_config, 'split_config', {'train': 70, 'val': 20, 'test': 10}),
                 'preprocessing_config': _parse_json(preprocessing_config, 'preprocessing_config', {}),
                 'augmentation_config': _parse_json(augmentation_config, 'augmentation_config', {'profile': 'baseline'}),
+                'task_type': task_type,
             },
         )
     except ValueError as exc:
@@ -126,6 +136,8 @@ async def create_training_job(payload: dict = Body(...)):
         raise HTTPException(404, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     training_runtime.notify_job_queued()
     return job
 
@@ -147,6 +159,8 @@ async def recompute_training_job(job_id: str):
         raise HTTPException(404, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     training_runtime.notify_job_queued()
     return job
 

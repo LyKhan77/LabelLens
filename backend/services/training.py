@@ -14,6 +14,13 @@ from backend.services.dataset import DATASETS_DIR, DatasetService, dataset_servi
 
 TRAIN_TUNE_DIR = os.path.join(DATASETS_DIR, '_train_tune')
 TRAIN_TUNE_WORKSPACE_DIR = os.path.abspath(os.getenv('TRAIN_TUNE_WORKSPACE_DIR', 'traintune-workspace'))
+TRAINING_TASKS = {'detect', 'segment'}
+
+
+class MissingSegmentationMasksError(ValueError):
+    def __init__(self, missing: list[dict]):
+        self.missing = missing
+        super().__init__('Segmentation training requires masks for every accepted annotation')
 
 
 class TrainingService:
@@ -114,7 +121,13 @@ class TrainingService:
         test_items = ordered[train_count + val_count:train_count + val_count + test_count]
         return {'train': train_items, 'val': val_items, 'test': test_items}
 
-    def _build_yolo_lines(self, detections: list[dict], class_to_id: dict[str, int], width: int, height: int) -> str:
+    def _task_type(self, config: dict | None) -> str:
+        task_type = (config or {}).get('task_type') or 'detect'
+        if task_type not in TRAINING_TASKS:
+            raise ValueError("task_type must be 'detect' or 'segment'")
+        return task_type
+
+    def _build_yolo_detect_lines(self, detections: list[dict], class_to_id: dict[str, int], width: int, height: int) -> str:
         lines = []
         for det in detections:
             cls_id = class_to_id.get(det['label'], -1)
@@ -127,6 +140,53 @@ class TrainingService:
             bh = (y2 - y1) / height
             lines.append(f'{cls_id} {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}')
         return '\n'.join(lines)
+
+    def _normalize_polygon(self, points: list, width: int, height: int) -> list[float] | None:
+        normalized: list[float] = []
+        if width <= 0 or height <= 0:
+            return None
+        for point in points:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                return None
+            try:
+                x = min(max(float(point[0]), 0.0), float(width)) / width
+                y = min(max(float(point[1]), 0.0), float(height)) / height
+            except (TypeError, ValueError):
+                return None
+            normalized.extend([x, y])
+        return normalized if len(normalized) >= 6 else None
+
+    def _build_yolo_segment_lines(self, detections: list[dict], class_to_id: dict[str, int], width: int, height: int) -> str:
+        lines = []
+        for det in detections:
+            cls_id = class_to_id.get(det['label'], -1)
+            if cls_id < 0:
+                continue
+            polygon = self._normalize_polygon(det.get('mask') or [], width, height)
+            if not polygon:
+                continue
+            coords = ' '.join(f'{value:.6f}' for value in polygon)
+            lines.append(f'{cls_id} {coords}')
+        return '\n'.join(lines)
+
+    def _build_yolo_lines(self, detections: list[dict], class_to_id: dict[str, int], width: int, height: int, task_type: str) -> str:
+        if task_type == 'segment':
+            return self._build_yolo_segment_lines(detections, class_to_id, width, height)
+        return self._build_yolo_detect_lines(detections, class_to_id, width, height)
+
+    def _missing_segment_masks(self, entries: list[dict]) -> list[dict]:
+        missing = []
+        for entry in entries:
+            for det in entry['detections']:
+                if self._normalize_polygon(det.get('mask') or [], entry['width'], entry['height']):
+                    continue
+                missing.append({
+                    'img_id': entry.get('img_id'),
+                    'image': entry.get('export_filename'),
+                    'detection_id': det.get('id'),
+                    'label': det.get('label'),
+                })
+        return missing
 
     def _unique_name(self, filename: str, used: set[str]) -> str:
         safe = self._slugify(os.path.basename(filename), 'image.jpg')
@@ -193,6 +253,7 @@ class TrainingService:
         shutil.rmtree(self._version_dir(version_id))
 
     def create_dataset_version_from_live_dataset(self, dataset_name: str, config: dict) -> dict:
+        task_type = self._task_type(config)
         pdir = self.dataset_service._project_dir(dataset_name)
         ann_dir = os.path.join(pdir, 'annotations')
         img_dir = os.path.join(pdir, 'images')
@@ -229,6 +290,10 @@ class TrainingService:
 
         if not entries:
             raise ValueError('Dataset has no accepted annotations to train on')
+        if task_type == 'segment':
+            missing = self._missing_segment_masks(entries)
+            if missing:
+                raise MissingSegmentationMasksError(missing)
 
         classes = sorted(class_names)
         class_to_id = {name: idx for idx, name in enumerate(classes)}
@@ -243,7 +308,7 @@ class TrainingService:
                 shutil.copy2(entry['image_path'], os.path.join(dataset_path, 'images', subset, entry['export_filename']))
                 label_name = f"{os.path.splitext(entry['export_filename'])[0]}.txt"
                 Path(dataset_path, 'labels', subset, label_name).write_text(
-                    self._build_yolo_lines(entry['detections'], class_to_id, entry['width'], entry['height']) + '\n'
+                    self._build_yolo_lines(entry['detections'], class_to_id, entry['width'], entry['height'], task_type) + '\n'
                 )
         self._write_dataset_yaml(dataset_path, class_to_id)
 
@@ -259,6 +324,7 @@ class TrainingService:
             'created_at': datetime.now().isoformat(),
             'class_to_id': class_to_id,
             'classes': classes,
+            'task_type': task_type,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
             'preprocessing_config': config.get('preprocessing_config') or {},
             'augmentation_config': config.get('augmentation_config') or {'profile': 'baseline'},
@@ -289,7 +355,32 @@ class TrainingService:
                 names[int(key)] = value
         return names
 
+    def _validate_label_text(self, raw: str, task_type: str, image_name: str, classes: list[str]) -> int:
+        count = 0
+        for line in raw.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            try:
+                cls_id = int(float(parts[0]))
+                values = [float(value) for value in parts[1:]]
+            except (IndexError, TypeError, ValueError) as exc:
+                raise ValueError(f'Invalid label row for {image_name}') from exc
+            if cls_id < 0 or cls_id >= len(classes):
+                raise ValueError(f'Invalid class id in label for {image_name}')
+            if task_type == 'segment':
+                if len(parts) < 7 or len(values) % 2 != 0:
+                    raise ValueError(f'Segmentation labels for {image_name} must use polygon format')
+            elif len(parts) != 5:
+                raise ValueError(f'Detection labels for {image_name} must use bbox format')
+            count += 1
+        if count <= 0:
+            raise ValueError(f'Label for {image_name} has no annotations')
+        return count
+
     def create_dataset_version_from_zip(self, zip_bytes: bytes, source_name: str, config: dict) -> dict:
+        task_type = self._task_type(config)
         version_id = uuid.uuid4().hex
         version_dir = self._version_dir(version_id)
         dataset_path = os.path.join(version_dir, 'dataset')
@@ -316,13 +407,15 @@ class TrainingService:
                     label_name = f'labels/{subset}/{Path(image_name).stem}.txt'
                     if label_name not in names:
                         raise ValueError(f'Missing label for {image_name}')
+                    label_raw = zf.read(label_name).decode()
+                    annotation_count = self._validate_label_text(label_raw, task_type, image_name, classes)
                     export_filename = self._unique_name(os.path.basename(image_name), used_filenames)
                     entries.append({
                         'subset': subset,
                         'image_name': image_name,
                         'label_name': label_name,
                         'export_filename': export_filename,
-                        'detections': [{'label': classes[0]}],
+                        'detections': [{'label': classes[0]} for _ in range(annotation_count)],
                     })
 
             if not entries:
@@ -362,6 +455,7 @@ class TrainingService:
             'created_at': datetime.now().isoformat(),
             'class_to_id': class_to_id,
             'classes': classes,
+            'task_type': task_type,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
             'preprocessing_config': config.get('preprocessing_config') or {},
             'augmentation_config': config.get('augmentation_config') or {'profile': 'baseline'},
@@ -371,10 +465,10 @@ class TrainingService:
             'summary': {
                 'original_file_count': len(entries),
                 'usable_labeled_images': len(entries),
-                'total_annotations': len(entries),
+                'total_annotations': sum(len(entry['detections']) for entry in entries),
                 'class_count': len(classes),
                 'classes': classes,
-                'average_annotations_per_image': 1,
+                'average_annotations_per_image': round(sum(len(entry['detections']) for entry in entries) / len(entries), 2) if entries else 0,
             },
         }
         self._write_json(self._version_meta_path(version_id), payload)
@@ -395,6 +489,7 @@ class TrainingService:
             'estimated_time_range_minutes': [minutes, int(minutes * 1.6)],
             'family': config.get('family', 'yolo11'),
             'size': size,
+            'task_type': version.get('task_type', 'detect'),
         }
 
     def list_training_jobs(self) -> list[dict]:
@@ -414,6 +509,10 @@ class TrainingService:
 
     def create_training_job(self, config: dict, inference_active: bool = False) -> dict:
         version = self.get_dataset_version(config['dataset_version_id'])
+        task_type = version.get('task_type', self._task_type(config))
+        requested_task = self._task_type(config) if config.get('task_type') else task_type
+        if requested_task != task_type:
+            raise ValueError('Training job task_type must match the Dataset Version task_type')
         mode = config.get('training_mode', 'standard')
         if mode == 'high_speed' and inference_active:
             raise RuntimeError('Inference must be idle before starting High-Speed Mode training')
@@ -428,7 +527,7 @@ class TrainingService:
             'dataset_version_id': version['id'],
             'architecture_family': config.get('family', 'yolo11'),
             'architecture_size': config.get('size', 'n'),
-            'task_type': 'detect',
+            'task_type': task_type,
             'base_checkpoint': config.get('base_checkpoint', ''),
             'device_policy': 'dual_5080' if mode == 'high_speed' else 'second_5080',
             'training_mode': mode,
@@ -500,6 +599,7 @@ class TrainingService:
                 'batch': job.get('batch', 8),
                 'workers': job.get('workers', 2),
                 'training_mode': job.get('training_mode', 'standard'),
+                'task_type': job.get('task_type', 'detect'),
             },
             inference_active=inference_active,
         )
@@ -524,6 +624,7 @@ class TrainingService:
             'dataset_version_id': job['dataset_version_id'],
             'family': job['architecture_family'],
             'size': job['architecture_size'],
+            'task_type': job.get('task_type', 'detect'),
             'best_model_path': best_model_path,
             'class_names': job.get('class_names', []),
             'metrics_best': job.get('metrics_latest'),

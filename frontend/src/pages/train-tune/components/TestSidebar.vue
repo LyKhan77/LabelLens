@@ -7,7 +7,7 @@ import { computed } from 'vue'
 const emit = defineEmits<{ openAutoLabel: [] }>()
 
 const store = useInferenceStore()
-const { testModelInfo, loaded, loading, error: modelError, classNames, modelArch } = useTestModel()
+const { testModelInfo, loaded, loading, error: modelError, classNames, modelArch, taskType } = useTestModel()
 const datasetStore = useDatasetStore()
 
 const canRun = computed(() => {
@@ -36,7 +36,7 @@ function runInference() {
           </span>
         </div>
         <div class="text-sm font-medium text-ink truncate">{{ testModelInfo.model_name }}</div>
-        <div class="text-xs text-ink-mute">{{ modelArch }} · {{ classNames.length }} classes</div>
+        <div class="text-xs text-ink-mute">{{ modelArch }} · {{ taskType === 'segment' ? 'Segmentation' : 'Detection' }} · {{ classNames.length }} classes</div>
         <div v-if="testModelInfo.metrics_best" class="text-xs text-ink-mute">
           mAP50: {{ testModelInfo.metrics_best.map50 }}
         </div>

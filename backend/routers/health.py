@@ -52,6 +52,7 @@ async def load_custom_model(req: LoadCustomModelRequest):
         model_service.load_custom_model(
             model_path=model_meta["best_model_path"],
             class_names=model_meta["class_names"],
+            task_type=model_meta.get("task_type", "detect"),
         )
         return model_service.get_status()
     except FileNotFoundError as e:

@@ -1,5 +1,7 @@
 import { api } from './client'
 
+export type TrainingTaskType = 'detect' | 'segment'
+
 export interface DatasetVersion {
   id: string
   source_type: 'live_dataset' | 'export_zip'
@@ -9,6 +11,7 @@ export interface DatasetVersion {
   created_at: string
   class_to_id: Record<string, number>
   classes: string[]
+  task_type: TrainingTaskType
   split_config: { train: number; val: number; test: number }
   preprocessing_config: Record<string, unknown>
   augmentation_config: Record<string, unknown>
@@ -32,6 +35,7 @@ export interface TrainingEstimate {
   estimated_time_range_minutes: [number, number]
   family: string
   size: string
+  task_type: TrainingTaskType
 }
 
 export interface TrainingJob {
@@ -41,7 +45,7 @@ export interface TrainingJob {
   dataset_version_id: string
   architecture_family: string
   architecture_size: string
-  task_type: string
+  task_type: TrainingTaskType
   base_checkpoint: string
   device_policy: string
   training_mode: 'standard' | 'high_speed'
@@ -86,6 +90,7 @@ export interface ModelVersion {
   dataset_version_id: string
   family: string
   size: string
+  task_type: TrainingTaskType
   best_model_path: string
   class_names: string[]
   metrics_best: TrainingMetricPoint | null
@@ -121,6 +126,7 @@ export async function createLiveDatasetVersion(params: {
   preprocessingConfig: Record<string, unknown>
   augmentationConfig: Record<string, unknown>
   resizeMode: string
+  taskType: TrainingTaskType
 }): Promise<DatasetVersion> {
   const form = new FormData()
   form.append('dataset_name', params.datasetName)
@@ -129,6 +135,7 @@ export async function createLiveDatasetVersion(params: {
   form.append('preprocessing_config', JSON.stringify(params.preprocessingConfig))
   form.append('augmentation_config', JSON.stringify(params.augmentationConfig))
   form.append('resize_mode', params.resizeMode)
+  form.append('task_type', params.taskType)
   const res = await api.post('/training/dataset-versions/live', form)
   return res.data
 }
@@ -140,6 +147,7 @@ export async function importDatasetVersion(params: {
   splitConfig: { train: number; val: number; test: number }
   preprocessingConfig: Record<string, unknown>
   augmentationConfig: Record<string, unknown>
+  taskType: TrainingTaskType
 }): Promise<DatasetVersion> {
   const form = new FormData()
   form.append('file', params.file)
@@ -148,6 +156,7 @@ export async function importDatasetVersion(params: {
   form.append('split_config', JSON.stringify(params.splitConfig))
   form.append('preprocessing_config', JSON.stringify(params.preprocessingConfig))
   form.append('augmentation_config', JSON.stringify(params.augmentationConfig))
+  form.append('task_type', params.taskType)
   const res = await api.post('/training/dataset-versions/import', form, { timeout: 300_000 })
   return res.data
 }
@@ -161,6 +170,7 @@ export async function estimateTraining(payload: {
   batch: number
   workers: number
   training_mode: 'standard' | 'high_speed'
+  task_type: TrainingTaskType
 }): Promise<TrainingEstimate> {
   const res = await api.post('/training/estimate', payload)
   return res.data
@@ -187,6 +197,7 @@ export async function createTrainingJob(payload: {
   batch: number
   workers: number
   training_mode: 'standard' | 'high_speed'
+  task_type: TrainingTaskType
 }): Promise<TrainingJob> {
   const res = await api.post('/training/jobs', payload)
   return res.data

@@ -29,5 +29,6 @@ export async function loadCustomModel(modelId: string) {
     model_name: string | null
     device: string
     class_names: string[]
+    task_type: 'detect' | 'segment'
   }
 }

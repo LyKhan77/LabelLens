@@ -90,9 +90,10 @@ def actual_train(job: dict, version: dict):
     def train_runner():
         try:
             model = YOLO(job['base_checkpoint'])
+            expected_task = job.get('task_type', 'detect')
             model_task = getattr(model, 'task', 'unknown')
-            if model_task != 'detect':
-                raise ValueError(f'Train Tune detection runs require a detection checkpoint; got {model_task} checkpoint.')
+            if model_task != expected_task:
+                raise ValueError(f'Train Tune {expected_task} runs require a {expected_task} checkpoint; got {model_task} checkpoint.')
             model.train(
                 data=version['dataset_yaml'],
                 epochs=int(job.get('epochs', 50)),
@@ -129,12 +130,12 @@ def actual_train(job: dict, version: dict):
                     'event': 'metric_update',
                     'epoch': epoch,
                     'total_epochs': int(job.get('epochs', 50)),
-                    'train_loss': metric_value(row, ['train/box_loss', 'train/loss']),
-                    'val_loss': metric_value(row, ['val/box_loss', 'val/loss']),
-                    'map50': metric_value(row, ['metrics/mAP50(B)', 'metrics/mAP50']),
-                    'map50_95': metric_value(row, ['metrics/mAP50-95(B)', 'metrics/mAP50-95']),
-                    'precision': metric_value(row, ['metrics/precision(B)', 'metrics/precision']),
-                    'recall': metric_value(row, ['metrics/recall(B)', 'metrics/recall']),
+                    'train_loss': metric_value(row, ['train/seg_loss', 'train/box_loss', 'train/loss']),
+                    'val_loss': metric_value(row, ['val/seg_loss', 'val/box_loss', 'val/loss']),
+                    'map50': metric_value(row, ['metrics/mAP50(M)', 'metrics/mAP50(B)', 'metrics/mAP50']),
+                    'map50_95': metric_value(row, ['metrics/mAP50-95(M)', 'metrics/mAP50-95(B)', 'metrics/mAP50-95']),
+                    'precision': metric_value(row, ['metrics/precision(M)', 'metrics/precision(B)', 'metrics/precision']),
+                    'recall': metric_value(row, ['metrics/recall(M)', 'metrics/recall(B)', 'metrics/recall']),
                     'lr': metric_value(row, ['lr/pg0', 'lr/pg1', 'lr/pg2']),
                     'time_per_epoch_sec': round(max(0.0, (time.time() - start) / max(1, epoch)), 2),
                     'elapsed_sec': round(time.time() - start, 2),

@@ -29,6 +29,7 @@ class ModelService:
         self.model_path: str | None = None
         self.current_classes: list[str] = []
         self._is_seg_model = False
+        self.current_task_type = 'detect'
         self._vpe_labels: list[str] = []
         self.device = DEVICE
 
@@ -58,12 +59,13 @@ class ModelService:
                 shutil.move(cwd_spawn, model_path)
 
         self._is_seg_model = "seg" in model_path.lower()
+        self.current_task_type = 'segment' if self._is_seg_model else 'detect'
         self.current_mode = mode
         self.model_path = model_path
         self.current_classes = []
         self._vpe_labels = []
 
-    def load_custom_model(self, model_path: str, class_names: list[str]):
+    def load_custom_model(self, model_path: str, class_names: list[str], task_type: str = 'detect'):
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"Custom model not found: {model_path}")
 
@@ -75,7 +77,9 @@ class ModelService:
 
         self.model = YOLO(model_path)
 
-        self._is_seg_model = "seg" in model_path.lower()
+        model_task = getattr(self.model, 'task', None)
+        self.current_task_type = task_type or model_task or 'detect'
+        self._is_seg_model = self.current_task_type == 'segment' or model_task == 'segment'
         self.current_mode = "custom"
         self.model_path = model_path
         self.current_classes = list(class_names)
@@ -88,6 +92,7 @@ class ModelService:
             "model_name": os.path.basename(self.model_path) if self.model_path else None,
             "device": f"cuda:{self.device}",
             "class_names": self.current_classes if self.current_mode == "custom" else [],
+            "task_type": self.current_task_type,
         }
 
     def _require_model(self):

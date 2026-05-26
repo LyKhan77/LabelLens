@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import zipfile
 from unittest.mock import patch
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -129,6 +130,106 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertEqual(version["split_counts"]["test"], 1)
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "images", "train", "train-a.jpg")))
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "labels", "test", "test-a.txt")))
+
+
+    def test_create_segment_dataset_version_from_live_dataset_writes_polygon_labels(self):
+        self.dataset_service.create_project("seg-demo", ["bolt"])
+        saved = self.dataset_service.save_image(
+            "seg-demo",
+            jpg_bytes(width=40, height=30),
+            [
+                {
+                    "box": [4, 6, 24, 21],
+                    "label": "bolt",
+                    "confidence": 0.91,
+                    "mask": [[4, 6], [24, 6], [24, 21], [4, 21]],
+                }
+            ],
+            original_filename="panel-seg.jpg",
+        )
+
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "seg-demo",
+            {
+                "version_name": "seg-demo-v1",
+                "task_type": "segment",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"auto_orient": True},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+
+        self.assertEqual(version["task_type"], "segment")
+        label_path = os.path.join(version["storage_path"], "dataset", "labels", version["split_counts"]["primary"], "panel-seg.txt")
+        row = Path(label_path).read_text().strip().split()
+        self.assertEqual(row[0], "0")
+        self.assertEqual(len(row), 9)
+        self.assertEqual([round(float(value), 6) for value in row[1:]], [0.1, 0.2, 0.6, 0.2, 0.6, 0.7, 0.1, 0.7])
+        self.assertEqual(saved["image"], "img_0001.jpg")
+
+    def test_create_segment_dataset_version_blocks_missing_masks(self):
+        self.dataset_service.create_project("missing-mask", ["bolt"])
+        self.dataset_service.save_image(
+            "missing-mask",
+            jpg_bytes(width=40, height=30),
+            [{"box": [4, 6, 24, 21], "label": "bolt", "confidence": 0.91}],
+            original_filename="needs-mask.jpg",
+        )
+
+        with self.assertRaises(Exception) as ctx:
+            self.training_service.create_dataset_version_from_live_dataset(
+                "missing-mask",
+                {
+                    "version_name": "missing-mask-v1",
+                    "task_type": "segment",
+                    "split_config": {"train": 70, "val": 20, "test": 10},
+                    "preprocessing_config": {"auto_orient": True},
+                    "augmentation_config": {"profile": "baseline"},
+                    "resize_mode": "keep",
+                },
+            )
+
+        self.assertEqual(ctx.exception.missing[0]["image"], "needs-mask.jpg")
+        self.assertEqual(ctx.exception.missing[0]["label"], "bolt")
+
+    def test_create_dataset_version_from_export_zip_accepts_segment_labels(self):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("dataset.yaml", "path: .\ntrain: images/train\nval: images/val\ntest: images/test\nnames:\n  0: bolt\n")
+            zf.writestr("images/train/train-a.jpg", jpg_bytes())
+            zf.writestr("labels/train/train-a.txt", "0 0.1 0.2 0.6 0.2 0.6 0.7 0.1 0.7\n")
+
+        version = self.training_service.create_dataset_version_from_zip(
+            zip_buffer.getvalue(),
+            "seg-export.zip",
+            {
+                "version_name": "zip-seg-v1",
+                "task_type": "segment",
+                "split_mode": "existing",
+                "preprocessing_config": {"auto_orient": False},
+                "augmentation_config": {"profile": "standard"},
+            },
+        )
+
+        self.assertEqual(version["task_type"], "segment")
+        self.assertEqual(version["summary"]["total_annotations"], 1)
+        label_path = os.path.join(version["storage_path"], "dataset", "labels", "train", "train-a.txt")
+        self.assertEqual(Path(label_path).read_text().strip(), "0 0.1 0.2 0.6 0.2 0.6 0.7 0.1 0.7")
+
+    def test_create_dataset_version_from_export_zip_rejects_bbox_labels_for_segment(self):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("dataset.yaml", "path: .\ntrain: images/train\nval: images/val\ntest: images/test\nnames:\n  0: bolt\n")
+            zf.writestr("images/train/train-a.jpg", jpg_bytes())
+            zf.writestr("labels/train/train-a.txt", "0 0.5 0.5 0.5 0.5\n")
+
+        with self.assertRaisesRegex(ValueError, "polygon format"):
+            self.training_service.create_dataset_version_from_zip(
+                zip_buffer.getvalue(),
+                "bad-seg.zip",
+                {"version_name": "bad", "task_type": "segment", "split_mode": "existing"},
+            )
 
     def test_delete_dataset_version_removes_unused_snapshot(self):
         version = self._create_demo_version()
@@ -423,6 +524,7 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertEqual(len(models), 1)
         self.assertEqual(models[0]["job_id"], job["id"])
         self.assertEqual(models[0]["best_model_path"], best_path)
+        self.assertEqual(models[0]["task_type"], "detect")
 
 
 if __name__ == "__main__":

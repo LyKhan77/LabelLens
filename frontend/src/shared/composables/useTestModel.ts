@@ -15,6 +15,7 @@ export function useTestModel() {
   const modelArch = computed(() =>
     testModelInfo.value ? `${testModelInfo.value.family} / ${testModelInfo.value.size}` : '',
   )
+  const taskType = computed(() => testModelInfo.value?.task_type ?? 'detect')
 
   async function loadModelInfo(modelId: string) {
     loading.value = true
@@ -61,6 +62,7 @@ export function useTestModel() {
     modelName,
     classNames,
     modelArch,
+    taskType,
     loadModelInfo,
     loadTestModel,
     reset,

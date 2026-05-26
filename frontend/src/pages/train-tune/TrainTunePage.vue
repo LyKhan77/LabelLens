@@ -39,6 +39,7 @@ function reactiveState() {
     autoOrient: true,
     resizeMode: 'keep',
     augmentationProfile: 'baseline' as 'baseline' | 'standard',
+    taskType: 'detect' as 'detect' | 'segment',
     family: 'yolo11' as 'yolo11' | 'yolo26',
     size: 'n' as 'n' | 's' | 'm' | 'l',
     baseCheckpoint: 'yolo11n.pt',
@@ -113,12 +114,17 @@ const builderSteps = [
 ]
 type MetricTrendKey = typeof metricTrends[number]['key']
 
-function defaultCheckpoint(family: 'yolo11' | 'yolo26', size: 'n' | 's' | 'm' | 'l') {
-  return family === 'yolo11' ? `yolo11${size}.pt` : `yolo26${size}.pt`
+function taskLabel(taskType: 'detect' | 'segment' | string | undefined) {
+  return taskType === 'segment' ? 'Segmentation' : 'Detection'
+}
+
+function defaultCheckpoint(family: 'yolo11' | 'yolo26', size: 'n' | 's' | 'm' | 'l', taskType: 'detect' | 'segment') {
+  const suffix = taskType === 'segment' ? '-seg' : ''
+  return family === 'yolo11' ? `yolo11${size}${suffix}.pt` : `yolo26${size}${suffix}.pt`
 }
 
 function syncCheckpoint() {
-  form.baseCheckpoint = defaultCheckpoint(form.family, form.size)
+  form.baseCheckpoint = defaultCheckpoint(form.family, form.size, form.taskType)
 }
 
 function configText(value: unknown, fallback = 'N/A') {
@@ -241,7 +247,7 @@ watch(() => props.path, async () => {
   await loadRouteState()
 })
 
-watch(() => [form.family, form.size], () => syncCheckpoint(), { immediate: true })
+watch(() => [form.family, form.size, form.taskType], () => syncCheckpoint(), { immediate: true })
 
 async function buildVersion() {
   form.localError = null
@@ -263,6 +269,7 @@ async function buildVersion() {
         preprocessingConfig: { auto_orient: form.autoOrient, resize_mode: form.resizeMode },
         augmentationConfig: { profile: form.augmentationProfile },
         resizeMode: form.resizeMode,
+        taskType: form.taskType,
       })
     } else {
       if (!form.zipFile) {
@@ -276,6 +283,7 @@ async function buildVersion() {
         splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
         preprocessingConfig: { auto_orient: form.autoOrient, resize_mode: form.resizeMode },
         augmentationConfig: { profile: form.augmentationProfile },
+        taskType: form.taskType,
       })
     }
     if (!form.jobName) {
@@ -284,6 +292,15 @@ async function buildVersion() {
     builderStep.value = builderSteps.length
     await refreshEstimate()
   } catch (err) {
+    const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
+    if (detail && typeof detail === 'object' && (detail as { code?: string }).code === 'missing_segmentation_masks') {
+      const missing = ((detail as { missing?: Array<{ image?: string; label?: string }> }).missing ?? [])
+        .slice(0, 6)
+        .map((item) => `${item.image || 'image'} / ${item.label || 'object'}`)
+        .join(', ')
+      form.localError = `${(detail as { message?: string }).message || 'Segmentation masks are incomplete'}. Fix in Dataset Workspace: ${missing}`
+      return
+    }
     form.localError = err instanceof Error ? err.message : 'Gagal membuat dataset version'
   }
 }
@@ -305,6 +322,7 @@ async function refreshEstimate() {
       batch: form.batch,
       workers: form.workers,
       training_mode: form.trainingMode,
+      task_type: form.taskType,
     })
   } catch (err) {
     form.localError = err instanceof Error ? err.message : 'Gagal membuat estimasi training'
@@ -330,6 +348,7 @@ async function submitJob() {
       batch: form.batch,
       workers: form.workers,
       training_mode: form.trainingMode,
+      task_type: form.taskType,
     })
     navigate(`/train-tune/jobs/${job.id}`)
   } catch (err) {
@@ -590,12 +609,13 @@ async function recomputeFailedJob(jobId: string) {
                 <section v-else-if="builderStep === 2" class="space-y-(--spacing-md)">
                   <div>
                     <h2 class="text-[18px] font-medium text-ink">Training Configuration</h2>
-                    <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO family, detection checkpoint, and GPU mode used to schedule this bbox training run.</p>
+                    <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO task, family, checkpoint, and GPU mode used to schedule this training run.</p>
                   </div>
                   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
-                    <label class="train-field"><span class="train-label-with-info">Family <span class="train-param-help" tabindex="0" aria-label="YOLO architecture family." data-tip="Selects the YOLO detector family used as the base architecture.">?</span></span><select v-model="form.family"><option value="yolo11">YOLO11</option><option value="yolo26">YOLO26</option></select></label>
+                    <label class="train-field"><span class="train-label-with-info">Task <span class="train-param-help" tabindex="0" aria-label="Training task." data-tip="Detection trains bbox-only labels. Segmentation trains masks and still outputs boxes.">?</span></span><select v-model="form.taskType"><option value="detect">Detection · BBox</option><option value="segment">Segmentation · BBox + Mask</option></select></label>
+                    <label class="train-field"><span class="train-label-with-info">Family <span class="train-param-help" tabindex="0" aria-label="YOLO architecture family." data-tip="Selects the YOLO family used as the base architecture.">?</span></span><select v-model="form.family"><option value="yolo11">YOLO11</option><option value="yolo26">YOLO26</option></select></label>
                     <label class="train-field"><span class="train-label-with-info">Size <span class="train-param-help" tabindex="0" aria-label="Model size tier." data-tip="Larger sizes can improve accuracy but use more VRAM and train slower.">?</span></span><select v-model="form.size"><option value="n">n</option><option value="s">s</option><option value="m">m</option><option value="l">l</option></select></label>
-                    <label class="train-field train-field-span"><span class="train-label-with-info">Base Detection Checkpoint <span class="train-param-help" tabindex="0" aria-label="Starting model weights." data-tip="Detection checkpoint used as starting weights. Segmentation checkpoints are rejected for bbox-only training.">?</span></span><input v-model="form.baseCheckpoint" placeholder="yolo26n.pt" /></label>
+                    <label class="train-field train-field-span"><span class="train-label-with-info">Base Checkpoint <span class="train-param-help" tabindex="0" aria-label="Starting model weights." data-tip="Must match the selected task: detection checkpoints for bbox training, -seg checkpoints for segmentation.">?</span></span><input v-model="form.baseCheckpoint" :placeholder="form.taskType === 'segment' ? 'yolo26n-seg.pt' : 'yolo26n.pt'" /></label>
                     <label class="train-field"><span class="train-label-with-info">Job Name <span class="train-param-help" tabindex="0" aria-label="Human-readable run name." data-tip="Name used to identify this run and its output artifact folder.">?</span></span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
                     <label class="train-field"><span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses both GPUs and waits until inference is idle.">?</span></span><select v-model="form.trainingMode"><option value="standard">Standard · 1x RTX 5080</option><option value="high_speed">High-Speed · 2x RTX 5080</option></select></label>
                     <label class="train-field"><span class="train-label-with-info">Epochs <span class="train-param-help" tabindex="0" aria-label="Number of full training passes." data-tip="How many full passes through the training split the worker runs.">?</span></span><input v-model.number="form.epochs" type="number" min="1" /></label>
@@ -603,7 +623,7 @@ async function recomputeFailedJob(jobId: string) {
                     <label class="train-field"><span class="train-label-with-info">Batch <span class="train-param-help" tabindex="0" aria-label="Images per training step." data-tip="Number of images processed per step. Higher batch can be faster but uses more VRAM.">?</span></span><input v-model.number="form.batch" type="number" min="1" /></label>
                     <label class="train-field"><span class="train-label-with-info">Workers <span class="train-param-help" tabindex="0" aria-label="Data loader worker count." data-tip="Parallel workers used to load and prepare training images.">?</span></span><input v-model.number="form.workers" type="number" min="1" /></label>
                   </div>
-                  <p class="train-version-note">Train Tune versions currently store bbox labels. Use a detection checkpoint here; segmentation checkpoints require mask labels and are rejected by the worker.</p>
+                  <p class="train-version-note">{{ form.taskType === 'segment' ? 'Segmentation snapshots require every accepted object to have a mask from Dataset Workspace/SAM2.1. Segment models output both bbox and mask.' : 'Detection snapshots train bbox-only labels. Segmentation masks are ignored unless the Segmentation task is selected.' }}</p>
                 </section>
 
                 <section v-else-if="builderStep === 4" class="space-y-(--spacing-md)">
@@ -618,6 +638,7 @@ async function recomputeFailedJob(jobId: string) {
                     </div>
                     <div class="train-preview-grid">
                       <div><span>Source</span><strong>{{ previewSourceName }}</strong></div>
+                      <div><span>Task</span><strong>{{ taskLabel(form.taskType) }}</strong></div>
                       <div><span>Architecture</span><strong>{{ form.family }} {{ form.size }} / {{ form.baseCheckpoint }}</strong></div>
                       <div><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong></div>
                       <div><span>Prep</span><strong>{{ form.resizeMode === 'keep' ? 'Keep size' : 'Fit size' }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
@@ -643,7 +664,10 @@ async function recomputeFailedJob(jobId: string) {
                     <button v-if="builderStep < builderSteps.length" class="dataset-primary-button" @click="nextBuilderStep">Continue</button>
                   </div>
                   <p v-if="form.trainingMode === 'high_speed'" class="train-warning">High-Speed Mode uses both RTX 5080 devices. The job only starts when inference is idle, and new inference requests remain blocked until the run finishes.</p>
-                  <p v-if="form.localError || trainingStore.error" class="train-error">{{ form.localError || trainingStore.error }}</p>
+                  <div v-if="form.localError || trainingStore.error" class="space-y-(--spacing-sm)">
+                    <p class="train-error">{{ form.localError || trainingStore.error }}</p>
+                    <button v-if="form.taskType === 'segment' && form.selectedDataset" class="dataset-secondary-button" @click="navigate('/datasets')">Open Dataset Workspace</button>
+                  </div>
                 </section>
               </div>
             </div>
@@ -668,7 +692,7 @@ async function recomputeFailedJob(jobId: string) {
                 <div class="train-stat"><span>Split Policy</span><strong>{{ versionSplit(trainingStore.selectedVersion) }}</strong><small>{{ versionSplitCounts(trainingStore.selectedVersion) }} images train / val / test</small></div>
                 <div class="train-stat"><span>Preprocessing</span><strong>{{ versionResize(trainingStore.selectedVersion) }}</strong><small>{{ versionOrient(trainingStore.selectedVersion) }}</small></div>
                 <div class="train-stat"><span>Augmentation</span><strong>{{ versionAugment(trainingStore.selectedVersion) }}</strong><small>Locked in Dataset Version</small></div>
-                <div class="train-stat"><span>Training Config</span><strong>{{ form.family }} {{ form.size }} / {{ form.epochs }} epochs</strong><small>{{ form.trainingMode === 'high_speed' ? '2x RTX 5080' : '1x RTX 5080' }} · batch {{ form.batch }}</small></div>
+                <div class="train-stat"><span>Training Config</span><strong>{{ taskLabel(trainingStore.selectedVersion?.task_type || form.taskType) }} / {{ form.family }} {{ form.size }}</strong><small>{{ form.epochs }} epochs · {{ form.trainingMode === 'high_speed' ? '2x RTX 5080' : '1x RTX 5080' }} · batch {{ form.batch }}</small></div>
                 <div class="train-stat" v-if="trainingStore.currentEstimate"><span>Estimate</span><strong>{{ trainingStore.currentEstimate.estimated_time_range_minutes[0] }}-{{ trainingStore.currentEstimate.estimated_time_range_minutes[1] }} min</strong><small>{{ trainingStore.currentEstimate.estimated_disk_usage_mb }} MB · {{ trainingStore.currentEstimate.estimated_vram_tier }} VRAM tier</small></div>
               </div>
               <div v-else class="text-[13px] text-ink-mute">Create or select a Dataset Version first. Split, preprocessing, and augmentation stay locked after the snapshot is stored.</div>
@@ -686,7 +710,7 @@ async function recomputeFailedJob(jobId: string) {
                   <button class="train-list-row train-list-row-main" @click="openJob(job.id)">
                     <div>
                       <strong>{{ job.job_name }}</strong>
-                      <span>{{ job.architecture_family }} / {{ job.architecture_size }} / {{ job.training_mode }}</span>
+                      <span>{{ taskLabel(job.task_type) }} / {{ job.architecture_family }} / {{ job.architecture_size }} / {{ job.training_mode }}</span>
                     </div>
                     <span :class="['dataset-status-pill', `is-${job.status}`]">{{ job.status }}</span>
                   </button>
@@ -709,7 +733,7 @@ async function recomputeFailedJob(jobId: string) {
                   <button class="train-version-select" @click="pickVersion(version)">
                     <div>
                       <strong>{{ version.version_name }}</strong>
-                      <span>{{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
+                      <span>{{ taskLabel(version.task_type) }} / {{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
                     </div>
                   </button>
                   <button class="train-mini-action is-danger train-version-delete" @click.stop="requestDatasetVersionDelete(version)">Delete</button>
@@ -729,7 +753,7 @@ async function recomputeFailedJob(jobId: string) {
                   <button class="train-list-row train-model-open" @click="openResult(model.id)">
                     <div>
                       <strong>{{ model.model_name }}</strong>
-                      <span>{{ model.family }} / {{ model.size }}</span>
+                      <span>{{ taskLabel(model.task_type) }} / {{ model.family }} / {{ model.size }}</span>
                     </div>
                   </button>
                   <div class="train-model-meta">
@@ -771,7 +795,7 @@ async function recomputeFailedJob(jobId: string) {
             <div class="space-y-(--spacing-lg)">
               <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-xxl) py-(--spacing-xxl)">
                 <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-(--spacing-md)">
-                  <div class="train-stat"><span>Job</span><strong>{{ trainingStore.selectedJob.job_name }}</strong><small>{{ trainingStore.selectedJob.architecture_family }} / {{ trainingStore.selectedJob.architecture_size }}</small></div>
+                  <div class="train-stat"><span>Job</span><strong>{{ trainingStore.selectedJob.job_name }}</strong><small>{{ taskLabel(trainingStore.selectedJob.task_type) }} / {{ trainingStore.selectedJob.architecture_family }} / {{ trainingStore.selectedJob.architecture_size }}</small></div>
                   <div class="train-stat"><span>Dataset Version</span><strong>{{ trainingStore.selectedJob.dataset_version_name }}</strong><small>{{ trainingStore.selectedJob.class_names.join(', ') }}</small></div>
                   <div class="train-stat"><span>Epoch</span><strong>{{ latestMetric ? `${latestMetric.epoch}/${latestMetric.total_epochs ?? trainingStore.selectedJob.epochs}` : `0/${trainingStore.selectedJob.epochs}` }}</strong><small>{{ trainingStore.selectedJob.training_mode }}</small></div>
                   <div class="train-stat"><span>ETA</span><strong>{{ latestMetric?.eta_sec ?? 0 }} sec</strong><small>{{ latestMetric?.elapsed_sec ?? 0 }} sec elapsed</small></div>
@@ -843,7 +867,7 @@ async function recomputeFailedJob(jobId: string) {
                   <div><span>Split</span><strong>{{ versionSplit(liveSourceVersion) }}</strong><small>{{ versionSplitCounts(liveSourceVersion) }} images</small></div>
                   <div><span>Preprocessing</span><strong>{{ versionResize(liveSourceVersion) }}</strong><small>{{ versionOrient(liveSourceVersion) }}</small></div>
                   <div><span>Augmentation</span><strong>{{ versionAugment(liveSourceVersion) }}</strong><small>immutable profile</small></div>
-                  <div><span>Checkpoint</span><strong>{{ trainingStore.selectedJob.base_checkpoint }}</strong><small>{{ trainingStore.selectedJob.architecture_family }} {{ trainingStore.selectedJob.architecture_size }}</small></div>
+                  <div><span>Checkpoint</span><strong>{{ trainingStore.selectedJob.base_checkpoint }}</strong><small>{{ taskLabel(trainingStore.selectedJob.task_type) }} / {{ trainingStore.selectedJob.architecture_family }} {{ trainingStore.selectedJob.architecture_size }}</small></div>
                   <div><span>Run Settings</span><strong>{{ trainingStore.selectedJob.epochs }} epochs / {{ trainingStore.selectedJob.imgsz }} px</strong><small>batch {{ trainingStore.selectedJob.batch }} / workers {{ trainingStore.selectedJob.workers }} / {{ trainingStore.selectedJob.training_mode }}</small></div>
                 </div>
               </div>
@@ -882,6 +906,7 @@ async function recomputeFailedJob(jobId: string) {
               <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-xxl) py-(--spacing-xxl)">
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-(--spacing-md)">
                   <div class="train-stat"><span>Model Name</span><strong>{{ trainingStore.selectedModel.model_name }}</strong><small>{{ trainingStore.selectedModel.version_name }}</small></div>
+                  <div class="train-stat"><span>Task</span><strong>{{ taskLabel(trainingStore.selectedModel.task_type) }}</strong><small>{{ trainingStore.selectedModel.task_type === 'segment' ? 'BBox + mask output' : 'BBox output' }}</small></div>
                   <div class="train-stat"><span>Family</span><strong>{{ trainingStore.selectedModel.family }}</strong><small>size {{ trainingStore.selectedModel.size }}</small></div>
                   <div class="train-stat"><span>Classes</span><strong>{{ trainingStore.selectedModel.class_names.length }}</strong><small>{{ trainingStore.selectedModel.class_names.join(', ') }}</small></div>
                   <div class="train-stat"><span>Best Artifact</span><strong>{{ trainingStore.selectedModel.best_model_path }}</strong><small>registered output</small></div>
@@ -943,7 +968,7 @@ async function recomputeFailedJob(jobId: string) {
               <div v-if="resultJob" class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
                 <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Training Configuration</h3>
                 <div class="train-policy-grid">
-                  <div><span>Checkpoint</span><strong>{{ resultJob.base_checkpoint }}</strong><small>{{ resultJob.architecture_family }} {{ resultJob.architecture_size }}</small></div>
+                  <div><span>Checkpoint</span><strong>{{ resultJob.base_checkpoint }}</strong><small>{{ taskLabel(resultJob.task_type) }} / {{ resultJob.architecture_family }} {{ resultJob.architecture_size }}</small></div>
                   <div><span>Run Settings</span><strong>{{ resultJob.epochs }} epochs / {{ resultJob.imgsz }} px</strong><small>batch {{ resultJob.batch }} / workers {{ resultJob.workers }}</small></div>
                   <div><span>Compute</span><strong>{{ resultJob.training_mode }}</strong><small>{{ resultJob.device_policy }}</small></div>
                 </div>
@@ -955,7 +980,7 @@ async function recomputeFailedJob(jobId: string) {
                   <button v-for="model in trainingStore.models" :key="model.id" class="train-list-row" @click="openResult(model.id)">
                     <div>
                       <strong>{{ model.model_name }}</strong>
-                      <span>{{ model.family }} / {{ model.size }}</span>
+                      <span>{{ taskLabel(model.task_type) }} / {{ model.family }} / {{ model.size }}</span>
                     </div>
                   </button>
                 </div>
