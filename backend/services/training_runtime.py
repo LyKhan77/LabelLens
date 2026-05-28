@@ -1,7 +1,9 @@
 import json
 import os
+import signal
 import subprocess
 import threading
+import time
 from datetime import datetime
 
 from backend.services.activity import activity_service
@@ -34,8 +36,26 @@ class TrainingRuntime:
         training_event_hub.publish(job_id, {'event': 'job_cancelled'})
         with self._lock:
             if self._current_job_id == job_id and self._current_process is not None:
-                self._current_process.terminate()
+                self._terminate_process_group(self._current_process)
         self._wake.set()
+
+    def _terminate_process_group(self, process: subprocess.Popen):
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except Exception:
+            process.terminate()
+        deadline = time.time() + 5.0
+        while process.poll() is None and time.time() < deadline:
+            time.sleep(0.1)
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+            except Exception:
+                process.kill()
 
     def _next_queued_job(self) -> dict | None:
         jobs = [job for job in training_service.list_training_jobs() if job.get('status') == 'queued']
@@ -57,6 +77,14 @@ class TrainingRuntime:
         training_event_hub.publish(job['id'], {'event': 'job_started', 'phase': 'preparing'})
         if job.get('training_mode') == 'high_speed':
             activity_service.set_high_speed_training(True)
+        try:
+            self._preflight_job(job, version)
+        except Exception as exc:
+            training_service.fail_training_job(job['id'], f'Preflight failed: {exc}')
+            training_event_hub.publish(job['id'], {'event': 'job_failed', 'error': f'Preflight failed: {exc}'})
+            if job.get('training_mode') == 'high_speed':
+                activity_service.set_high_speed_training(False)
+            return
 
         cmd = [
             'env/bin/python',
@@ -71,6 +99,13 @@ class TrainingRuntime:
         device_policy = resolve_training_device_policy(job)
         env['CUDA_DEVICE_ORDER'] = device_policy['cuda_device_order']
         env['CUDA_VISIBLE_DEVICES'] = device_policy['cuda_visible_devices']
+        training_service.update_training_job(
+            job['id'],
+            amp=device_policy['amp'],
+            cuda_device_order=device_policy['cuda_device_order'],
+            cuda_visible_devices=device_policy['cuda_visible_devices'],
+            train_device=device_policy['device'],
+        )
 
         process = subprocess.Popen(
             cmd,
@@ -79,14 +114,20 @@ class TrainingRuntime:
             stderr=subprocess.STDOUT,
             text=True,
             env=env,
+            start_new_session=True,
         )
         with self._lock:
             self._current_process = process
             self._current_job_id = job['id']
 
         try:
+            log_path = job.get('train_log_path')
+            log_file = open(log_path, 'a', encoding='utf-8') if log_path else None
             if process.stdout is not None:
                 for line in process.stdout:
+                    if log_file is not None:
+                        log_file.write(line)
+                        log_file.flush()
                     line = line.strip()
                     if not line:
                         continue
@@ -99,6 +140,8 @@ class TrainingRuntime:
             return_code = process.wait()
             if process.stdout is not None:
                 process.stdout.close()
+            if log_file is not None:
+                log_file.close()
             latest = training_service.get_training_job(job['id'])
             if latest.get('status') not in {'completed', 'failed', 'cancelled'}:
                 if return_code == 0:
@@ -113,6 +156,34 @@ class TrainingRuntime:
             with self._lock:
                 self._current_process = None
                 self._current_job_id = None
+
+    def _preflight_job(self, job: dict, version: dict):
+        dataset_yaml = version.get('dataset_yaml')
+        if not dataset_yaml or not os.path.isfile(dataset_yaml):
+            raise RuntimeError('dataset.yaml not found')
+        dataset_dir = os.path.dirname(dataset_yaml)
+        train_dir = os.path.join(dataset_dir, 'images', 'train')
+        labels_dir = os.path.join(dataset_dir, 'labels', 'train')
+        if not os.path.isdir(train_dir) or not os.listdir(train_dir):
+            raise RuntimeError('training images not found')
+        if not os.path.isdir(labels_dir):
+            raise RuntimeError('training labels directory not found')
+        checkpoint = job.get('resume_from_checkpoint') if job.get('resume') else job.get('base_checkpoint')
+        if checkpoint != 'mock' and (not checkpoint or not os.path.isfile(checkpoint)):
+            raise RuntimeError(f'checkpoint not found: {checkpoint}')
+        output_dir = job.get('output_dir')
+        if not output_dir:
+            raise RuntimeError('output directory not configured')
+        os.makedirs(output_dir, exist_ok=True)
+        probe_path = os.path.join(output_dir, '.write-test')
+        with open(probe_path, 'w', encoding='utf-8') as f:
+            f.write('ok')
+        os.remove(probe_path)
+        if os.getenv('LABELLENS_TRAIN_TUNE_FAKE', '0') != '1' and checkpoint != 'mock':
+            try:
+                import ultralytics  # noqa: F401
+            except Exception as exc:
+                raise RuntimeError(f'Ultralytics import failed: {exc}') from exc
 
     def _handle_worker_event(self, job_id: str, event: dict):
         kind = event.get('event')
@@ -137,6 +208,16 @@ class TrainingRuntime:
             training_service.update_training_job(job_id, status='running')
         elif kind == 'checkpoint_saved':
             training_service.update_training_job(job_id, last_checkpoint_path=event.get('path'))
+        elif kind == 'training_device_mapping':
+            training_service.update_training_job(
+                job_id,
+                amp=event.get('amp'),
+                cuda_device_order=event.get('cuda_device_order'),
+                cuda_visible_devices=event.get('cuda_visible_devices'),
+                train_device=event.get('device'),
+            )
+        elif kind == 'raw_results_csv_path':
+            training_service.update_training_job(job_id, raw_results_csv_path=event.get('path'))
         elif kind == 'job_completed':
             completed = training_service.complete_training_job(
                 job_id,

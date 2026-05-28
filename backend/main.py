@@ -6,10 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.config import CORS_ORIGINS
 from backend.routers import dataset, detection, health, sam, stream, training
 from backend.services.model import model_service
+from backend.services.training import training_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    training_service.mark_interrupted_jobs_failed()
     yield
 
 

@@ -61,9 +61,10 @@ function reactiveState() {
     splitTrain: 70,
     splitVal: 20,
     splitTest: 10,
-    autoOrient: true,
-    resizeMode: 'keep' as 'keep' | 'letterbox' | 'stretch',
-    augmentMultiplier: 1,
+      autoOrient: true,
+      resizeMode: 'keep' as 'keep' | 'letterbox' | 'stretch',
+      augmentationMode: 'basic' as 'basic' | 'advanced',
+      augmentMultiplier: 1,
     augFlipHorizontal: 0,
     augFlipVertical: 0,
     augRotation: 0,
@@ -134,13 +135,17 @@ const preprocessingSummary = computed(() => `${resizeStrategyLabel.value}; ${for
 const selectedDatasetProject = computed(() => datasetStore.projects.find((project) => project.name === form.selectedDataset) ?? null)
 const estimatedSourceImages = computed(() => selectedDatasetProject.value?.stats.accepted || selectedDatasetProject.value?.stats.total_images || 0)
 const estimatedTrainOriginal = computed(() => Math.round(estimatedSourceImages.value * (form.splitTrain / 100)))
-const activeAugmentationSteps = computed(() => augmentationSteps.filter((step) => augmentValue(step.key) > 0))
+const advancedAugmentationEnabled = computed(() => form.augmentationMode === 'advanced')
+const activeAugmentationSteps = computed(() => advancedAugmentationEnabled.value ? augmentationSteps.filter((step) => augmentValue(step.key) > 0) : [])
 const activeMaterializedSteps = computed(() => activeAugmentationSteps.value.filter((step) => step.materialized))
 const estimatedGeneratedImages = computed(() => activeMaterializedSteps.value.length ? Math.max(0, estimatedTrainOriginal.value * (form.augmentMultiplier - 1)) : 0)
 const estimatedFinalImages = computed(() => estimatedSourceImages.value + estimatedGeneratedImages.value)
-const augmentationSummary = computed(() => activeAugmentationSteps.value.length
-  ? `${activeAugmentationSteps.value.length} optional steps; ${form.augmentMultiplier}x train-only cap; ${estimatedGeneratedImages.value} generated train images estimated.`
-  : 'No augmentation steps. Training uses original dataset images unless steps are added.')
+const augmentationSummary = computed(() => {
+  if (!advancedAugmentationEnabled.value) return 'Basic online augmentation; no generated snapshot images.'
+  return activeAugmentationSteps.value.length
+    ? `${activeAugmentationSteps.value.length} optional steps; ${form.augmentMultiplier}x train-only cap; ${estimatedGeneratedImages.value} generated train images estimated.`
+    : 'Advanced mode with no custom steps. Training uses original dataset images unless steps are added.'
+})
 const availableAugmentationSteps = computed(() => augmentationSteps.filter((step) => !activeAugmentationSteps.value.some((active) => active.key === step.key)))
 const activeAugmentStep = computed(() => augmentationSteps.find((step) => step.key === activeAugmentKey.value) ?? null)
 const modalPreviewImage = computed(() => trainingStore.policyPreview?.samples?.[0]?.original.image ?? '')
@@ -338,8 +343,26 @@ function activeOnlineConfig() {
 }
 
 function policyAugmentationConfig() {
+  if (form.augmentationMode === 'basic') {
+    return {
+      mode: 'basic',
+      profile: 'basic',
+      multiplier: 1,
+      apply_to: 'train',
+      offline: {},
+      online: {
+        fliplr: 0.5,
+        hsv_s: 0.3,
+        hsv_v: 0.25,
+        translate: 0.05,
+        scale: 0.25,
+        mosaic: 0.5,
+        close_mosaic: 10,
+      },
+    }
+  }
   return {
-    mode: 'hybrid',
+    mode: 'advanced',
     profile: activeAugmentationSteps.value.length ? 'custom' : 'none',
     multiplier: activeMaterializedSteps.value.length ? Math.min(Math.max(Number(form.augmentMultiplier) || 1, 1), 5) : 1,
     apply_to: 'train',
@@ -659,6 +682,11 @@ async function recomputeFailedJob(jobId: string) {
   const job = await trainingStore.recomputeJob(jobId)
   navigate(`/train-tune/jobs/${job.id}`)
 }
+
+async function resumeJob(jobId: string) {
+  const job = await trainingStore.resumeJob(jobId)
+  navigate(`/train-tune/jobs/${job.id}`)
+}
 </script>
 
 <template>
@@ -787,40 +815,56 @@ async function recomputeFailedJob(jobId: string) {
                       <p class="train-version-note">Best practice: keep original or Letterbox. Stretch is available for Roboflow-style exports but can distort object shape.</p>
                     </div>
 
-                    <div class="train-policy-section">
-                      <div class="train-version-title">
-                        <strong>2. Augmentation</strong>
-                        <span>{{ augmentationSummary }}</span>
-                      </div>
-                      <div v-if="!activeAugmentationSteps.length" class="train-augment-empty">
-                        <strong>No augmentation steps</strong>
-                        <span>Add steps only when your dataset needs extra visual variation.</span>
-                      </div>
-                      <div v-else class="train-augment-step-list">
-                        <div v-for="step in activeAugmentationSteps" :key="step.key" class="train-augment-step-row">
-                          <button class="train-augment-step-main" @click="openAugmentModal(step.key)">
-                            <strong>{{ step.label }}</strong>
-                            <span>{{ formatAugmentValue(step.key) }} · {{ step.materialized ? 'materialized preview' : 'training-only' }}</span>
-                          </button>
-                          <button class="train-mini-action" @click="openAugmentModal(step.key)">Edit</button>
-                          <button class="train-mini-action is-danger" @click="removeAugmentStep(step.key)">Delete</button>
+                      <div class="train-policy-section">
+                        <div class="train-version-title">
+                          <strong>2. Augmentation</strong>
+                          <span>{{ augmentationSummary }}</span>
                         </div>
-                      </div>
-                      <div class="train-add-augment">
-                        <button class="dataset-secondary-button" :aria-expanded="showAugmentMenu" @click="showAugmentMenu = !showAugmentMenu">Add Augmentation Step</button>
-                        <div v-if="showAugmentMenu" class="train-augment-menu">
-                          <button v-for="step in availableAugmentationSteps" :key="step.key" @click="openAugmentModal(step.key)">
-                            <strong>{{ step.label }}</strong>
-                            <span>{{ step.materialized ? 'Preview + snapshot' : 'Training-only' }} · Recommended {{ formatAugmentValue(step.key, step.defaultValue) }}</span>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-(--spacing-sm)">
+                          <button type="button" class="train-choice" :class="form.augmentationMode === 'basic' ? 'is-active' : ''" @click="form.augmentationMode = 'basic'">
+                            <strong>Basic</strong>
+                            <span>Safe online YOLO augmentation only; no extra snapshot files.</span>
                           </button>
-                          <span v-if="!availableAugmentationSteps.length" class="train-empty">All augmentation steps are already added.</span>
+                          <button type="button" class="train-choice" :class="form.augmentationMode === 'advanced' ? 'is-active' : ''" @click="form.augmentationMode = 'advanced'">
+                            <strong>Advanced</strong>
+                            <span>Custom steps, backend preview, and optional train-only generated images.</span>
+                          </button>
                         </div>
+                        <div v-if="!advancedAugmentationEnabled" class="train-augment-empty">
+                          <strong>Basic online preset</strong>
+                          <span>Horizontal flip, color jitter, translate, scale, mosaic, and close mosaic are applied by Ultralytics during training.</span>
+                        </div>
+                        <template v-else>
+                          <div v-if="!activeAugmentationSteps.length" class="train-augment-empty">
+                            <strong>No augmentation steps</strong>
+                            <span>Add steps only when your dataset needs extra visual variation.</span>
+                          </div>
+                          <div v-else class="train-augment-step-list">
+                            <div v-for="step in activeAugmentationSteps" :key="step.key" class="train-augment-step-row">
+                              <button class="train-augment-step-main" @click="openAugmentModal(step.key)">
+                                <strong>{{ step.label }}</strong>
+                                <span>{{ formatAugmentValue(step.key) }} · {{ step.materialized ? 'materialized preview' : 'training-only' }}</span>
+                              </button>
+                              <button class="train-mini-action" @click="openAugmentModal(step.key)">Edit</button>
+                              <button class="train-mini-action is-danger" @click="removeAugmentStep(step.key)">Delete</button>
+                            </div>
+                          </div>
+                          <div class="train-add-augment">
+                            <button class="dataset-secondary-button" :aria-expanded="showAugmentMenu" @click="showAugmentMenu = !showAugmentMenu">Add Augmentation Step</button>
+                            <div v-if="showAugmentMenu" class="train-augment-menu">
+                              <button v-for="step in availableAugmentationSteps" :key="step.key" @click="openAugmentModal(step.key)">
+                                <strong>{{ step.label }}</strong>
+                                <span>{{ step.materialized ? 'Preview + snapshot' : 'Training-only' }} · Recommended {{ formatAugmentValue(step.key, step.defaultValue) }}</span>
+                              </button>
+                              <span v-if="!availableAugmentationSteps.length" class="train-empty">All augmentation steps are already added.</span>
+                            </div>
+                          </div>
+                        </template>
                       </div>
-                    </div>
 
-                    <div class="train-policy-section">
-                      <div class="train-version-title">
-                        <strong>3. Generate Size</strong>
+                      <div v-if="advancedAugmentationEnabled" class="train-policy-section">
+                        <div class="train-version-title">
+                          <strong>3. Generate Size</strong>
                         <span>Maximum Version Size multiplies only train images and only when materialized augmentation steps exist.</span>
                       </div>
                       <div class="train-version-fields">
@@ -833,10 +877,10 @@ async function recomputeFailedJob(jobId: string) {
                       </div>
                     </div>
 
-                    <div class="train-policy-section">
-                      <div class="train-version-title">
-                        <strong>4. Preview</strong>
-                        <span>Backend renders 3 samples with transformed bbox/mask overlays before snapshot creation.</span>
+                      <div class="train-policy-section">
+                        <div class="train-version-title">
+                          <strong>{{ advancedAugmentationEnabled ? '4' : '3' }}. Preview</strong>
+                          <span>Backend renders 3 samples with transformed bbox/mask overlays before snapshot creation.</span>
                       </div>
                       <div class="flex flex-wrap gap-(--spacing-sm)">
                         <button class="dataset-secondary-button" :disabled="trainingStore.policyPreviewLoading" @click="previewPolicy">{{ trainingStore.policyPreviewLoading ? 'Generating...' : 'Generate Preview' }}</button>
@@ -891,7 +935,7 @@ async function recomputeFailedJob(jobId: string) {
                       <div><span>Architecture</span><strong>{{ form.family }} {{ form.size }} / {{ form.baseCheckpoint }}</strong></div>
                       <div><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong></div>
                       <div><span>Prep</span><strong>{{ resizeStrategyLabel }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
-                      <div><span>Augment</span><strong>{{ form.augmentMultiplier }}x train-only</strong></div>
+                        <div><span>Augment</span><strong>{{ form.augmentationMode === 'basic' ? 'Basic online' : `${form.augmentMultiplier}x advanced` }}</strong></div>
                     </div>
                   </div>
                 </section>
@@ -963,10 +1007,11 @@ async function recomputeFailedJob(jobId: string) {
                     </div>
                     <span :class="['dataset-status-pill', `is-${job.status}`]">{{ job.status }}</span>
                   </button>
-                  <div v-if="job.status === 'failed'" class="train-list-actions">
-                    <button class="train-mini-action" @click.stop="recomputeFailedJob(job.id)">Re-compute</button>
-                    <button class="train-mini-action is-danger" @click.stop="requestFailedJobDelete(job)">Delete</button>
-                  </div>
+                    <div v-if="job.status === 'failed' || job.status === 'cancelled'" class="train-list-actions">
+                      <button v-if="job.last_checkpoint_path" class="train-mini-action" @click.stop="resumeJob(job.id)">Resume</button>
+                      <button v-if="job.status === 'failed'" class="train-mini-action" @click.stop="recomputeFailedJob(job.id)">Re-compute</button>
+                      <button v-if="job.status === 'failed'" class="train-mini-action is-danger" @click.stop="requestFailedJobDelete(job)">Delete</button>
+                    </div>
                 </div>
                 <div v-if="!trainingStore.jobs.length" class="train-empty">No training jobs yet.</div>
               </div>
@@ -1029,10 +1074,11 @@ async function recomputeFailedJob(jobId: string) {
               <div class="flex items-center gap-(--spacing-md) flex-wrap">
                 <span :class="['dataset-status-pill', `is-${trainingStore.selectedJob.status}`]">{{ trainingStore.selectedJob.status }}</span>
                 <button v-if="trainingStore.selectedJob.status === 'completed'" class="dataset-primary-button" @click="openResultFromJob(trainingStore.selectedJob)">Open Result</button>
-                <template v-else-if="trainingStore.selectedJob.status === 'failed'">
-                  <button class="dataset-primary-button" @click="recomputeFailedJob(trainingStore.selectedJob.id)">Re-compute</button>
-                  <button class="dataset-secondary-button" @click="requestFailedJobDelete(trainingStore.selectedJob)">Delete</button>
-                </template>
+                  <template v-else-if="trainingStore.selectedJob.status === 'failed' || trainingStore.selectedJob.status === 'cancelled'">
+                    <button v-if="trainingStore.selectedJob.last_checkpoint_path" class="dataset-primary-button" @click="resumeJob(trainingStore.selectedJob.id)">Resume</button>
+                    <button v-if="trainingStore.selectedJob.status === 'failed'" class="dataset-primary-button" @click="recomputeFailedJob(trainingStore.selectedJob.id)">Re-compute</button>
+                    <button v-if="trainingStore.selectedJob.status === 'failed'" class="dataset-secondary-button" @click="requestFailedJobDelete(trainingStore.selectedJob)">Delete</button>
+                  </template>
                 <button v-else-if="!['failed', 'cancelled'].includes(trainingStore.selectedJob.status)" class="dataset-secondary-button" @click="trainingStore.cancelJob(trainingStore.selectedJob.id)">Cancel Job</button>
               </div>
             </div>
@@ -1117,16 +1163,19 @@ async function recomputeFailedJob(jobId: string) {
                   <div><span>Preprocessing</span><strong>{{ versionResize(liveSourceVersion) }}</strong><small>{{ versionOrient(liveSourceVersion) }}</small></div>
                   <div><span>Augmentation</span><strong>{{ versionAugment(liveSourceVersion) }}</strong><small>immutable profile</small></div>
                   <div><span>Checkpoint</span><strong>{{ trainingStore.selectedJob.base_checkpoint }}</strong><small>{{ taskLabel(trainingStore.selectedJob.task_type) }} / {{ trainingStore.selectedJob.architecture_family }} {{ trainingStore.selectedJob.architecture_size }}</small></div>
-                  <div><span>Run Settings</span><strong>{{ trainingStore.selectedJob.epochs }} epochs / {{ trainingStore.selectedJob.imgsz }} px</strong><small>batch {{ trainingStore.selectedJob.batch }} / workers {{ trainingStore.selectedJob.workers }} / {{ trainingStore.selectedJob.training_mode }}</small></div>
-                </div>
+                    <div><span>Run Settings</span><strong>{{ trainingStore.selectedJob.epochs }} epochs / {{ trainingStore.selectedJob.imgsz }} px</strong><small>batch {{ trainingStore.selectedJob.batch }} / workers {{ trainingStore.selectedJob.workers }} / {{ trainingStore.selectedJob.training_mode }}</small></div>
+                    <div><span>Compute</span><strong>{{ trainingStore.selectedJob.cuda_visible_devices || trainingStore.selectedJob.device_policy }}</strong><small>device {{ trainingStore.selectedJob.train_device || 'pending' }} / AMP {{ trainingStore.selectedJob.amp === null || trainingStore.selectedJob.amp === undefined ? 'pending' : trainingStore.selectedJob.amp ? 'on' : 'off' }}</small></div>
+                  </div>
               </div>
               <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-lg) py-(--spacing-lg)">
                 <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Artifacts</h3>
                 <div class="space-y-(--spacing-sm) text-[13px] text-ink-mute">
                   <div><strong class="text-ink">Output</strong><br />{{ trainingStore.selectedJob.output_dir }}</div>
-                  <div><strong class="text-ink">Latest checkpoint</strong><br />{{ trainingStore.selectedJob.last_checkpoint_path || 'Waiting for first checkpoint...' }}</div>
-                  <div><strong class="text-ink">Best model</strong><br />{{ trainingStore.selectedJob.best_model_path || 'Available after completion' }}</div>
-                </div>
+                    <div><strong class="text-ink">Latest checkpoint</strong><br />{{ trainingStore.selectedJob.last_checkpoint_path || 'Waiting for first checkpoint...' }}</div>
+                    <div><strong class="text-ink">Best model</strong><br />{{ trainingStore.selectedJob.best_model_path || 'Available after completion' }}</div>
+                    <div><strong class="text-ink">Train log</strong><br />{{ trainingStore.selectedJob.train_log_path || 'Pending worker start' }}</div>
+                    <div><strong class="text-ink">Results CSV</strong><br />{{ trainingStore.selectedJob.raw_results_csv_path || 'Pending first epoch' }}</div>
+                  </div>
               </div>
             </aside>
           </div>

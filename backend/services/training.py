@@ -25,6 +25,18 @@ from backend.services.dataset import DATASETS_DIR, DatasetService, dataset_servi
 TRAIN_TUNE_DIR = os.path.join(DATASETS_DIR, '_train_tune')
 TRAIN_TUNE_WORKSPACE_DIR = os.path.abspath(os.getenv('TRAIN_TUNE_WORKSPACE_DIR', 'traintune-workspace'))
 TRAINING_TASKS = {'detect', 'segment'}
+TRAINING_FAMILIES = {'yolo11', 'yolo26'}
+TRAINING_SIZES = {'n', 's', 'm', 'l'}
+TRAINING_MODES = {'standard', 'high_speed'}
+BASIC_AUGMENTATION_ONLINE = {
+    'fliplr': 0.5,
+    'hsv_s': 0.3,
+    'hsv_v': 0.25,
+    'translate': 0.05,
+    'scale': 0.25,
+    'mosaic': 0.5,
+    'close_mosaic': 10.0,
+}
 
 
 class MissingSegmentationMasksError(ValueError):
@@ -298,11 +310,20 @@ class TrainingService:
 
     def _normalize_augmentation_config(self, config: dict) -> dict:
         raw = config.get('augmentation_config') or {'profile': 'baseline'}
-        if raw.get('mode') == 'hybrid':
+        if raw.get('mode') == 'basic':
+            return {
+                'mode': 'basic',
+                'profile': 'basic',
+                'multiplier': 1,
+                'apply_to': 'train',
+                'offline': {},
+                'online': dict(BASIC_AUGMENTATION_ONLINE),
+            }
+        if raw.get('mode') in {'hybrid', 'advanced'}:
             multiplier = int(raw.get('multiplier') or 1)
             multiplier = min(max(multiplier, 1), 5)
             return {
-                'mode': 'hybrid',
+                'mode': 'advanced',
                 'profile': raw.get('profile', 'custom'),
                 'multiplier': multiplier,
                 'apply_to': 'train',
@@ -314,7 +335,7 @@ class TrainingService:
         if profile == 'standard':
             online = {'fliplr': 0.5, 'degrees': 5.0, 'translate': 0.05, 'scale': 0.25, 'mosaic': 0.5}
         return {
-            'mode': 'hybrid',
+            'mode': 'advanced',
             'profile': profile,
             'multiplier': 1,
             'apply_to': 'train',
@@ -465,7 +486,7 @@ class TrainingService:
         if noise > 0:
             transforms.append(A.GaussNoise(p=min(noise, 1.0)))
         if not transforms:
-            transforms.append(A.HorizontalFlip(p=1.0))
+            return None
         return A.Compose(
             transforms,
             bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels'], min_visibility=0.05),
@@ -503,6 +524,8 @@ class TrainingService:
         if not detections:
             return image, []
         offline = augmentation_config.get('offline') or {}
+        if not any(float(value or 0) > 0 for value in offline.values()):
+            return image, detections
         transform = self._build_albumentations_transform(offline, force=force)
         if transform is None:
             return self._manual_augment(image, detections, offline, task_type)
@@ -953,6 +976,69 @@ class TrainingService:
             'task_type': version.get('task_type', 'detect'),
         }
 
+    def _validate_training_config(self, config: dict, version: dict) -> dict:
+        try:
+            epochs = int(config.get('epochs', 50))
+            imgsz = int(config.get('imgsz', 640))
+            batch = int(config.get('batch', 8))
+            workers = int(config.get('workers', 2))
+        except (TypeError, ValueError) as exc:
+            raise ValueError('epochs, imgsz, batch, and workers must be integers') from exc
+        if not 1 <= epochs <= 500:
+            raise ValueError('epochs must be between 1 and 500')
+        if imgsz < 320 or imgsz > 2048 or imgsz % 32 != 0:
+            raise ValueError('imgsz must be a multiple of 32 between 320 and 2048')
+        if batch != -1 and not 1 <= batch <= 128:
+            raise ValueError('batch must be -1 or between 1 and 128')
+        if not 0 <= workers <= 16:
+            raise ValueError('workers must be between 0 and 16')
+
+        family = config.get('family', 'yolo11')
+        if family not in TRAINING_FAMILIES:
+            raise ValueError("family must be 'yolo11' or 'yolo26'")
+        size = config.get('size', 'n')
+        if size not in TRAINING_SIZES:
+            raise ValueError("size must be one of 'n', 's', 'm', or 'l'")
+        mode = config.get('training_mode', 'standard')
+        if mode not in TRAINING_MODES:
+            raise ValueError("training_mode must be 'standard' or 'high_speed'")
+
+        base_checkpoint = str(config.get('base_checkpoint') or '').strip()
+        if not base_checkpoint:
+            raise ValueError('base_checkpoint is required')
+        checkpoint_path = Path(base_checkpoint)
+        if any(part == '..' for part in checkpoint_path.parts):
+            raise ValueError('base_checkpoint must not contain parent directory traversal')
+        if checkpoint_path.is_absolute() and not checkpoint_path.is_file():
+            raise ValueError('absolute base_checkpoint must point to an existing file')
+
+        task_type = version.get('task_type', self._task_type(config))
+        requested_task = self._task_type(config) if config.get('task_type') else task_type
+        if requested_task != task_type:
+            raise ValueError('Training job task_type must match the Dataset Version task_type')
+
+        return {
+            'family': family,
+            'size': size,
+            'training_mode': mode,
+            'epochs': epochs,
+            'imgsz': imgsz,
+            'batch': batch,
+            'workers': workers,
+            'base_checkpoint': base_checkpoint,
+            'task_type': task_type,
+        }
+
+    def _last_checkpoint_for_job(self, job: dict) -> str | None:
+        explicit = job.get('last_checkpoint_path')
+        if explicit and os.path.isfile(explicit):
+            return explicit
+        output_dir = job.get('output_dir')
+        if not output_dir:
+            return None
+        candidate = os.path.join(output_dir, 'weights', 'last.pt')
+        return candidate if os.path.isfile(candidate) else None
+
     def list_training_jobs(self) -> list[dict]:
         self._ensure_root()
         jobs = []
@@ -970,39 +1056,47 @@ class TrainingService:
 
     def create_training_job(self, config: dict, inference_active: bool = False) -> dict:
         version = self.get_dataset_version(config['dataset_version_id'])
-        task_type = version.get('task_type', self._task_type(config))
-        requested_task = self._task_type(config) if config.get('task_type') else task_type
-        if requested_task != task_type:
-            raise ValueError('Training job task_type must match the Dataset Version task_type')
-        mode = config.get('training_mode', 'standard')
+        validated = self._validate_training_config(config, version)
+        task_type = validated['task_type']
+        mode = validated['training_mode']
         if mode == 'high_speed' and inference_active:
             raise RuntimeError('Inference must be idle before starting High-Speed Mode training')
         job_id = uuid.uuid4().hex
         queue_position = sum(1 for job in self.list_training_jobs() if job.get('status') in {'queued', 'preparing', 'running'}) + 1
         output_slug = self._slugify(config.get('job_name', 'train-tune-job'), f'train-tune-{job_id[:8]}')
         output_dir = os.path.join(self._workspace_root(), f'{output_slug}-{job_id[:8]}')
+        results_csv_path = os.path.join(output_dir, 'results.csv')
+        train_log_path = os.path.join(output_dir, 'train.log')
         payload = {
             'id': job_id,
             'job_name': config.get('job_name', output_slug),
             'status': 'queued',
             'dataset_version_id': version['id'],
-            'architecture_family': config.get('family', 'yolo11'),
-            'architecture_size': config.get('size', 'n'),
+            'architecture_family': validated['family'],
+            'architecture_size': validated['size'],
             'task_type': task_type,
-            'base_checkpoint': config.get('base_checkpoint', ''),
+            'base_checkpoint': validated['base_checkpoint'],
             'device_policy': 'dual_5080' if mode == 'high_speed' else 'second_5080',
             'training_mode': mode,
-            'epochs': int(config.get('epochs', 50)),
-            'imgsz': int(config.get('imgsz', 640)),
-            'batch': int(config.get('batch', 8)),
-            'workers': int(config.get('workers', 2)),
+            'epochs': validated['epochs'],
+            'imgsz': validated['imgsz'],
+            'batch': validated['batch'],
+            'workers': validated['workers'],
             'created_at': datetime.now().isoformat(),
             'started_at': None,
             'finished_at': None,
             'queue_position': queue_position,
             'output_dir': output_dir,
+            'train_log_path': train_log_path,
+            'raw_results_csv_path': results_csv_path,
             'best_model_path': None,
             'last_checkpoint_path': None,
+            'resume': bool(config.get('resume', False)),
+            'resume_from_checkpoint': config.get('resume_from_checkpoint'),
+            'amp': None,
+            'cuda_device_order': None,
+            'cuda_visible_devices': None,
+            'train_device': None,
             'training_summary': version['summary'],
             'failure_reason': None,
             'metrics_latest': None,
@@ -1065,6 +1159,40 @@ class TrainingService:
             },
             inference_active=inference_active,
         )
+
+    def resume_training_job(self, job_id: str, inference_active: bool = False) -> dict:
+        job = self.get_training_job(job_id)
+        if job.get('status') not in {'failed', 'cancelled'}:
+            raise RuntimeError('Only failed or cancelled training jobs can be resumed')
+        last_checkpoint = self._last_checkpoint_for_job(job)
+        if not last_checkpoint:
+            raise RuntimeError('A last checkpoint is required before a training job can be resumed')
+        return self.create_training_job(
+            {
+                'job_name': job.get('job_name') or 'train-tune-job',
+                'dataset_version_id': job['dataset_version_id'],
+                'family': job.get('architecture_family', 'yolo11'),
+                'size': job.get('architecture_size', 'n'),
+                'base_checkpoint': last_checkpoint,
+                'epochs': job.get('epochs', 50),
+                'imgsz': job.get('imgsz', 640),
+                'batch': job.get('batch', 8),
+                'workers': job.get('workers', 2),
+                'training_mode': job.get('training_mode', 'standard'),
+                'task_type': job.get('task_type', 'detect'),
+                'resume': True,
+                'resume_from_checkpoint': last_checkpoint,
+            },
+            inference_active=inference_active,
+        )
+
+    def mark_interrupted_jobs_failed(self) -> int:
+        count = 0
+        for job in self.list_training_jobs():
+            if job.get('status') in {'preparing', 'running'}:
+                self.fail_training_job(job['id'], 'interrupted by server restart')
+                count += 1
+        return count
 
     def fail_training_job(self, job_id: str, reason: str) -> dict:
         return self.update_training_job(job_id, status='failed', failure_reason=reason, finished_at=datetime.now().isoformat())

@@ -283,6 +283,77 @@ class TrainingRouterTest(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn('Inference must be idle', response.json()['detail'])
 
+    def test_create_training_job_endpoint_rejects_invalid_config(self):
+        version = training_service.create_dataset_version_from_live_dataset(
+            'demo',
+            {
+                'version_name': 'invalid-config',
+                'split_config': {'train': 70, 'val': 20, 'test': 10},
+                'preprocessing_config': {},
+                'augmentation_config': {'profile': 'baseline'},
+            },
+        )
+
+        response = self.client.post(
+            '/api/training/jobs',
+            json={
+                'job_name': 'invalid',
+                'dataset_version_id': version['id'],
+                'family': 'bad',
+                'size': 'n',
+                'base_checkpoint': '../bad.pt',
+                'epochs': 0,
+                'imgsz': 641,
+                'batch': 0,
+                'workers': -1,
+                'training_mode': 'turbo',
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('epochs must be between', response.json()['detail'])
+
+    def test_resume_training_job_endpoint_queues_retry(self):
+        version = training_service.create_dataset_version_from_live_dataset(
+            'demo',
+            {
+                'version_name': 'resume-router',
+                'split_config': {'train': 70, 'val': 20, 'test': 10},
+                'preprocessing_config': {},
+                'augmentation_config': {'profile': 'baseline'},
+            },
+        )
+        job = training_service.create_training_job(
+            {
+                'job_name': 'resume-router',
+                'dataset_version_id': version['id'],
+                'family': 'yolo11',
+                'size': 'n',
+                'base_checkpoint': 'mock',
+                'epochs': 3,
+                'imgsz': 640,
+                'batch': 4,
+                'workers': 2,
+                'training_mode': 'standard',
+            },
+            inference_active=False,
+        )
+        last_path = f'{job["output_dir"]}/weights/last.pt'
+        import os
+        os.makedirs(os.path.dirname(last_path), exist_ok=True)
+        with open(last_path, 'wb') as f:
+            f.write(b'checkpoint')
+        training_service.fail_training_job(job['id'], 'boom')
+        training_service.update_training_job(job['id'], last_checkpoint_path=last_path)
+
+        with patch('backend.routers.training.training_runtime.notify_job_queued'):
+            response = self.client.post(f'/api/training/jobs/{job["id"]}/resume')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['resume'])
+        self.assertEqual(payload['resume_from_checkpoint'], last_path)
+
 
 if __name__ == '__main__':
     unittest.main()

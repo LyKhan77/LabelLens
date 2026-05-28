@@ -45,6 +45,32 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertIn('DistributedDataParallel', patched)
         self.assertEqual(train_worker._inject_ddp_find_unused_patch(patched), patched)
 
+    def test_ddp_patch_is_disabled_by_default(self):
+        emitted = []
+
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch.object(train_worker, "emit", side_effect=emitted.append),
+            patch.object(train_worker, "patch_ultralytics_ddp_find_unused_parameters") as patch_ddp,
+        ):
+            train_worker.maybe_patch_ultralytics_ddp_find_unused_parameters()
+
+        patch_ddp.assert_not_called()
+        self.assertTrue(any(item["event"] == "log_line" and "DDP find_unused_parameters patch disabled" in item["line"] for item in emitted))
+
+    def test_ddp_patch_is_enabled_with_env_flag(self):
+        emitted = []
+
+        with (
+            patch.dict(os.environ, {"LABELLENS_TRAIN_DDP_FIND_UNUSED": "1"}, clear=True),
+            patch.object(train_worker, "emit", side_effect=emitted.append),
+            patch.object(train_worker, "patch_ultralytics_ddp_find_unused_parameters") as patch_ddp,
+        ):
+            train_worker.maybe_patch_ultralytics_ddp_find_unused_parameters()
+
+        patch_ddp.assert_called_once()
+        self.assertTrue(any(item["event"] == "log_line" and "DDP find_unused_parameters patch enabled" in item["line"] for item in emitted))
+
     def test_metric_value_rejects_non_finite_values(self):
         self.assertEqual(train_worker.metric_value({"val/seg_loss": "nan"}, ["val/seg_loss"]), 0.0)
         self.assertEqual(train_worker.metric_value({"val/seg_loss": "inf"}, ["val/seg_loss"]), 0.0)

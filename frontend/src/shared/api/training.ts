@@ -83,8 +83,16 @@ export interface TrainingJob {
   finished_at: string | null
   queue_position: number
   output_dir: string
+  train_log_path?: string | null
+  raw_results_csv_path?: string | null
   best_model_path: string | null
   last_checkpoint_path: string | null
+  resume?: boolean
+  resume_from_checkpoint?: string | null
+  amp?: boolean | null
+  cuda_device_order?: string | null
+  cuda_visible_devices?: string | null
+  train_device?: string | null
   training_summary: DatasetVersion['summary']
   failure_reason: string | null
   metrics_latest: TrainingMetricPoint | null
@@ -126,13 +134,17 @@ export interface ModelVersion {
 export interface TrainingEvent extends Partial<TrainingMetricPoint> {
   job_id: string
   timestamp: number
-  event: 'job_started' | 'metric_update' | 'checkpoint_saved' | 'job_completed' | 'job_failed' | 'job_cancelled' | 'log_line'
+  event: 'job_started' | 'metric_update' | 'checkpoint_saved' | 'job_completed' | 'job_failed' | 'job_cancelled' | 'log_line' | 'training_device_mapping' | 'raw_results_csv_path'
   phase?: string
   path?: string
   line?: string
   error?: string
   best_model_path?: string
   last_checkpoint_path?: string
+  amp?: boolean
+  cuda_device_order?: string
+  cuda_visible_devices?: string
+  device?: string
 }
 
 export async function listDatasetVersions(): Promise<DatasetVersion[]> {
@@ -256,6 +268,11 @@ export async function cancelTrainingJob(jobId: string): Promise<TrainingJob> {
 
 export async function recomputeTrainingJob(jobId: string): Promise<TrainingJob> {
   const res = await api.post(`/training/jobs/${jobId}/recompute`)
+  return res.data
+}
+
+export async function resumeTrainingJob(jobId: string): Promise<TrainingJob> {
+  const res = await api.post(`/training/jobs/${jobId}/resume`)
   return res.data
 }
 

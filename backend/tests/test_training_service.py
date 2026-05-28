@@ -205,6 +205,54 @@ class TrainingServiceTest(unittest.TestCase):
             self.assertEqual(len(values), 4)
             self.assertTrue(all(0.0 <= value <= 1.0 for value in values))
 
+    def test_basic_augmentation_normalizes_to_online_only_safe_preset(self):
+        normalized = self.training_service._normalize_augmentation_config({
+            "augmentation_config": {
+                "mode": "basic",
+                "multiplier": 5,
+                "offline": {"fliplr": 1.0},
+                "online": {"mixup": 1.0},
+            }
+        })
+
+        self.assertEqual(normalized["mode"], "basic")
+        self.assertEqual(normalized["profile"], "basic")
+        self.assertEqual(normalized["multiplier"], 1)
+        self.assertEqual(normalized["offline"], {})
+        self.assertEqual(normalized["apply_to"], "train")
+        self.assertEqual(normalized["online"]["fliplr"], 0.5)
+        self.assertEqual(normalized["online"]["mosaic"], 0.5)
+        self.assertEqual(normalized["online"]["close_mosaic"], 10.0)
+        self.assertNotIn("mixup", normalized["online"])
+
+    def test_advanced_augmentation_keeps_materialized_train_only_behavior(self):
+        normalized = self.training_service._normalize_augmentation_config({
+            "augmentation_config": {
+                "mode": "advanced",
+                "profile": "custom",
+                "multiplier": 4,
+                "offline": {"fliplr": 1.0},
+                "online": {"mosaic": 0.25},
+            }
+        })
+
+        self.assertEqual(normalized["mode"], "advanced")
+        self.assertEqual(normalized["profile"], "custom")
+        self.assertEqual(normalized["multiplier"], 4)
+        self.assertEqual(normalized["offline"], {"fliplr": 1.0})
+        self.assertEqual(normalized["online"], {"mosaic": 0.25})
+
+    def test_legacy_standard_profile_stays_compatible(self):
+        normalized = self.training_service._normalize_augmentation_config({
+            "augmentation_config": {"profile": "standard"}
+        })
+
+        self.assertEqual(normalized["mode"], "advanced")
+        self.assertEqual(normalized["profile"], "standard")
+        self.assertEqual(normalized["multiplier"], 1)
+        self.assertEqual(normalized["offline"], {})
+        self.assertEqual(normalized["online"]["mosaic"], 0.5)
+
     def test_preview_policy_returns_samples_without_creating_dataset_version(self):
         self.dataset_service.create_project("preview-demo", ["bolt"])
         for index in range(3):
@@ -517,6 +565,78 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertTrue(second["output_dir"].startswith(self.workspace_root))
         self.assertNotEqual(first["output_dir"], second["output_dir"])
         self.assertIn('v1-', os.path.basename(first["output_dir"]))
+
+    def test_create_training_job_rejects_invalid_training_config(self):
+        version = self._create_demo_version()
+
+        with self.assertRaisesRegex(ValueError, "epochs must be between"):
+            self.training_service.create_training_job(
+                {
+                    "job_name": "bad",
+                    "dataset_version_id": version["id"],
+                    "family": "yolo99",
+                    "size": "n",
+                    "base_checkpoint": "../bad.pt",
+                    "epochs": 0,
+                    "imgsz": 641,
+                    "batch": 0,
+                    "workers": -1,
+                    "training_mode": "turbo",
+                },
+                inference_active=False,
+            )
+
+    def test_resume_training_job_queues_from_existing_last_checkpoint(self):
+        version = self._create_demo_version()
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "resume-demo",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "mock",
+                "epochs": 3,
+                "imgsz": 640,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+        last_path = os.path.join(job["output_dir"], "weights", "last.pt")
+        os.makedirs(os.path.dirname(last_path), exist_ok=True)
+        Path(last_path).write_bytes(b"checkpoint")
+        self.training_service.cancel_training_job(job["id"])
+        self.training_service.update_training_job(job["id"], last_checkpoint_path=last_path)
+
+        resumed = self.training_service.resume_training_job(job["id"], inference_active=False)
+
+        self.assertNotEqual(resumed["id"], job["id"])
+        self.assertTrue(resumed["resume"])
+        self.assertEqual(resumed["resume_from_checkpoint"], last_path)
+        self.assertEqual(resumed["base_checkpoint"], last_path)
+
+    def test_resume_training_job_requires_last_checkpoint(self):
+        version = self._create_demo_version()
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "resume-missing",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "mock",
+                "epochs": 3,
+                "imgsz": 640,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+        self.training_service.fail_training_job(job["id"], "boom")
+
+        with self.assertRaisesRegex(RuntimeError, "last checkpoint"):
+            self.training_service.resume_training_job(job["id"], inference_active=False)
 
     def test_failed_job_can_be_recomputed_and_deleted(self):
         self.dataset_service.create_project("demo", ["bolt"])

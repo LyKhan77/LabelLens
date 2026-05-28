@@ -157,6 +157,15 @@ export const useTrainingStore = defineStore('training', () => {
     return job
   }
 
+  async function resumeJob(jobId: string) {
+    const job = await api.resumeTrainingJob(jobId)
+    jobs.value = [job, ...jobs.value]
+    selectedJob.value = job
+    selectedModel.value = null
+    connectJob(job.id)
+    return job
+  }
+
   async function deleteJob(jobId: string) {
     await api.deleteTrainingJob(jobId)
     jobs.value = jobs.value.filter((job) => job.id !== jobId)
@@ -241,6 +250,17 @@ export const useTrainingStore = defineStore('training', () => {
         if (payload.event === 'checkpoint_saved') {
           mergeJob(jobId, { last_checkpoint_path: payload.path ?? null })
         }
+        if (payload.event === 'training_device_mapping') {
+          mergeJob(jobId, {
+            amp: payload.amp ?? null,
+            cuda_device_order: payload.cuda_device_order ?? null,
+            cuda_visible_devices: payload.cuda_visible_devices ?? null,
+            train_device: payload.device ?? null,
+          })
+        }
+        if (payload.event === 'raw_results_csv_path') {
+          mergeJob(jobId, { raw_results_csv_path: payload.path ?? null })
+        }
         if (payload.event === 'job_completed') {
           await refreshJobs()
           await refreshModels()
@@ -301,6 +321,7 @@ export const useTrainingStore = defineStore('training', () => {
     selectModel,
     cancelJob,
     recomputeJob,
+    resumeJob,
     deleteJob,
     deleteModel,
     connectJob,

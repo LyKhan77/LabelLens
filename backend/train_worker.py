@@ -146,6 +146,14 @@ def patch_ultralytics_ddp_find_unused_parameters():
     ultralytics_dist.generate_ddp_file = generate_ddp_file_with_find_unused
 
 
+def maybe_patch_ultralytics_ddp_find_unused_parameters():
+    if not _env_bool('LABELLENS_TRAIN_DDP_FIND_UNUSED', False):
+        emit({'event': 'log_line', 'line': 'DDP find_unused_parameters patch disabled'})
+        return
+    patch_ultralytics_ddp_find_unused_parameters()
+    emit({'event': 'log_line', 'line': 'DDP find_unused_parameters patch enabled'})
+
+
 def online_augmentation_args(version: dict) -> dict:
     config = version.get('augmentation_config') or {}
     online = config.get('online') or {}
@@ -177,7 +185,7 @@ def actual_train(job: dict, version: dict):
     apply_training_device_policy(policy)
 
     from ultralytics import YOLO
-    patch_ultralytics_ddp_find_unused_parameters()
+    maybe_patch_ultralytics_ddp_find_unused_parameters()
 
     output_dir = Path(job['output_dir'])
     project = str(output_dir.parent)
@@ -207,6 +215,7 @@ def actual_train(job: dict, version: dict):
         'cuda_device_count': cuda_device_count,
         'cuda_devices': cuda_devices,
     })
+    emit({'event': 'raw_results_csv_path', 'path': str(results_csv)})
     emit({
         'event': 'log_line',
         'line': (
@@ -221,25 +230,29 @@ def actual_train(job: dict, version: dict):
 
     def train_runner():
         try:
-            model = YOLO(job['base_checkpoint'])
+            checkpoint = job.get('resume_from_checkpoint') if job.get('resume') else job['base_checkpoint']
+            model = YOLO(checkpoint)
             expected_task = job.get('task_type', 'detect')
             model_task = getattr(model, 'task', 'unknown')
             if model_task != expected_task:
                 raise ValueError(f'Train Tune {expected_task} runs require a {expected_task} checkpoint; got {model_task} checkpoint.')
-            model.train(
-                data=version['dataset_yaml'],
-                epochs=int(job.get('epochs', 50)),
-                imgsz=int(job.get('imgsz', 640)),
-                batch=int(job.get('batch', 8)),
-                workers=int(job.get('workers', 2)),
-                project=project,
-                name=name,
-                exist_ok=True,
-                device=device,
-                amp=policy['amp'],
-                verbose=False,
+            train_args = {
+                'data': version['dataset_yaml'],
+                'epochs': int(job.get('epochs', 50)),
+                'imgsz': int(job.get('imgsz', 640)),
+                'batch': int(job.get('batch', 8)),
+                'workers': int(job.get('workers', 2)),
+                'project': project,
+                'name': name,
+                'exist_ok': True,
+                'device': device,
+                'amp': policy['amp'],
+                'verbose': False,
                 **online_augmentation_args(version),
-            )
+            }
+            if job.get('resume'):
+                train_args['resume'] = True
+            model.train(**train_args)
         except Exception as exc:  # pragma: no cover - runtime path
             state['error'] = str(exc)
             emit_traceback(exc, 'train_runner')
