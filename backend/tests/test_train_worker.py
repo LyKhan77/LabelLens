@@ -54,6 +54,47 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertTrue(any("detect checkpoint" in item.get("error", "") for item in emitted))
 
 
+    def test_actual_train_forwards_online_augmentation_args(self):
+        train_called = []
+
+        class DetectModel:
+            task = "detect"
+
+            def train(self, **kwargs):
+                train_called.append(kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ultralytics = SimpleNamespace(YOLO=lambda _checkpoint: DetectModel())
+            job = {
+                "output_dir": os.path.join(tmp, "run"),
+                "base_checkpoint": "models/yolo26n.pt",
+                "training_mode": "standard",
+                "task_type": "detect",
+                "epochs": 1,
+            }
+            version = {
+                "dataset_yaml": "dataset.yaml",
+                "augmentation_config": {
+                    "mode": "hybrid",
+                    "online": {
+                        "degrees": 7,
+                        "fliplr": 0.5,
+                        "mosaic": 0.25,
+                        "unsupported": 99,
+                    },
+                },
+            }
+            with (
+                patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "emit"),
+            ):
+                train_worker.actual_train(job, version)
+
+        self.assertEqual(train_called[0]["degrees"], 7)
+        self.assertEqual(train_called[0]["fliplr"], 0.5)
+        self.assertEqual(train_called[0]["mosaic"], 0.25)
+        self.assertNotIn("unsupported", train_called[0])
+
     def test_actual_train_accepts_segment_checkpoint_for_segment_job(self):
         emitted = []
         train_called = []

@@ -25,7 +25,32 @@ export interface DatasetVersion {
     class_count: number
     classes: string[]
     average_annotations_per_image: number
+    generated_images?: number
+    final_image_count?: number
+    final_train_images?: number
   }
+}
+
+export interface TrainingPolicyPreviewSampleStage {
+  image: string
+  annotations: Array<{ label: string; box: number[]; mask?: number[][] }>
+}
+
+export interface TrainingPolicyPreviewSample {
+  filename: string
+  original: TrainingPolicyPreviewSampleStage
+  preprocessed: TrainingPolicyPreviewSampleStage
+  augmented: TrainingPolicyPreviewSampleStage
+}
+
+export interface TrainingPolicyPreview {
+  source_type: 'live' | 'zip'
+  source_name: string
+  task_type: TrainingTaskType
+  classes: string[]
+  preprocessing_config: Record<string, unknown>
+  augmentation_config: Record<string, unknown>
+  samples: TrainingPolicyPreviewSample[]
 }
 
 export interface TrainingEstimate {
@@ -117,6 +142,27 @@ export async function listDatasetVersions(): Promise<DatasetVersion[]> {
 
 export async function deleteDatasetVersion(versionId: string): Promise<void> {
   await api.delete(`/training/dataset-versions/${versionId}`)
+}
+
+export async function previewDatasetPolicy(params: {
+  sourceType: 'live' | 'zip'
+  datasetName?: string
+  file?: File | null
+  splitConfig: { train: number; val: number; test: number }
+  preprocessingConfig: Record<string, unknown>
+  augmentationConfig: Record<string, unknown>
+  taskType: TrainingTaskType
+}): Promise<TrainingPolicyPreview> {
+  const form = new FormData()
+  form.append('source_type', params.sourceType)
+  if (params.datasetName) form.append('dataset_name', params.datasetName)
+  if (params.file) form.append('file', params.file)
+  form.append('split_config', JSON.stringify(params.splitConfig))
+  form.append('preprocessing_config', JSON.stringify(params.preprocessingConfig))
+  form.append('augmentation_config', JSON.stringify(params.augmentationConfig))
+  form.append('task_type', params.taskType)
+  const res = await api.post('/training/dataset-versions/preview', form, { timeout: 120_000 })
+  return res.data
 }
 
 export async function createLiveDatasetVersion(params: {

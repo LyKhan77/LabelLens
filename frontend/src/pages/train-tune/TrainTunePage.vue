@@ -38,7 +38,23 @@ function reactiveState() {
     splitTest: 10,
     autoOrient: true,
     resizeMode: 'keep',
-    augmentationProfile: 'baseline' as 'baseline' | 'standard',
+    augmentMultiplier: 1,
+    augFlipHorizontal: 0.5,
+    augFlipVertical: 0,
+    augRotation: 0,
+    augTranslate: 0,
+    augScale: 0,
+    augShear: 0,
+    augHsvHue: 0.015,
+    augHsvSaturation: 0.3,
+    augHsvValue: 0.2,
+    augExposure: 0,
+    augBlur: 0,
+    augNoise: 0,
+    augMosaic: 0.5,
+    augMixup: 0,
+    augCopyPaste: 0,
+    augErasing: 0,
     taskType: 'detect' as 'detect' | 'segment',
     family: 'yolo11' as 'yolo11' | 'yolo26',
     size: 'n' as 'n' | 's' | 'm' | 'l',
@@ -74,11 +90,6 @@ const liveSourceVersion = computed(() => trainingStore.versions.find((version) =
 const sourceReady = computed(() => form.sourceType === 'live' ? Boolean(form.selectedDataset) : Boolean(form.zipFile))
 const architectureReady = computed(() => Boolean(form.baseCheckpoint) && form.epochs > 0 && form.imgsz > 0 && form.batch > 0 && form.workers > 0)
 const splitReady = computed(() => totalSplit.value === 100)
-const splitSegments = computed(() => [
-  { label: 'Train', value: form.splitTrain, className: 'is-train' },
-  { label: 'Val', value: form.splitVal, className: 'is-val' },
-  { label: 'Test', value: form.splitTest, className: 'is-test' },
-])
 const previewSourceName = computed(() => {
   if (form.sourceType === 'live') return form.selectedDataset || 'Select a dataset project'
   return form.zipFile?.name || 'Select an export zip'
@@ -89,14 +100,13 @@ const previewVersionName = computed(() => {
   if (form.sourceType === 'zip' && form.zipFile) return form.zipFile.name.replace(/\.zip$/i, '')
   return 'Auto-named after source selection'
 })
-const splitPolicySummary = computed(() => {
-  if (form.sourceType === 'zip' && form.splitMode === 'existing') return 'Keep train/val/test folders from the imported zip.'
-  return `Create deterministic ${form.splitTrain}/${form.splitVal}/${form.splitTest} train/val/test snapshot folders.`
-})
 const preprocessingSummary = computed(() => `${form.resizeMode === 'keep' ? 'Keep original image size' : 'Fit images to training resolution'}; ${form.autoOrient ? 'auto orient on' : 'auto orient off'}.`)
-const augmentationSummary = computed(() => form.augmentationProfile === 'baseline'
-  ? 'Baseline keeps the training recipe conservative for first-pass runs.'
-  : 'Standard stores the broader augmentation preset for stronger variation.')
+const selectedDatasetProject = computed(() => datasetStore.projects.find((project) => project.name === form.selectedDataset) ?? null)
+const estimatedSourceImages = computed(() => selectedDatasetProject.value?.stats.accepted || selectedDatasetProject.value?.stats.total_images || 0)
+const estimatedTrainOriginal = computed(() => Math.round(estimatedSourceImages.value * (form.splitTrain / 100)))
+const estimatedGeneratedImages = computed(() => Math.max(0, estimatedTrainOriginal.value * (form.augmentMultiplier - 1)))
+const estimatedFinalImages = computed(() => estimatedSourceImages.value + estimatedGeneratedImages.value)
+const augmentationSummary = computed(() => `${form.augmentMultiplier}x train-only materialized policy; ${estimatedGeneratedImages.value} generated train images estimated. YOLO online args stay attached to the training run.`)
 const metricTrends = [
   { key: 'map50', label: 'mAP50', tone: 'is-quality' },
   { key: 'map50_95', label: 'mAP50-95', tone: 'is-quality' },
@@ -152,7 +162,52 @@ function versionOrient(version: DatasetVersion | null | undefined) {
 }
 
 function versionAugment(version: DatasetVersion | null | undefined) {
-  return configText(version?.augmentation_config.profile, 'baseline')
+  const config = version?.augmentation_config ?? {}
+  const multiplier = Number(config.multiplier ?? 1)
+  const mode = configText(config.mode, configText(config.profile, 'baseline'))
+  return multiplier > 1 ? `${mode} · ${multiplier}x train` : mode
+}
+
+function policyPreprocessingConfig() {
+  return { auto_orient: form.autoOrient, resize_mode: form.resizeMode }
+}
+
+function policyAugmentationConfig() {
+  return {
+    mode: 'hybrid',
+    profile: 'custom',
+    multiplier: Math.min(Math.max(Number(form.augmentMultiplier) || 1, 1), 5),
+    apply_to: 'train',
+    offline: {
+      fliplr: Number(form.augFlipHorizontal) || 0,
+      flipud: Number(form.augFlipVertical) || 0,
+      degrees: Number(form.augRotation) || 0,
+      translate: Number(form.augTranslate) || 0,
+      scale: Number(form.augScale) || 0,
+      shear: Number(form.augShear) || 0,
+      hsv_h: Number(form.augHsvHue) || 0,
+      hsv_s: Number(form.augHsvSaturation) || 0,
+      hsv_v: Number(form.augHsvValue) || 0,
+      exposure: Number(form.augExposure) || 0,
+      blur: Number(form.augBlur) || 0,
+      noise: Number(form.augNoise) || 0,
+    },
+    online: {
+      hsv_h: Number(form.augHsvHue) || 0,
+      hsv_s: Number(form.augHsvSaturation) || 0,
+      hsv_v: Number(form.augHsvValue) || 0,
+      degrees: Number(form.augRotation) || 0,
+      translate: Number(form.augTranslate) || 0,
+      scale: Number(form.augScale) || 0,
+      shear: Number(form.augShear) || 0,
+      fliplr: Number(form.augFlipHorizontal) || 0,
+      flipud: Number(form.augFlipVertical) || 0,
+      mosaic: Number(form.augMosaic) || 0,
+      mixup: Number(form.augMixup) || 0,
+      copy_paste: Number(form.augCopyPaste) || 0,
+      erasing: Number(form.augErasing) || 0,
+    },
+  }
 }
 
 function metricValue(point: TrainingMetricPoint | null | undefined, key: MetricTrendKey) {
@@ -266,8 +321,8 @@ async function buildVersion() {
         datasetName: form.selectedDataset,
         versionName: form.versionName || `${form.selectedDataset}-snapshot`,
         splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
-        preprocessingConfig: { auto_orient: form.autoOrient, resize_mode: form.resizeMode },
-        augmentationConfig: { profile: form.augmentationProfile },
+        preprocessingConfig: policyPreprocessingConfig(),
+        augmentationConfig: policyAugmentationConfig(),
         resizeMode: form.resizeMode,
         taskType: form.taskType,
       })
@@ -281,8 +336,8 @@ async function buildVersion() {
         versionName: form.versionName || form.zipFile.name.replace(/\.zip$/i, ''),
         splitMode: form.splitMode,
         splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
-        preprocessingConfig: { auto_orient: form.autoOrient, resize_mode: form.resizeMode },
-        augmentationConfig: { profile: form.augmentationProfile },
+        preprocessingConfig: policyPreprocessingConfig(),
+        augmentationConfig: policyAugmentationConfig(),
         taskType: form.taskType,
       })
     }
@@ -302,6 +357,31 @@ async function buildVersion() {
       return
     }
     form.localError = err instanceof Error ? err.message : 'Gagal membuat dataset version'
+  }
+}
+
+async function previewPolicy() {
+  form.localError = null
+  if (form.sourceType === 'live' && !form.selectedDataset) {
+    form.localError = 'Pilih dataset project dulu untuk preview policy.'
+    return
+  }
+  if (form.sourceType === 'zip' && !form.zipFile) {
+    form.localError = 'Pilih export zip dulu untuk preview policy.'
+    return
+  }
+  try {
+    await trainingStore.previewPolicy({
+      sourceType: form.sourceType,
+      datasetName: form.sourceType === 'live' ? form.selectedDataset : undefined,
+      file: form.sourceType === 'zip' ? form.zipFile : null,
+      splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
+      preprocessingConfig: policyPreprocessingConfig(),
+      augmentationConfig: policyAugmentationConfig(),
+      taskType: form.taskType,
+    })
+  } catch (err) {
+    form.localError = err instanceof Error ? err.message : 'Gagal membuat preview policy'
   }
 }
 
@@ -547,61 +627,81 @@ async function recomputeFailedJob(jobId: string) {
 
                 <section v-else-if="builderStep === 3" class="space-y-(--spacing-md)">
                   <div>
-                    <h2 class="text-[18px] font-medium text-ink">Versioning, Split, and Prep</h2>
-                    <p class="text-[13px] text-ink-mute leading-[1.45]">Deterministic split, preprocessing profile, and augmentation preset are stored inside the immutable dataset version.</p>
+                    <h2 class="text-[18px] font-medium text-ink">Policy</h2>
+                    <p class="text-[13px] text-ink-mute leading-[1.45]">Roboflow-like preprocessing, train-only augmentation size, and real preview samples are stored with the immutable Dataset Version.</p>
                   </div>
-                  <div class="train-version-flow">
-                    <div class="train-version-lane train-version-split">
+                  <div class="train-policy-sections">
+                    <div class="train-policy-section">
                       <div class="train-version-title">
-                        <strong class="train-label-with-info">Train / Val / Test <span class="train-param-help" tabindex="0" aria-label="Train/Val/Test controls how images are split for learning, validation, and final holdout evaluation." data-tip="Train learns model weights, Val checks each epoch, Test is held out for final evaluation.">?</span></strong>
-                        <span>{{ splitPolicySummary }}</span>
-                      </div>
-                      <div class="train-split-bar" aria-label="Dataset split preview">
-                        <span
-                          v-for="segment in splitSegments"
-                          :key="segment.label"
-                          :class="['train-split-segment', segment.className]"
-                          :style="{ flexBasis: `${Math.max(0, segment.value)}%` }"
-                        >{{ segment.label }} {{ segment.value }}%</span>
-                      </div>
-                      <div class="train-version-fields is-split">
-                        <label v-if="form.sourceType === 'zip'" class="train-field">
-                          <span class="train-label-with-info">Split Mode <span class="train-param-help" tabindex="0" aria-label="Use existing zip folders or regenerate deterministic train validation test folders." data-tip="Use existing zip folders, or regenerate a deterministic split from all labeled images.">?</span></span>
-                          <select v-model="form.splitMode">
-                            <option value="existing">Use existing split</option>
-                            <option value="regenerate">Regenerate split</option>
-                          </select>
-                        </label>
-                        <label class="train-field"><span class="train-label-with-info">Train % <span class="train-param-help" tabindex="0" aria-label="Training image percentage." data-tip="Images used to update model weights during training.">?</span></span><input v-model.number="form.splitTrain" type="number" min="0" max="100" /></label>
-                        <label class="train-field"><span class="train-label-with-info">Val % <span class="train-param-help" tabindex="0" aria-label="Validation image percentage." data-tip="Images used to measure each epoch and choose the best checkpoint.">?</span></span><input v-model.number="form.splitVal" type="number" min="0" max="100" /></label>
-                        <label class="train-field"><span class="train-label-with-info">Test % <span class="train-param-help" tabindex="0" aria-label="Test image percentage." data-tip="Held-out images reserved for final evaluation after training.">?</span></span><input v-model.number="form.splitTest" type="number" min="0" max="100" /></label>
-                      </div>
-                      <div :class="['train-version-status', totalSplit === 100 ? 'is-valid' : 'is-invalid']">
-                        <span>Split total</span>
-                        <strong>{{ totalSplit }}%</strong>
-                        <small>{{ totalSplit === 100 ? 'Ready for snapshot' : 'Train, val, and test must total 100%' }}</small>
-                      </div>
-                    </div>
-
-                    <div class="train-version-lane">
-                      <div class="train-version-title">
-                        <strong class="train-label-with-info">Preprocessing <span class="train-param-help" tabindex="0" aria-label="Preprocessing controls image normalization before snapshot training." data-tip="Controls image orientation and resize handling before the immutable snapshot is trained.">?</span></strong>
-                        <span>Stored with the snapshot before the run is queued.</span>
+                        <strong>1. Preprocessing</strong>
+                        <span>{{ preprocessingSummary }}</span>
                       </div>
                       <div class="train-version-fields">
-                        <label class="train-field"><span class="train-label-with-info">Resize Mode <span class="train-param-help" tabindex="0" aria-label="Resize behavior before training." data-tip="Keep original dimensions or fit images to the selected training resolution.">?</span></span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="fit">Fit to train resolution</option></select></label>
-                        <label class="train-field"><span class="train-label-with-info">Auto Orient <span class="train-param-help" tabindex="0" aria-label="Apply EXIF orientation before training." data-tip="Applies EXIF orientation so images train in the same direction users see them.">?</span></span><select v-model="form.autoOrient"><option :value="true">Enabled</option><option :value="false">Disabled</option></select></label>
+                        <label class="train-field"><span>Resize Mode</span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="fit">Fit to train resolution</option></select></label>
+                        <label class="train-field"><span>Auto Orient</span><select v-model="form.autoOrient"><option :value="true">Enabled</option><option :value="false">Disabled</option></select></label>
                       </div>
-                      <p class="train-version-note">{{ preprocessingSummary }}</p>
                     </div>
 
-                    <div class="train-version-lane">
+                    <div class="train-policy-section">
                       <div class="train-version-title">
-                        <strong class="train-label-with-info">Augmentation <span class="train-param-help" tabindex="0" aria-label="Augmentation expands training variation." data-tip="Adds controlled visual variation so the detector generalizes better.">?</span></strong>
-                        <span>Preset kept in version metadata for repeatable run setup.</span>
+                        <strong>2. Augmentation</strong>
+                        <span>Core image transforms are materialized for train split; advanced YOLO options stay online.</span>
                       </div>
-                      <label class="train-field"><span class="train-label-with-info">Profile <span class="train-param-help" tabindex="0" aria-label="Augmentation profile." data-tip="Baseline is conservative; Standard applies broader variation for stronger robustness.">?</span></span><select v-model="form.augmentationProfile"><option value="baseline">Baseline</option><option value="standard">Standard</option></select></label>
-                      <p class="train-version-note">{{ augmentationSummary }}</p>
+                      <div class="train-augment-grid">
+                        <label class="train-field"><span>Horizontal Flip</span><input v-model.number="form.augFlipHorizontal" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Vertical Flip</span><input v-model.number="form.augFlipVertical" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Rotation deg</span><input v-model.number="form.augRotation" type="number" min="0" max="45" step="1" /></label>
+                        <label class="train-field"><span>Translate</span><input v-model.number="form.augTranslate" type="number" min="0" max="0.5" step="0.01" /></label>
+                        <label class="train-field"><span>Scale</span><input v-model.number="form.augScale" type="number" min="0" max="0.9" step="0.05" /></label>
+                        <label class="train-field"><span>Shear deg</span><input v-model.number="form.augShear" type="number" min="0" max="45" step="1" /></label>
+                        <label class="train-field"><span>Hue</span><input v-model.number="form.augHsvHue" type="number" min="0" max="0.2" step="0.005" /></label>
+                        <label class="train-field"><span>Saturation</span><input v-model.number="form.augHsvSaturation" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Brightness</span><input v-model.number="form.augHsvValue" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Exposure</span><input v-model.number="form.augExposure" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Blur</span><input v-model.number="form.augBlur" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Noise</span><input v-model.number="form.augNoise" type="number" min="0" max="1" step="0.05" /></label>
+                      </div>
+                      <div class="train-augment-advanced">
+                        <label class="train-field"><span>Mosaic</span><input v-model.number="form.augMosaic" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>MixUp</span><input v-model.number="form.augMixup" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Copy Paste</span><input v-model.number="form.augCopyPaste" type="number" min="0" max="1" step="0.05" /></label>
+                        <label class="train-field"><span>Erasing</span><input v-model.number="form.augErasing" type="number" min="0" max="1" step="0.05" /></label>
+                      </div>
+                    </div>
+
+                    <div class="train-policy-section">
+                      <div class="train-version-title">
+                        <strong>3. Generate Size</strong>
+                        <span>{{ augmentationSummary }}</span>
+                      </div>
+                      <div class="train-version-fields">
+                        <label class="train-field"><span>Maximum Version Size</span><select v-model.number="form.augmentMultiplier"><option :value="1">1x original</option><option :value="2">2x train</option><option :value="3">3x train</option><option :value="4">4x train</option><option :value="5">5x train</option></select></label>
+                        <div class="train-version-status is-valid">
+                          <span>Estimated final</span>
+                          <strong>{{ estimatedFinalImages }} images</strong>
+                          <small>{{ estimatedTrainOriginal }} train originals + {{ estimatedGeneratedImages }} generated train images</small>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="train-policy-section">
+                      <div class="train-version-title">
+                        <strong>4. Preview</strong>
+                        <span>Backend renders 3 samples with transformed bbox/mask overlays before snapshot creation.</span>
+                      </div>
+                      <div class="flex flex-wrap gap-(--spacing-sm)">
+                        <button class="dataset-secondary-button" :disabled="trainingStore.policyPreviewLoading" @click="previewPolicy">{{ trainingStore.policyPreviewLoading ? 'Generating...' : 'Generate Preview' }}</button>
+                      </div>
+                      <div v-if="trainingStore.policyPreview?.samples.length" class="train-policy-preview-grid">
+                        <div v-for="sample in trainingStore.policyPreview.samples" :key="sample.filename" class="train-policy-preview-card">
+                          <strong>{{ sample.filename }}</strong>
+                          <div class="train-policy-preview-stages">
+                            <figure><img :src="sample.original.image" alt="Original policy preview" /><figcaption>Original</figcaption></figure>
+                            <figure><img :src="sample.preprocessed.image" alt="Preprocessed policy preview" /><figcaption>Preprocessed</figcaption></figure>
+                            <figure><img :src="sample.augmented.image" alt="Augmented policy preview" /><figcaption>Augmented</figcaption></figure>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -642,7 +742,7 @@ async function recomputeFailedJob(jobId: string) {
                       <div><span>Architecture</span><strong>{{ form.family }} {{ form.size }} / {{ form.baseCheckpoint }}</strong></div>
                       <div><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong></div>
                       <div><span>Prep</span><strong>{{ form.resizeMode === 'keep' ? 'Keep size' : 'Fit size' }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
-                      <div><span>Augment</span><strong>{{ form.augmentationProfile }}</strong></div>
+                      <div><span>Augment</span><strong>{{ form.augmentMultiplier }}x train-only</strong></div>
                     </div>
                   </div>
                 </section>
@@ -1077,6 +1177,17 @@ async function recomputeFailedJob(jobId: string) {
 .train-param-help:hover::after, .train-param-help:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 .train-param-help:hover, .train-param-help:focus-visible { border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-hairline)); color: var(--color-primary-deep); }
 .train-version-flow { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); overflow: visible; }
+.train-policy-sections { display: flex; flex-direction: column; gap: 12px; }
+.train-policy-section { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); }
+.train-augment-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.train-augment-advanced { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding-top: 12px; border-top: 1px solid var(--color-hairline); }
+.train-policy-preview-grid { display: flex; flex-direction: column; gap: 12px; }
+.train-policy-preview-card { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); }
+.train-policy-preview-card strong { color: var(--color-ink); font-size: 13px; font-weight: 500; }
+.train-policy-preview-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.train-policy-preview-stages figure { min-width: 0; margin: 0; }
+.train-policy-preview-stages img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: #0b0f14; }
+.train-policy-preview-stages figcaption { margin-top: 5px; color: var(--color-ink-mute); font-size: 11px; text-transform: uppercase; }
 .train-version-flow .train-param-help::after { left: 0; top: calc(100% + 7px); bottom: auto; width: min(230px, calc(100vw - 32px)); transform: translateY(-4px); }
 .train-version-flow .train-param-help:hover::after, .train-version-flow .train-param-help:focus-visible::after { transform: translateY(0); }
 .train-version-lane { min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px; border-left: 1px solid var(--color-hairline); }
@@ -1186,6 +1297,8 @@ async function recomputeFailedJob(jobId: string) {
   .train-version-lane { border-left: 0; border-top: 1px solid var(--color-hairline); }
   .train-version-lane:first-child { border-top: 0; }
   .train-version-preview { flex-direction: column; }
+  .train-augment-grid, .train-augment-advanced { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .train-policy-preview-stages { grid-template-columns: 1fr; }
   .train-preview-title { width: 100%; padding-right: 0; padding-bottom: 12px; border-right: 0; border-bottom: 1px solid var(--color-hairline); }
   .train-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .train-metric-head, .train-metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1196,5 +1309,6 @@ async function recomputeFailedJob(jobId: string) {
   .train-version-delete { align-self: center; }
   .train-model-card { grid-template-columns: 1fr; align-items: stretch; }
   .train-model-meta { justify-content: space-between; }
+  .train-augment-grid, .train-augment-advanced, .train-version-fields { grid-template-columns: 1fr; }
 }
 </style>

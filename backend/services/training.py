@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import os
@@ -9,6 +10,14 @@ import uuid
 import zipfile
 from datetime import datetime
 from pathlib import Path
+
+import cv2
+import numpy as np
+
+try:
+    import albumentations as A
+except ImportError:  # pragma: no cover - dependency may be installed after setup
+    A = None
 
 from backend.services.dataset import DATASETS_DIR, DatasetService, dataset_service
 
@@ -127,6 +136,9 @@ class TrainingService:
             raise ValueError("task_type must be 'detect' or 'segment'")
         return task_type
 
+    def _format_yolo_float(self, value: float) -> str:
+        return f'{value:.6f}'.rstrip('0').rstrip('.') or '0'
+
     def _build_yolo_detect_lines(self, detections: list[dict], class_to_id: dict[str, int], width: int, height: int) -> str:
         lines = []
         for det in detections:
@@ -138,7 +150,7 @@ class TrainingService:
             y_center = ((y1 + y2) / 2) / height
             bw = (x2 - x1) / width
             bh = (y2 - y1) / height
-            lines.append(f'{cls_id} {x_center:.6f} {y_center:.6f} {bw:.6f} {bh:.6f}')
+            lines.append(f'{cls_id} {self._format_yolo_float(x_center)} {self._format_yolo_float(y_center)} {self._format_yolo_float(bw)} {self._format_yolo_float(bh)}')
         return '\n'.join(lines)
 
     def _normalize_polygon(self, points: list, width: int, height: int) -> list[float] | None:
@@ -165,7 +177,7 @@ class TrainingService:
             polygon = self._normalize_polygon(det.get('mask') or [], width, height)
             if not polygon:
                 continue
-            coords = ' '.join(f'{value:.6f}' for value in polygon)
+            coords = ' '.join(self._format_yolo_float(value) for value in polygon)
             lines.append(f'{cls_id} {coords}')
         return '\n'.join(lines)
 
@@ -215,6 +227,327 @@ class TrainingService:
             lines.append(f'  {cid}: {cname}')
         Path(dataset_path, 'dataset.yaml').write_text('\n'.join(lines) + '\n')
 
+    def _normalize_preprocessing_config(self, config: dict) -> dict:
+        raw = config.get('preprocessing_config') or {}
+        resize_mode = raw.get('resize_mode') or config.get('resize_mode') or 'keep'
+        return {
+            'auto_orient': bool(raw.get('auto_orient', True)),
+            'resize_mode': 'fit' if resize_mode == 'fit' else 'keep',
+        }
+
+    def _normalize_augmentation_config(self, config: dict) -> dict:
+        raw = config.get('augmentation_config') or {'profile': 'baseline'}
+        if raw.get('mode') == 'hybrid':
+            multiplier = int(raw.get('multiplier') or 1)
+            multiplier = min(max(multiplier, 1), 5)
+            return {
+                'mode': 'hybrid',
+                'profile': raw.get('profile', 'custom'),
+                'multiplier': multiplier,
+                'apply_to': 'train',
+                'offline': raw.get('offline') or {},
+                'online': self._online_augmentation_args(raw),
+            }
+        profile = raw.get('profile', 'baseline')
+        online = {}
+        if profile == 'standard':
+            online = {'fliplr': 0.5, 'degrees': 5.0, 'translate': 0.05, 'scale': 0.25, 'mosaic': 0.5}
+        return {
+            'mode': 'hybrid',
+            'profile': profile,
+            'multiplier': 1,
+            'apply_to': 'train',
+            'offline': {},
+            'online': online,
+        }
+
+    def _online_augmentation_args(self, augmentation_config: dict) -> dict:
+        allowed = {
+            'hsv_h', 'hsv_s', 'hsv_v', 'degrees', 'translate', 'scale', 'shear', 'perspective',
+            'flipud', 'fliplr', 'bgr', 'mosaic', 'mixup', 'copy_paste', 'erasing', 'close_mosaic',
+        }
+        online = augmentation_config.get('online') or {}
+        cleaned = {}
+        for key, value in online.items():
+            if key not in allowed or value in (None, ''):
+                continue
+            try:
+                cleaned[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+        return cleaned
+
+    def _read_entry_image(self, entry: dict) -> np.ndarray:
+        if entry.get('image_bytes') is not None:
+            arr = np.frombuffer(entry['image_bytes'], np.uint8)
+            image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        else:
+            image = cv2.imread(entry['image_path'])
+        if image is None:
+            raise ValueError(f"Unable to read image {entry.get('export_filename', 'image')}")
+        return image
+
+    def _clamp_box(self, box: list[float], width: int, height: int) -> list[float] | None:
+        x1, y1, x2, y2 = [float(value) for value in box]
+        x1 = min(max(x1, 0.0), float(width))
+        x2 = min(max(x2, 0.0), float(width))
+        y1 = min(max(y1, 0.0), float(height))
+        y2 = min(max(y2, 0.0), float(height))
+        if x2 <= x1 or y2 <= y1:
+            return None
+        return [x1, y1, x2, y2]
+
+    def _derive_box_from_mask(self, mask: list, width: int, height: int) -> list[float] | None:
+        points = self._normalize_polygon(mask, width, height)
+        if not points:
+            return None
+        xs = [points[index] * width for index in range(0, len(points), 2)]
+        ys = [points[index] * height for index in range(1, len(points), 2)]
+        return self._clamp_box([min(xs), min(ys), max(xs), max(ys)], width, height)
+
+    def _sanitize_detections(self, detections: list[dict], width: int, height: int, task_type: str) -> list[dict]:
+        sanitized = []
+        for det in detections:
+            box = self._clamp_box(det.get('box', []), width, height) if len(det.get('box', [])) == 4 else None
+            mask = det.get('mask')
+            if task_type == 'segment':
+                polygon = self._normalize_polygon(mask or [], width, height)
+                if not polygon:
+                    continue
+                mask_points = [[polygon[i] * width, polygon[i + 1] * height] for i in range(0, len(polygon), 2)]
+                box = self._derive_box_from_mask(mask_points, width, height)
+                if not box:
+                    continue
+                sanitized.append({**det, 'box': box, 'mask': mask_points})
+            elif box:
+                sanitized.append({**det, 'box': box})
+        return sanitized
+
+    def _pascal_to_detections(self, bboxes: list, labels: list[str], originals: list[dict], width: int, height: int, task_type: str, masks: list | None = None) -> list[dict]:
+        detections = []
+        for index, bbox in enumerate(bboxes):
+            box = self._clamp_box(list(bbox), width, height)
+            if not box:
+                continue
+            det = {**originals[index], 'label': labels[index], 'box': box}
+            if task_type == 'segment' and masks is not None:
+                mask = masks[index].astype(np.uint8)
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if not contours:
+                    continue
+                contour = max(contours, key=cv2.contourArea)
+                if cv2.contourArea(contour) < 4:
+                    continue
+                points = contour.reshape(-1, 2).astype(float).tolist()
+                if len(points) < 3:
+                    continue
+                det['mask'] = points
+            detections.append(det)
+        return detections
+
+    def _detections_to_masks(self, detections: list[dict], width: int, height: int) -> list[np.ndarray]:
+        masks = []
+        for det in detections:
+            mask = np.zeros((height, width), dtype=np.uint8)
+            polygon = det.get('mask') or []
+            if polygon:
+                points = np.array([[
+                    min(max(float(point[0]), 0.0), float(width - 1)),
+                    min(max(float(point[1]), 0.0), float(height - 1)),
+                ] for point in polygon], dtype=np.int32)
+                if len(points) >= 3:
+                    cv2.fillPoly(mask, [points], 1)
+            masks.append(mask)
+        return masks
+
+    def _build_albumentations_transform(self, offline: dict, force: bool = False):
+        if A is None:
+            return None
+        transforms = []
+        fliplr = float(offline.get('fliplr') or 0.0)
+        flipud = float(offline.get('flipud') or 0.0)
+        if fliplr > 0:
+            transforms.append(A.HorizontalFlip(p=1.0 if force else min(fliplr, 1.0)))
+        if flipud > 0:
+            transforms.append(A.VerticalFlip(p=1.0 if force else min(flipud, 1.0)))
+        degrees = float(offline.get('degrees') or 0.0)
+        shear = float(offline.get('shear') or 0.0)
+        translate = float(offline.get('translate') or 0.0)
+        scale = float(offline.get('scale') or 0.0)
+        if any(abs(value) > 0 for value in (degrees, shear, translate, scale)):
+            affine_kwargs = {
+                'rotate': (-abs(degrees), abs(degrees)),
+                'shear': (-abs(shear), abs(shear)),
+                'translate_percent': (-abs(translate), abs(translate)),
+                'p': 1.0,
+            }
+            if scale:
+                affine_kwargs['scale'] = (max(0.1, 1 - abs(scale)), 1 + abs(scale))
+            transforms.append(A.Affine(**affine_kwargs))
+        hsv_h = float(offline.get('hsv_h') or 0.0)
+        hsv_s = float(offline.get('hsv_s') or 0.0)
+        hsv_v = float(offline.get('hsv_v') or 0.0)
+        if any(value > 0 for value in (hsv_h, hsv_s, hsv_v)):
+            transforms.append(A.HueSaturationValue(
+                hue_shift_limit=int(hsv_h * 180),
+                sat_shift_limit=int(hsv_s * 100),
+                val_shift_limit=int(hsv_v * 100),
+                p=1.0,
+            ))
+        exposure = float(offline.get('exposure') or 0.0)
+        if exposure > 0:
+            transforms.append(A.RandomBrightnessContrast(brightness_limit=exposure, contrast_limit=exposure, p=1.0))
+        blur = float(offline.get('blur') or 0.0)
+        if blur > 0:
+            transforms.append(A.GaussianBlur(blur_limit=(3, 5), p=min(blur, 1.0)))
+        noise = float(offline.get('noise') or 0.0)
+        if noise > 0:
+            transforms.append(A.GaussNoise(p=min(noise, 1.0)))
+        if not transforms:
+            transforms.append(A.HorizontalFlip(p=1.0))
+        return A.Compose(
+            transforms,
+            bbox_params=A.BboxParams(format='pascal_voc', label_fields=['labels'], min_visibility=0.05),
+        )
+
+    def _manual_augment(self, image: np.ndarray, detections: list[dict], offline: dict, task_type: str) -> tuple[np.ndarray, list[dict]]:
+        height, width = image.shape[:2]
+        augmented = image.copy()
+        output = [dict(det) for det in detections]
+        if float(offline.get('fliplr') or 0.0) > 0:
+            augmented = cv2.flip(augmented, 1)
+            for det in output:
+                x1, y1, x2, y2 = det['box']
+                det['box'] = [width - x2, y1, width - x1, y2]
+                if det.get('mask'):
+                    det['mask'] = [[width - float(point[0]), float(point[1])] for point in det['mask']]
+        if float(offline.get('flipud') or 0.0) > 0:
+            augmented = cv2.flip(augmented, 0)
+            for det in output:
+                x1, y1, x2, y2 = det['box']
+                det['box'] = [x1, height - y2, x2, height - y1]
+                if det.get('mask'):
+                    det['mask'] = [[float(point[0]), height - float(point[1])] for point in det['mask']]
+        noise = float(offline.get('noise') or 0.0)
+        if noise > 0:
+            sigma = max(1.0, noise * 24.0)
+            jitter = np.random.default_rng(42).normal(0, sigma, augmented.shape).astype(np.int16)
+            augmented = np.clip(augmented.astype(np.int16) + jitter, 0, 255).astype(np.uint8)
+        output = self._sanitize_detections(output, width, height, task_type)
+        return augmented, output
+
+    def _augment_entry(self, image: np.ndarray, detections: list[dict], augmentation_config: dict, task_type: str, force: bool = False) -> tuple[np.ndarray, list[dict]]:
+        height, width = image.shape[:2]
+        detections = self._sanitize_detections(detections, width, height, task_type)
+        if not detections:
+            return image, []
+        offline = augmentation_config.get('offline') or {}
+        transform = self._build_albumentations_transform(offline, force=force)
+        if transform is None:
+            return self._manual_augment(image, detections, offline, task_type)
+        labels = [det['label'] for det in detections]
+        bboxes = [det['box'] for det in detections]
+        payload = {'image': image, 'bboxes': bboxes, 'labels': labels}
+        masks = None
+        if task_type == 'segment':
+            masks = self._detections_to_masks(detections, width, height)
+            payload['masks'] = masks
+        transformed = transform(**payload)
+        next_image = transformed['image']
+        next_height, next_width = next_image.shape[:2]
+        next_detections = self._pascal_to_detections(
+            transformed['bboxes'],
+            list(transformed['labels']),
+            detections,
+            next_width,
+            next_height,
+            task_type,
+            transformed.get('masks'),
+        )
+        return next_image, next_detections
+
+    def _write_image_and_label(self, dataset_path: str, subset: str, filename: str, image: np.ndarray, detections: list[dict], class_to_id: dict[str, int], task_type: str) -> bool:
+        height, width = image.shape[:2]
+        detections = self._sanitize_detections(detections, width, height, task_type)
+        if not detections:
+            return False
+        image_path = os.path.join(dataset_path, 'images', subset, filename)
+        label_name = f"{os.path.splitext(filename)[0]}.txt"
+        label_path = os.path.join(dataset_path, 'labels', subset, label_name)
+        os.makedirs(os.path.dirname(image_path), exist_ok=True)
+        os.makedirs(os.path.dirname(label_path), exist_ok=True)
+        cv2.imwrite(image_path, image)
+        Path(label_path).write_text(self._build_yolo_lines(detections, class_to_id, width, height, task_type) + '\n')
+        return True
+
+    def _write_snapshot_files(self, dataset_path: str, split_map: dict[str, list[dict]], class_to_id: dict[str, int], task_type: str, config: dict) -> dict:
+        preprocessing_config = self._normalize_preprocessing_config(config)
+        augmentation_config = self._normalize_augmentation_config(config)
+        split_counts = {subset: 0 for subset in ('train', 'val', 'test')}
+        train_original = len(split_map.get('train', []))
+        train_generated = 0
+        for subset in ('train', 'val', 'test'):
+            os.makedirs(os.path.join(dataset_path, 'images', subset), exist_ok=True)
+            os.makedirs(os.path.join(dataset_path, 'labels', subset), exist_ok=True)
+            for entry in split_map[subset]:
+                image = self._read_entry_image(entry)
+                detections = self._sanitize_detections(entry['detections'], image.shape[1], image.shape[0], task_type)
+                if self._write_image_and_label(dataset_path, subset, entry['export_filename'], image, detections, class_to_id, task_type):
+                    split_counts[subset] += 1
+        multiplier = int(augmentation_config.get('multiplier') or 1)
+        if multiplier > 1 and train_original > 0:
+            for copy_index in range(1, multiplier):
+                for entry in split_map.get('train', []):
+                    image = self._read_entry_image(entry)
+                    detections = self._sanitize_detections(entry['detections'], image.shape[1], image.shape[0], task_type)
+                    aug_image, aug_detections = self._augment_entry(image, detections, augmentation_config, task_type, force=True)
+                    stem, ext = os.path.splitext(entry['export_filename'])
+                    filename = self._unique_name(f'{stem}-aug-{copy_index}{ext or ".jpg"}', set())
+                    if self._write_image_and_label(dataset_path, 'train', filename, aug_image, aug_detections, class_to_id, task_type):
+                        split_counts['train'] += 1
+                        train_generated += 1
+        primary = next((subset for subset in ('train', 'val', 'test') if split_counts[subset] > 0), 'train')
+        split_counts.update({
+            'primary': primary,
+            'train_original': train_original,
+            'train_generated': train_generated,
+            'final_total': split_counts['train'] + split_counts['val'] + split_counts['test'],
+        })
+        return {
+            'split_counts': split_counts,
+            'preprocessing_config': preprocessing_config,
+            'augmentation_config': augmentation_config,
+        }
+
+    def _annotation_preview(self, detections: list[dict]) -> list[dict]:
+        annotations = []
+        for det in detections:
+            item = {'label': det.get('label', ''), 'box': [round(float(value), 2) for value in det.get('box', [])]}
+            if det.get('mask'):
+                item['mask'] = [[round(float(point[0]), 2), round(float(point[1]), 2)] for point in det['mask']]
+            annotations.append(item)
+        return annotations
+
+    def _encode_preview(self, image: np.ndarray, detections: list[dict]) -> dict:
+        rendered = image.copy()
+        for det in detections:
+            color = (62, 207, 142)
+            box = [int(round(value)) for value in det.get('box', [])]
+            if len(box) == 4:
+                cv2.rectangle(rendered, (box[0], box[1]), (box[2], box[3]), color, 2)
+                cv2.putText(rendered, det.get('label', ''), (box[0], max(12, box[1] - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+            if det.get('mask'):
+                pts = np.array(det['mask'], dtype=np.int32)
+                if len(pts) >= 3:
+                    cv2.polylines(rendered, [pts], True, (37, 99, 235), 2)
+        ok, buffer = cv2.imencode('.jpg', rendered, [cv2.IMWRITE_JPEG_QUALITY, 86])
+        if not ok:
+            raise ValueError('Unable to encode preview image')
+        return {
+            'image': 'data:image/jpeg;base64,' + base64.b64encode(buffer).decode(),
+            'annotations': self._annotation_preview(detections),
+        }
+
     def _version_summary(self, entries: list[dict], source_count: int, classes: list[str]) -> dict:
         annotations = sum(len(entry['detections']) for entry in entries)
         return {
@@ -252,8 +585,7 @@ class TrainingService:
             raise RuntimeError('Dataset version is referenced by training history and cannot be deleted')
         shutil.rmtree(self._version_dir(version_id))
 
-    def create_dataset_version_from_live_dataset(self, dataset_name: str, config: dict) -> dict:
-        task_type = self._task_type(config)
+    def _live_dataset_entries(self, dataset_name: str, task_type: str) -> tuple[list[dict], int, list[str]]:
         pdir = self.dataset_service._project_dir(dataset_name)
         ann_dir = os.path.join(pdir, 'annotations')
         img_dir = os.path.join(pdir, 'images')
@@ -294,27 +626,25 @@ class TrainingService:
             missing = self._missing_segment_masks(entries)
             if missing:
                 raise MissingSegmentationMasksError(missing)
+        return entries, len(all_annotation_files), sorted(class_names)
 
-        classes = sorted(class_names)
+    def create_dataset_version_from_live_dataset(self, dataset_name: str, config: dict) -> dict:
+        task_type = self._task_type(config)
+        entries, source_count, classes = self._live_dataset_entries(dataset_name, task_type)
         class_to_id = {name: idx for idx, name in enumerate(classes)}
         split_map = self._assign_splits(entries, config)
         version_id = uuid.uuid4().hex
         version_dir = self._version_dir(version_id)
         dataset_path = os.path.join(version_dir, 'dataset')
-        for subset in ('train', 'val', 'test'):
-            os.makedirs(os.path.join(dataset_path, 'images', subset), exist_ok=True)
-            os.makedirs(os.path.join(dataset_path, 'labels', subset), exist_ok=True)
-            for entry in split_map[subset]:
-                shutil.copy2(entry['image_path'], os.path.join(dataset_path, 'images', subset, entry['export_filename']))
-                label_name = f"{os.path.splitext(entry['export_filename'])[0]}.txt"
-                Path(dataset_path, 'labels', subset, label_name).write_text(
-                    self._build_yolo_lines(entry['detections'], class_to_id, entry['width'], entry['height'], task_type) + '\n'
-                )
+        snapshot = self._write_snapshot_files(dataset_path, split_map, class_to_id, task_type, config)
         self._write_dataset_yaml(dataset_path, class_to_id)
 
-        split_counts = {subset: len(items) for subset, items in split_map.items()}
-        primary = next((subset for subset in ('train', 'val', 'test') if split_counts[subset] > 0), 'train')
-        split_counts['primary'] = primary
+        summary = self._version_summary(entries, source_count, classes)
+        summary.update({
+            'generated_images': snapshot['split_counts']['train_generated'],
+            'final_image_count': snapshot['split_counts']['final_total'],
+            'final_train_images': snapshot['split_counts']['train'],
+        })
         payload = {
             'id': version_id,
             'source_type': 'live_dataset',
@@ -326,12 +656,12 @@ class TrainingService:
             'classes': classes,
             'task_type': task_type,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
-            'preprocessing_config': config.get('preprocessing_config') or {},
-            'augmentation_config': config.get('augmentation_config') or {'profile': 'baseline'},
+            'preprocessing_config': snapshot['preprocessing_config'],
+            'augmentation_config': snapshot['augmentation_config'],
             'storage_path': version_dir,
             'dataset_yaml': os.path.join(dataset_path, 'dataset.yaml'),
-            'split_counts': split_counts,
-            'summary': self._version_summary(entries, len(all_annotation_files), classes),
+            'split_counts': snapshot['split_counts'],
+            'summary': summary,
         }
         self._write_json(self._version_meta_path(version_id), payload)
         return payload
@@ -379,13 +709,41 @@ class TrainingService:
             raise ValueError(f'Label for {image_name} has no annotations')
         return count
 
-    def create_dataset_version_from_zip(self, zip_bytes: bytes, source_name: str, config: dict) -> dict:
-        task_type = self._task_type(config)
-        version_id = uuid.uuid4().hex
-        version_dir = self._version_dir(version_id)
-        dataset_path = os.path.join(version_dir, 'dataset')
-        os.makedirs(dataset_path, exist_ok=True)
+    def _detections_from_yolo_label(self, raw: str, task_type: str, image_name: str, classes: list[str], width: int, height: int) -> list[dict]:
+        detections = []
+        for line in raw.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            cls_id = int(float(parts[0]))
+            label = classes[cls_id]
+            values = [float(value) for value in parts[1:]]
+            if task_type == 'segment':
+                if len(values) < 6 or len(values) % 2 != 0:
+                    raise ValueError(f'Segmentation labels for {image_name} must use polygon format')
+                mask = [[values[i] * width, values[i + 1] * height] for i in range(0, len(values), 2)]
+                box = self._derive_box_from_mask(mask, width, height)
+                if box:
+                    detections.append({'label': label, 'box': box, 'mask': mask})
+            else:
+                if len(values) != 4:
+                    raise ValueError(f'Detection labels for {image_name} must use bbox format')
+                x_center, y_center, bw, bh = values
+                box = [
+                    (x_center - bw / 2) * width,
+                    (y_center - bh / 2) * height,
+                    (x_center + bw / 2) * width,
+                    (y_center + bh / 2) * height,
+                ]
+                box = self._clamp_box(box, width, height)
+                if box:
+                    detections.append({'label': label, 'box': box})
+        if not detections:
+            raise ValueError(f'Label for {image_name} has no annotations')
+        return detections
 
+    def _zip_dataset_entries(self, zip_bytes: bytes, task_type: str) -> tuple[list[dict], list[str], dict[str, int]]:
         used_filenames: set[str] = set()
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             names = zf.namelist()
@@ -398,7 +756,6 @@ class TrainingService:
                 raise ValueError('dataset.yaml names are required')
             classes = [class_names_map[idx] for idx in sorted(class_names_map)]
             class_to_id = {name: idx for idx, name in enumerate(classes)}
-
             entries = []
             for subset in ('train', 'val', 'test'):
                 prefix = f'images/{subset}/'
@@ -407,45 +764,53 @@ class TrainingService:
                     label_name = f'labels/{subset}/{Path(image_name).stem}.txt'
                     if label_name not in names:
                         raise ValueError(f'Missing label for {image_name}')
+                    image_bytes = zf.read(image_name)
+                    image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    if image is None:
+                        raise ValueError(f'Invalid image in export zip: {image_name}')
+                    height, width = image.shape[:2]
                     label_raw = zf.read(label_name).decode()
-                    annotation_count = self._validate_label_text(label_raw, task_type, image_name, classes)
+                    self._validate_label_text(label_raw, task_type, image_name, classes)
+                    detections = self._detections_from_yolo_label(label_raw, task_type, image_name, classes, width, height)
                     export_filename = self._unique_name(os.path.basename(image_name), used_filenames)
                     entries.append({
                         'subset': subset,
                         'image_name': image_name,
                         'label_name': label_name,
                         'export_filename': export_filename,
-                        'detections': [{'label': classes[0]} for _ in range(annotation_count)],
+                        'image_bytes': image_bytes,
+                        'width': width,
+                        'height': height,
+                        'detections': detections,
                     })
+        if not entries:
+            raise ValueError('Export zip contains no labeled images')
+        return entries, classes, class_to_id
 
-            if not entries:
-                raise ValueError('Export zip contains no labeled images')
+    def create_dataset_version_from_zip(self, zip_bytes: bytes, source_name: str, config: dict) -> dict:
+        task_type = self._task_type(config)
+        entries, classes, class_to_id = self._zip_dataset_entries(zip_bytes, task_type)
+        split_mode = config.get('split_mode', 'existing')
+        if split_mode == 'existing':
+            split_map = {'train': [], 'val': [], 'test': []}
+            for entry in entries:
+                split_map[entry['subset']].append(entry)
+        else:
+            normalized = [dict(entry, subset=None) for entry in entries]
+            split_map = self._assign_splits(normalized, {'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10}})
 
-            split_mode = config.get('split_mode', 'existing')
-            if split_mode == 'existing':
-                split_map = {'train': [], 'val': [], 'test': []}
-                for entry in entries:
-                    split_map[entry['subset']].append(entry)
-            else:
-                normalized = [dict(entry, subset=None) for entry in entries]
-                split_map = self._assign_splits(normalized, {'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10}})
-
-            for subset in ('train', 'val', 'test'):
-                os.makedirs(os.path.join(dataset_path, 'images', subset), exist_ok=True)
-                os.makedirs(os.path.join(dataset_path, 'labels', subset), exist_ok=True)
-                for entry in split_map[subset]:
-                    image_target = os.path.join(dataset_path, 'images', subset, entry['export_filename'])
-                    with zf.open(entry['image_name']) as src, open(image_target, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
-                    label_filename = f"{Path(entry['export_filename']).stem}.txt"
-                    label_target = os.path.join(dataset_path, 'labels', subset, label_filename)
-                    with zf.open(entry['label_name']) as src, open(label_target, 'wb') as dst:
-                        shutil.copyfileobj(src, dst)
-
+        version_id = uuid.uuid4().hex
+        version_dir = self._version_dir(version_id)
+        dataset_path = os.path.join(version_dir, 'dataset')
+        snapshot = self._write_snapshot_files(dataset_path, split_map, class_to_id, task_type, config)
         self._write_dataset_yaml(dataset_path, class_to_id)
-        split_counts = {subset: len(items) for subset, items in split_map.items()}
-        primary = next((subset for subset in ('train', 'val', 'test') if split_counts[subset] > 0), 'train')
-        split_counts['primary'] = primary
+
+        summary = self._version_summary(entries, len(entries), classes)
+        summary.update({
+            'generated_images': snapshot['split_counts']['train_generated'],
+            'final_image_count': snapshot['split_counts']['final_total'],
+            'final_train_images': snapshot['split_counts']['train'],
+        })
         payload = {
             'id': version_id,
             'source_type': 'export_zip',
@@ -457,26 +822,56 @@ class TrainingService:
             'classes': classes,
             'task_type': task_type,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
-            'preprocessing_config': config.get('preprocessing_config') or {},
-            'augmentation_config': config.get('augmentation_config') or {'profile': 'baseline'},
+            'preprocessing_config': snapshot['preprocessing_config'],
+            'augmentation_config': snapshot['augmentation_config'],
             'storage_path': version_dir,
             'dataset_yaml': os.path.join(dataset_path, 'dataset.yaml'),
-            'split_counts': split_counts,
-            'summary': {
-                'original_file_count': len(entries),
-                'usable_labeled_images': len(entries),
-                'total_annotations': sum(len(entry['detections']) for entry in entries),
-                'class_count': len(classes),
-                'classes': classes,
-                'average_annotations_per_image': round(sum(len(entry['detections']) for entry in entries) / len(entries), 2) if entries else 0,
-            },
+            'split_counts': snapshot['split_counts'],
+            'summary': summary,
         }
         self._write_json(self._version_meta_path(version_id), payload)
         return payload
 
+    def preview_dataset_policy(self, config: dict) -> dict:
+        task_type = self._task_type(config)
+        source_type = config.get('source_type', 'live')
+        if source_type == 'zip':
+            zip_bytes = config.get('zip_bytes')
+            if not zip_bytes:
+                raise ValueError('zip file is required for zip preview')
+            entries, classes, _class_to_id = self._zip_dataset_entries(zip_bytes, task_type)
+            source_name = config.get('source_name') or 'export zip'
+        else:
+            dataset_name = config.get('dataset_name')
+            if not dataset_name:
+                raise ValueError('dataset_name is required')
+            entries, _source_count, classes = self._live_dataset_entries(dataset_name, task_type)
+            source_name = dataset_name
+        augmentation_config = self._normalize_augmentation_config(config)
+        samples = []
+        for entry in entries[:3]:
+            image = self._read_entry_image(entry)
+            detections = self._sanitize_detections(entry['detections'], image.shape[1], image.shape[0], task_type)
+            aug_image, aug_detections = self._augment_entry(image, detections, augmentation_config, task_type, force=True)
+            samples.append({
+                'filename': entry['export_filename'],
+                'original': self._encode_preview(image, detections),
+                'preprocessed': self._encode_preview(image, detections),
+                'augmented': self._encode_preview(aug_image, aug_detections),
+            })
+        return {
+            'source_type': source_type,
+            'source_name': source_name,
+            'task_type': task_type,
+            'classes': classes,
+            'preprocessing_config': self._normalize_preprocessing_config(config),
+            'augmentation_config': augmentation_config,
+            'samples': samples,
+        }
+
     def estimate_training(self, version_id: str, config: dict) -> dict:
         version = self.get_dataset_version(version_id)
-        images = version['summary']['usable_labeled_images']
+        images = int(version['summary'].get('final_image_count') or version['summary']['usable_labeled_images'])
         epochs = int(config.get('epochs', 50))
         imgsz = int(config.get('imgsz', 640))
         size = config.get('size', 'n')

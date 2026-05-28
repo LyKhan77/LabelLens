@@ -10,7 +10,7 @@ Web-based object detection application powered by **YOLOE-26L** with support for
 ## Features
 
 - **Feature Modes Page** — root path `/` always opens mode selection; choose Free Inference (no prompts, 1200+ LVIS categories via LRPC), Prompt Inference (text/visual prompts), or Train Tune, then enter the matching workspace
-- **Train Tune Workspace** — dedicated `/train-tune` YOLO detection/segmentation builder with task-selectable immutable Dataset Version snapshots, bbox or polygon-mask label export, missing-mask validation with Dataset Workspace handoff, locked version configuration preview, modal deletion for unused dataset versions and model versions with linked training history, compact model/job badges, checkpoint task validation, compact metric trends plus dataset/run configuration details on live progress and result views, `/train-tune/test/:id` custom model testing, Standard vs High-Speed GPU modes, failed-job re-compute/delete actions, output artifacts under `traintune-workspace/`, and model version registry
+- **Train Tune Workspace** — dedicated `/train-tune` YOLO detection/segmentation builder with task-selectable immutable Dataset Version snapshots, bbox or polygon-mask label export, missing-mask validation with Dataset Workspace handoff, Roboflow-like preprocessing/augmentation policy, train-only hybrid augmentation with 1x-5x maximum version size, real policy preview samples with bbox/mask overlays, locked version configuration preview, modal deletion for unused dataset versions and model versions with linked training history, compact model/job badges, checkpoint task validation, compact metric trends plus dataset/run configuration details on live progress and result views, `/train-tune/test/:id` custom model testing, Standard vs High-Speed GPU modes, failed-job re-compute/delete actions, output artifacts under `traintune-workspace/`, and model version registry
 - **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project/image delete controls, Select All Files gallery selection, real overlay thumbnail gallery review, cross-page modal inspector navigation, compact class/status review controls, zoomable/pannable review canvas, viewport-clamped Edit BBox popover, persisted per-dataset class colors with manual swatches, manual bbox add/edit/delete annotation editor, multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, Rapid Inference jobs, and YOLO/COCO export that preserves original input filenames in exported artifacts
 - **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
 - **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
@@ -110,15 +110,16 @@ Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http:/
 ### Train Tune
 
 1. Open `/train-tune` from the Feature Modes page.
-2. Follow the builder stepper: choose a **Live Dataset** or **Export ZIP**, select **Detection** or **Segmentation**, configure YOLO11/YOLO26 architecture and training settings, then define split, preprocessing, and augmentation policy.
-3. Review the Snapshot Preview and create the immutable **Dataset Version**. Segmentation versions require every accepted object to already have a mask; missing masks are listed so they can be fixed in Dataset Workspace.
-4. Select a Dataset Version from the sidebar to inspect its locked split, preprocessing, augmentation, source, and **Refresh Estimate** result in **Training Preview**.
-5. Click **Start Training Job** from Training Preview to jump into the dedicated live monitor page at `/train-tune/jobs/:id`.
-6. Watch compact metric trends, scrollable epoch history, dataset/run configuration, ETA, checkpoints, and job events on that live progress page.
-7. Open the result page to inspect best metrics, full metric trends, Dataset Version configuration, and Training Configuration used by the model; use **Test Model** to run the registered artifact with bbox/mask overlays.
-8. Delete unused Dataset Versions from the builder sidebar when a snapshot should be removed; versions referenced by jobs or models stay protected.
-9. Delete a Model Version from its modal when its registered model, linked Training Job, metrics, and output folder should be removed; failed jobs still have their own **Re-compute** or **Delete** actions.
-10. Review the dedicated result page at `/train-tune/results/:id` once a job completes, or test the artifact at `/train-tune/test/:id`.
+2. Follow the builder stepper: choose a **Live Dataset** or **Export ZIP**, select **Detection** or **Segmentation**, configure YOLO11/YOLO26 architecture and training settings, then define split and the Roboflow-like Policy sections.
+3. In **Policy**, keep preprocessing to resize/orient, tune core augmentation controls, choose **Maximum Version Size** from 1x-5x, and generate preview samples to inspect original/preprocessed/augmented images with bbox/mask overlays. Offline generated images are materialized only into the train split; val/test stay original, and YOLO online augmentation args are passed to training.
+4. Review the Snapshot Preview and create the immutable **Dataset Version**. Segmentation versions require every accepted object to already have a mask; missing masks are listed so they can be fixed in Dataset Workspace.
+5. Select a Dataset Version from the sidebar to inspect its locked split, preprocessing, augmentation, source, and **Refresh Estimate** result in **Training Preview**.
+6. Click **Start Training Job** from Training Preview to jump into the dedicated live monitor page at `/train-tune/jobs/:id`.
+7. Watch compact metric trends, scrollable epoch history, dataset/run configuration, ETA, checkpoints, and job events on that live progress page.
+8. Open the result page to inspect best metrics, full metric trends, Dataset Version configuration, and Training Configuration used by the model; use **Test Model** to run the registered artifact with bbox/mask overlays.
+9. Delete unused Dataset Versions from the builder sidebar when a snapshot should be removed; versions referenced by jobs or models stay protected.
+10. Delete a Model Version from its modal when its registered model, linked Training Job, metrics, and output folder should be removed; failed jobs still have their own **Re-compute** or **Delete** actions.
+11. Review the dedicated result page at `/train-tune/results/:id` once a job completes, or test the artifact at `/train-tune/test/:id`.
 
 Train Tune run artifacts are written to `traintune-workspace/<job-name>-<job-id>/`.
 

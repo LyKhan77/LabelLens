@@ -131,6 +131,85 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "images", "train", "train-a.jpg")))
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "labels", "test", "test-a.txt")))
 
+    def test_hybrid_multiplier_materializes_augmented_images_only_in_train_split(self):
+        self.dataset_service.create_project("aug-demo", ["bolt"])
+        for index in range(4):
+            self.dataset_service.save_image(
+                "aug-demo",
+                jpg_bytes(width=80, height=60),
+                [{"box": [10, 12, 40, 36], "label": "bolt", "confidence": 0.91}],
+                original_filename=f"panel-{index}.jpg",
+            )
+
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "aug-demo",
+            {
+                "version_name": "aug-demo-v1",
+                "split_config": {"train": 50, "val": 25, "test": 25},
+                "preprocessing_config": {"auto_orient": True, "resize_mode": "keep"},
+                "augmentation_config": {
+                    "mode": "hybrid",
+                    "multiplier": 3,
+                    "apply_to": "train",
+                    "offline": {"fliplr": 1.0, "degrees": 5, "noise": 0.0},
+                    "online": {"mosaic": 0.5, "mixup": 0.1},
+                },
+            },
+        )
+
+        train_images = os.listdir(os.path.join(version["storage_path"], "dataset", "images", "train"))
+        val_images = os.listdir(os.path.join(version["storage_path"], "dataset", "images", "val"))
+        test_images = os.listdir(os.path.join(version["storage_path"], "dataset", "images", "test"))
+        self.assertEqual(version["split_counts"]["train_original"], 2)
+        self.assertEqual(version["split_counts"]["train_generated"], 4)
+        self.assertEqual(version["split_counts"]["train"], 6)
+        self.assertEqual(version["split_counts"]["val"], 1)
+        self.assertEqual(version["split_counts"]["test"], 1)
+        self.assertEqual(len(train_images), 6)
+        self.assertEqual(len(val_images), 1)
+        self.assertEqual(len(test_images), 1)
+        self.assertTrue(any("-aug-" in name for name in train_images))
+
+        for filename in train_images:
+            label_path = os.path.join(version["storage_path"], "dataset", "labels", "train", f"{Path(filename).stem}.txt")
+            values = [float(value) for value in Path(label_path).read_text().strip().split()[1:]]
+            self.assertEqual(len(values), 4)
+            self.assertTrue(all(0.0 <= value <= 1.0 for value in values))
+
+    def test_preview_policy_returns_samples_without_creating_dataset_version(self):
+        self.dataset_service.create_project("preview-demo", ["bolt"])
+        for index in range(3):
+            self.dataset_service.save_image(
+                "preview-demo",
+                jpg_bytes(width=80, height=60),
+                [{"box": [10, 12, 40, 36], "label": "bolt", "confidence": 0.91}],
+                original_filename=f"preview-{index}.jpg",
+            )
+
+        before = self.training_service.list_dataset_versions()
+        preview = self.training_service.preview_dataset_policy(
+            {
+                "source_type": "live",
+                "dataset_name": "preview-demo",
+                "task_type": "detect",
+                "preprocessing_config": {"auto_orient": True, "resize_mode": "keep"},
+                "augmentation_config": {
+                    "mode": "hybrid",
+                    "multiplier": 2,
+                    "apply_to": "train",
+                    "offline": {"fliplr": 1.0, "degrees": 5},
+                },
+            }
+        )
+
+        self.assertEqual(len(preview["samples"]), 3)
+        self.assertEqual(self.training_service.list_dataset_versions(), before)
+        first = preview["samples"][0]
+        self.assertEqual(set(first.keys()), {"filename", "original", "preprocessed", "augmented"})
+        self.assertTrue(first["original"]["image"].startswith("data:image/jpeg;base64,"))
+        self.assertEqual(first["augmented"]["annotations"][0]["label"], "bolt")
+        self.assertTrue(all(0 <= value <= 80 for value in first["augmented"]["annotations"][0]["box"][::2]))
+
 
     def test_create_segment_dataset_version_from_live_dataset_writes_polygon_labels(self):
         self.dataset_service.create_project("seg-demo", ["bolt"])

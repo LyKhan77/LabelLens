@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { DatasetVersion, ModelVersion, TrainingEstimate, TrainingEvent, TrainingJob, TrainingMetricPoint } from '../api/training'
+import type { DatasetVersion, ModelVersion, TrainingEstimate, TrainingEvent, TrainingJob, TrainingMetricPoint, TrainingPolicyPreview } from '../api/training'
 import * as api from '../api/training'
 
 export const useTrainingStore = defineStore('training', () => {
@@ -13,6 +13,8 @@ export const useTrainingStore = defineStore('training', () => {
   const jobMetrics = ref<TrainingMetricPoint[]>([])
   const liveEvents = ref<TrainingEvent[]>([])
   const currentEstimate = ref<TrainingEstimate | null>(null)
+  const policyPreview = ref<TrainingPolicyPreview | null>(null)
+  const policyPreviewLoading = ref(false)
   const loading = ref(false)
   const error = ref<string | null>(null)
   const liveConnected = ref(false)
@@ -34,6 +36,20 @@ export const useTrainingStore = defineStore('training', () => {
       error.value = err instanceof Error ? err.message : 'Failed to load Train Tune workspace'
     } finally {
       loading.value = false
+    }
+  }
+
+  async function previewPolicy(params: Parameters<typeof api.previewDatasetPolicy>[0]) {
+    policyPreviewLoading.value = true
+    error.value = null
+    try {
+      policyPreview.value = await api.previewDatasetPolicy(params)
+      return policyPreview.value
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to generate policy preview'
+      throw err
+    } finally {
+      policyPreviewLoading.value = false
     }
   }
 
@@ -261,10 +277,13 @@ export const useTrainingStore = defineStore('training', () => {
     jobMetrics,
     liveEvents,
     currentEstimate,
+    policyPreview,
+    policyPreviewLoading,
     loading,
     error,
     liveConnected,
     hydrate,
+    previewPolicy,
     createLiveVersion,
     importVersion,
     deleteVersion,

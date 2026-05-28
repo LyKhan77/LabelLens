@@ -69,6 +69,24 @@ class TrainingRouterTest(unittest.TestCase):
         self.assertEqual(payload['source_type'], 'live_dataset')
         self.assertEqual(payload['summary']['usable_labeled_images'], 1)
 
+    def test_policy_preview_endpoint_returns_samples(self):
+        response = self.client.post(
+            '/api/training/dataset-versions/preview',
+            data={
+                'source_type': 'live',
+                'dataset_name': 'demo',
+                'task_type': 'detect',
+                'preprocessing_config': '{"auto_orient":true,"resize_mode":"keep"}',
+                'augmentation_config': '{"mode":"hybrid","multiplier":2,"apply_to":"train","offline":{"fliplr":1.0}}',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload['samples']), 1)
+        self.assertIn('augmented', payload['samples'][0])
+        self.assertTrue(payload['samples'][0]['augmented']['image'].startswith('data:image/jpeg;base64,'))
+
     def test_delete_dataset_version_endpoint_removes_unused_version(self):
         version = training_service.create_dataset_version_from_live_dataset(
             'demo',

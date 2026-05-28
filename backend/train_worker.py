@@ -63,6 +63,26 @@ def simulate(job: dict):
     emit({'event': 'job_completed', 'best_model_path': str(best_path), 'last_checkpoint_path': str(last_path)})
 
 
+ONLINE_AUGMENTATION_KEYS = {
+    'hsv_h', 'hsv_s', 'hsv_v', 'degrees', 'translate', 'scale', 'shear', 'perspective',
+    'flipud', 'fliplr', 'bgr', 'mosaic', 'mixup', 'copy_paste', 'erasing', 'close_mosaic',
+}
+
+
+def online_augmentation_args(version: dict) -> dict:
+    config = version.get('augmentation_config') or {}
+    online = config.get('online') or {}
+    args = {}
+    for key, value in online.items():
+        if key not in ONLINE_AUGMENTATION_KEYS or value in (None, ''):
+            continue
+        try:
+            args[key] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return args
+
+
 def metric_value(row: dict, keys: list[str]) -> float:
     for key in keys:
         if key in row and row[key] not in ('', None):
@@ -105,6 +125,7 @@ def actual_train(job: dict, version: dict):
                 exist_ok=True,
                 device=device,
                 verbose=False,
+                **online_augmentation_args(version),
             )
         except Exception as exc:  # pragma: no cover - runtime path
             state['error'] = str(exc)

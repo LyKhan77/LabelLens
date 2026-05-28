@@ -44,6 +44,39 @@ async def delete_dataset_version(version_id: str):
     return {'ok': True}
 
 
+@router.post('/training/dataset-versions/preview')
+async def preview_dataset_policy(
+    source_type: str = Form('live'),
+    dataset_name: str = Form(''),
+    split_config: str = Form('{"train": 70, "val": 20, "test": 10}'),
+    preprocessing_config: str = Form('{}'),
+    augmentation_config: str = Form('{"profile": "baseline"}'),
+    task_type: str = Form('detect'),
+    file: UploadFile | None = File(None),
+):
+    try:
+        config = {
+            'source_type': source_type,
+            'dataset_name': dataset_name or None,
+            'split_config': _parse_json(split_config, 'split_config', {'train': 70, 'val': 20, 'test': 10}),
+            'preprocessing_config': _parse_json(preprocessing_config, 'preprocessing_config', {}),
+            'augmentation_config': _parse_json(augmentation_config, 'augmentation_config', {'profile': 'baseline'}),
+            'task_type': task_type,
+        }
+        if file is not None:
+            config['zip_bytes'] = await file.read()
+            config['source_name'] = file.filename or 'dataset-export.zip'
+        return training_service.preview_dataset_policy(config)
+    except MissingSegmentationMasksError as exc:
+        raise HTTPException(400, {
+            'code': 'missing_segmentation_masks',
+            'message': str(exc),
+            'missing': exc.missing,
+        }) from exc
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.post('/training/dataset-versions/live')
 async def create_live_dataset_version(
     dataset_name: str = Form(...),
