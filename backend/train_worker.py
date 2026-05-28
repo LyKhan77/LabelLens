@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import math
 import os
 import sys
 import threading
@@ -163,7 +164,9 @@ def metric_value(row: dict, keys: list[str]) -> float:
     for key in keys:
         if key in row and row[key] not in ('', None):
             try:
-                return float(row[key])
+                value = float(row[key])
+                if math.isfinite(value):
+                    return value
             except (TypeError, ValueError):
                 continue
     return 0.0

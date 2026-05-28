@@ -116,7 +116,12 @@ export const useTrainingStore = defineStore('training', () => {
     if (options.clearModel !== false) {
       selectedModel.value = null
     }
-    jobMetrics.value = await api.listTrainingMetrics(jobId)
+    try {
+      jobMetrics.value = await api.listTrainingMetrics(jobId)
+    } catch (err) {
+      jobMetrics.value = []
+      error.value = err instanceof Error ? err.message : 'Failed to load training metrics'
+    }
     if (options.connect !== false) {
       connectJob(jobId)
     } else {

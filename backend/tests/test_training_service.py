@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import os
 import tempfile
 import unittest
@@ -632,6 +633,49 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertEqual(models[0]["job_id"], job["id"])
         self.assertEqual(models[0]["best_model_path"], best_path)
         self.assertEqual(models[0]["task_type"], "detect")
+
+    def test_metrics_are_json_safe_when_training_outputs_nan(self):
+        self.dataset_service.create_project("demo", ["bolt"])
+        self.dataset_service.save_image(
+            "demo",
+            jpg_bytes(),
+            [{"box": [2, 4, 20, 18], "label": "bolt", "confidence": 0.91}],
+            original_filename="panel-top.jpg",
+        )
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "demo",
+            {
+                "version_name": "demo-v1",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"auto_orient": True},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "bolt-detector",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "yolo11n.pt",
+                "epochs": 10,
+                "imgsz": 640,
+                "batch": 8,
+                "workers": 2,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+
+        self.training_service.append_metric(job["id"], {"epoch": 1, "val_loss": math.nan, "map50": math.inf})
+
+        metrics = self.training_service.list_training_metrics(job["id"])
+        latest = self.training_service.get_training_job(job["id"])["metrics_latest"]
+        self.assertEqual(metrics[0]["val_loss"], 0.0)
+        self.assertEqual(metrics[0]["map50"], 0.0)
+        self.assertEqual(latest["val_loss"], 0.0)
+        self.assertEqual(latest["map50"], 0.0)
 
 
 if __name__ == "__main__":

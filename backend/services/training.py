@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import math
 import os
 import random
 import re
@@ -86,12 +87,21 @@ class TrainingService:
         if not os.path.isfile(path):
             return [] if default is None else default
         with open(path) as f:
-            return json.load(f)
+            return self._sanitize_json_value(json.load(f))
 
     def _write_json(self, path: str, payload):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'w') as f:
-            json.dump(payload, f, indent=2)
+            json.dump(self._sanitize_json_value(payload), f, indent=2, allow_nan=False)
+
+    def _sanitize_json_value(self, value):
+        if isinstance(value, float):
+            return value if math.isfinite(value) else 0.0
+        if isinstance(value, list):
+            return [self._sanitize_json_value(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self._sanitize_json_value(item) for key, item in value.items()}
+        return value
 
     def _slugify(self, value: str, fallback: str) -> str:
         base = re.sub(r'[^A-Za-z0-9._-]+', '-', (value or '').strip()).strip('-.')
@@ -1011,6 +1021,7 @@ class TrainingService:
             return job
 
     def append_metric(self, job_id: str, metric: dict) -> dict:
+        metric = self._sanitize_json_value(metric)
         metrics = self._read_json(self._metrics_path(job_id), [])
         metrics.append(metric)
         self._write_json(self._metrics_path(job_id), metrics)

@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 import importlib
+import math
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -43,6 +44,11 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertIn('find_unused_parameters', patched)
         self.assertIn('DistributedDataParallel', patched)
         self.assertEqual(train_worker._inject_ddp_find_unused_patch(patched), patched)
+
+    def test_metric_value_rejects_non_finite_values(self):
+        self.assertEqual(train_worker.metric_value({"val/seg_loss": "nan"}, ["val/seg_loss"]), 0.0)
+        self.assertEqual(train_worker.metric_value({"val/seg_loss": "inf"}, ["val/seg_loss"]), 0.0)
+        self.assertEqual(train_worker.metric_value({"val/seg_loss": -math.inf}, ["val/seg_loss"]), 0.0)
 
     def test_emit_traceback_streams_error_and_stack_lines(self):
         emitted = []
