@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+import importlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -8,6 +9,41 @@ from backend import train_worker
 
 
 class TrainWorkerTest(unittest.TestCase):
+    def test_backend_config_defaults_hide_4090_from_labellens(self):
+        with patch.dict(os.environ, {}, clear=True):
+            import backend.config as config
+
+            importlib.reload(config)
+            self.assertEqual(os.environ["CUDA_DEVICE_ORDER"], "PCI_BUS_ID")
+            self.assertEqual(os.environ["CUDA_VISIBLE_DEVICES"], "1,2")
+            self.assertEqual(config.DEVICE, "0")
+            self.assertEqual(config.SAM_DEVICE, "1")
+        importlib.reload(config)
+
+    def test_resolve_training_device_policy_uses_5080_visible_devices(self):
+        with patch.dict(os.environ, {}, clear=True):
+            standard = train_worker.resolve_training_device_policy({"training_mode": "standard"})
+            high_speed = train_worker.resolve_training_device_policy({"training_mode": "high_speed"})
+
+        self.assertEqual(standard["cuda_visible_devices"], "1")
+        self.assertEqual(standard["device"], "1")
+        self.assertEqual(standard["local_device"], "0")
+        self.assertTrue(standard["amp"])
+        self.assertEqual(standard["cuda_device_order"], "PCI_BUS_ID")
+        self.assertEqual(high_speed["cuda_visible_devices"], "1,2")
+        self.assertEqual(high_speed["device"], "1,2")
+        self.assertEqual(high_speed["local_device"], "0,1")
+        self.assertFalse(high_speed["amp"])
+        self.assertEqual(high_speed["cuda_device_order"], "PCI_BUS_ID")
+
+    def test_inject_ddp_patch_enables_unused_parameter_detection(self):
+        content = 'before\nif __name__ == "__main__":\n    trainer.train()\n'
+        patched = train_worker._inject_ddp_find_unused_patch(content)
+
+        self.assertIn('find_unused_parameters', patched)
+        self.assertIn('DistributedDataParallel', patched)
+        self.assertEqual(train_worker._inject_ddp_find_unused_patch(patched), patched)
+
     def test_emit_traceback_streams_error_and_stack_lines(self):
         emitted = []
 
@@ -93,7 +129,39 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertEqual(train_called[0]["degrees"], 7)
         self.assertEqual(train_called[0]["fliplr"], 0.5)
         self.assertEqual(train_called[0]["mosaic"], 0.25)
+        self.assertEqual(train_called[0]["device"], "1")
+        self.assertTrue(train_called[0]["amp"])
         self.assertNotIn("unsupported", train_called[0])
+
+    def test_actual_train_uses_local_devices_for_high_speed_visible_5080s(self):
+        train_called = []
+
+        class DetectModel:
+            task = "detect"
+
+            def train(self, **kwargs):
+                train_called.append(kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ultralytics = SimpleNamespace(YOLO=lambda _checkpoint: DetectModel())
+            job = {
+                "output_dir": os.path.join(tmp, "run"),
+                "base_checkpoint": "models/yolo26n.pt",
+                "training_mode": "high_speed",
+                "task_type": "detect",
+                "epochs": 1,
+            }
+            with (
+                patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.dict(os.environ, {}, clear=True),
+                patch.object(train_worker, "emit"),
+            ):
+                train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
+                self.assertEqual(os.environ["CUDA_DEVICE_ORDER"], "PCI_BUS_ID")
+                self.assertEqual(os.environ["CUDA_VISIBLE_DEVICES"], "1,2")
+
+        self.assertEqual(train_called[0]["device"], "1,2")
+        self.assertFalse(train_called[0]["amp"])
 
     def test_actual_train_accepts_segment_checkpoint_for_segment_job(self):
         emitted = []

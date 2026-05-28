@@ -69,6 +69,82 @@ ONLINE_AUGMENTATION_KEYS = {
 }
 
 
+def _local_device_arg(cuda_visible_devices: str) -> str:
+    devices = [device.strip() for device in cuda_visible_devices.split(',') if device.strip()]
+    return ','.join(str(index) for index in range(len(devices))) or '0'
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {'1', 'true', 'yes', 'on'}
+
+
+def resolve_training_device_policy(job: dict) -> dict:
+    high_speed = job.get('training_mode') == 'high_speed'
+    visible_key = 'TRAIN_VISIBLE_DEVICES_HIGH_SPEED' if high_speed else 'TRAIN_VISIBLE_DEVICES_STANDARD'
+    local_key = 'TRAIN_DEVICE_HIGH_SPEED' if high_speed else 'TRAIN_DEVICE_STANDARD'
+    amp_key = 'TRAIN_AMP_HIGH_SPEED' if high_speed else 'TRAIN_AMP_STANDARD'
+    visible_default = '1,2' if high_speed else '1'
+    cuda_visible_devices = os.getenv(visible_key, visible_default)
+    return {
+        'cuda_device_order': os.getenv('CUDA_DEVICE_ORDER', 'PCI_BUS_ID'),
+        'cuda_visible_devices': cuda_visible_devices,
+        'device': os.getenv(local_key, cuda_visible_devices),
+        'local_device': _local_device_arg(cuda_visible_devices),
+        'amp': _env_bool(amp_key, not high_speed),
+    }
+
+
+def apply_training_device_policy(policy: dict):
+    os.environ['CUDA_DEVICE_ORDER'] = policy['cuda_device_order']
+    os.environ['CUDA_VISIBLE_DEVICES'] = policy['cuda_visible_devices']
+
+
+DDP_FIND_UNUSED_PATCH = """
+    import torch.nn as nn
+    _labellens_ddp = nn.parallel.DistributedDataParallel
+
+    def _labellens_ddp_find_unused(*args, **kwargs):
+        kwargs.setdefault("find_unused_parameters", True)
+        return _labellens_ddp(*args, **kwargs)
+
+    nn.parallel.DistributedDataParallel = _labellens_ddp_find_unused
+"""
+
+
+def _inject_ddp_find_unused_patch(content: str) -> str:
+    marker = 'if __name__ == "__main__":'
+    if 'find_unused_parameters' in content or marker not in content:
+        return content
+    return content.replace(marker, f'{marker}\n{DDP_FIND_UNUSED_PATCH}', 1)
+
+
+def patch_ultralytics_ddp_find_unused_parameters():
+    try:
+        import ultralytics.utils.dist as ultralytics_dist
+    except ImportError:
+        return
+
+    original = ultralytics_dist.generate_ddp_file
+    if getattr(original, '_labellens_find_unused_patch', False):
+        return
+
+    def generate_ddp_file_with_find_unused(trainer):
+        path = original(trainer)
+        with open(path, encoding='utf-8') as f:
+            content = f.read()
+        patched = _inject_ddp_find_unused_patch(content)
+        if patched != content:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(patched)
+        return path
+
+    generate_ddp_file_with_find_unused._labellens_find_unused_patch = True
+    ultralytics_dist.generate_ddp_file = generate_ddp_file_with_find_unused
+
+
 def online_augmentation_args(version: dict) -> dict:
     config = version.get('augmentation_config') or {}
     online = config.get('online') or {}
@@ -94,7 +170,11 @@ def metric_value(row: dict, keys: list[str]) -> float:
 
 
 def actual_train(job: dict, version: dict):
+    policy = resolve_training_device_policy(job)
+    apply_training_device_policy(policy)
+
     from ultralytics import YOLO
+    patch_ultralytics_ddp_find_unused_parameters()
 
     output_dir = Path(job['output_dir'])
     project = str(output_dir.parent)
@@ -103,9 +183,38 @@ def actual_train(job: dict, version: dict):
     results_csv = output_dir / 'results.csv'
     state = {'done': False, 'error': None}
 
-    device = os.getenv('TRAIN_DEVICE_STANDARD', '1')
-    if job.get('training_mode') == 'high_speed':
-        device = os.getenv('TRAIN_DEVICE_HIGH_SPEED', '0,1')
+    device = policy['device']
+    torch = sys.modules.get('torch')
+    cuda_devices = []
+    cuda_device_count = 0
+    if torch is not None:
+        try:
+            cuda_device_count = torch.cuda.device_count()
+            if torch.cuda.is_available():
+                cuda_devices = [torch.cuda.get_device_name(index) for index in range(cuda_device_count)]
+        except Exception as exc:  # pragma: no cover - diagnostic fallback
+            cuda_devices = [f'unavailable: {exc}']
+    emit({
+        'event': 'training_device_mapping',
+        'cuda_device_order': policy['cuda_device_order'],
+        'cuda_visible_devices': policy['cuda_visible_devices'],
+        'device': device,
+        'local_device': policy['local_device'],
+        'amp': policy['amp'],
+        'cuda_device_count': cuda_device_count,
+        'cuda_devices': cuda_devices,
+    })
+    emit({
+        'event': 'log_line',
+        'line': (
+            f"Training CUDA mapping: CUDA_DEVICE_ORDER={policy['cuda_device_order']} "
+            f"CUDA_VISIBLE_DEVICES={policy['cuda_visible_devices']} "
+            f"ultralytics_device={device} expected_local_device={policy['local_device']} "
+            f"amp={policy['amp']} "
+            f"visible_cuda_count={cuda_device_count} "
+            f"visible_cuda_names={cuda_devices}"
+        ),
+    })
 
     def train_runner():
         try:
@@ -124,6 +233,7 @@ def actual_train(job: dict, version: dict):
                 name=name,
                 exist_ok=True,
                 device=device,
+                amp=policy['amp'],
                 verbose=False,
                 **online_augmentation_args(version),
             )

@@ -7,6 +7,7 @@ from datetime import datetime
 from backend.services.activity import activity_service
 from backend.services.training import training_service
 from backend.services.training_events import training_event_hub
+from backend.train_worker import resolve_training_device_policy
 
 
 class TrainingRuntime:
@@ -67,6 +68,9 @@ class TrainingRuntime:
         ]
         env = os.environ.copy()
         env.setdefault('PYTHONUNBUFFERED', '1')
+        device_policy = resolve_training_device_policy(job)
+        env['CUDA_DEVICE_ORDER'] = device_policy['cuda_device_order']
+        env['CUDA_VISIBLE_DEVICES'] = device_policy['cuda_visible_devices']
 
         process = subprocess.Popen(
             cmd,

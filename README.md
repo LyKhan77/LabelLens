@@ -140,16 +140,23 @@ Train Tune run artifacts are written to `traintune-workspace/<job-name>-<job-id>
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MODEL_PATH` | `models/yoloe-26l-seg.pt` | Path to YOLOE model weights; set `models/yoloe-26s-seg.pt` to roll back |
-| `DEVICE` | `0` | CUDA device for inference; with `CUDA_DEVICE_ORDER=PCI_BUS_ID`, `0` selects the first RTX 5080 |
+| `LABELLENS_CUDA_VISIBLE_DEVICES` | `1,2` | Physical CUDA devices visible to LabelLens; keeps the RTX 4090 at physical index `0` reserved for vLLM |
+| `DEVICE` | `0` | Local CUDA device for YOLOE inference; with the default visible set, this maps to physical RTX 5080 index `1` |
+| `SAM_DEVICE` | `1` | Local CUDA device for SAM2.1; with the default visible set, this maps to physical RTX 5080 index `2` |
 | `CUDA_DEVICE_ORDER` | `PCI_BUS_ID` | Keeps PyTorch CUDA indexes aligned with `nvidia-smi` PCI order |
 | `HOST` | `0.0.0.0` | Backend host |
 | `PORT` | `3131` | Backend port |
 | `CORS_ORIGINS` | `*` | Allowed CORS origins |
-| `TRAIN_DEVICE_STANDARD` | `1` | CUDA device used by Standard Mode Train Tune jobs |
-| `TRAIN_DEVICE_HIGH_SPEED` | `0,1` | CUDA devices used by High-Speed Train Tune jobs |
+| `TRAIN_VISIBLE_DEVICES_STANDARD` | `1` | Physical CUDA devices exposed to Standard Mode Train Tune jobs; default maps to the first RTX 5080 |
+| `TRAIN_VISIBLE_DEVICES_HIGH_SPEED` | `1,2` | Physical CUDA devices exposed to High-Speed Train Tune jobs; default maps to both RTX 5080 cards |
+| `TRAIN_DEVICE_STANDARD` | `1` | Physical CUDA device string passed to Ultralytics for Standard Mode |
+| `TRAIN_DEVICE_HIGH_SPEED` | `1,2` | Physical CUDA device string passed to Ultralytics for High-Speed Mode |
+| `TRAIN_AMP_STANDARD` | `true` | Enables AMP for Standard Mode |
+| `TRAIN_AMP_HIGH_SPEED` | `false` | Disables AMP for High-Speed DDP on RTX 5080 to avoid CUDA illegal-instruction failures |
 | `LABELLENS_TRAIN_TUNE_FAKE` | `0` | Set to `1` to run mock training jobs that stream progress without real weights |
+
+LabelLens defaults to `CUDA_VISIBLE_DEVICES=1,2` so the RTX 4090 at physical GPU `0` remains reserved for vLLM. Train Tune passes physical device IDs to Ultralytics because Ultralytics rewrites `CUDA_VISIBLE_DEVICES` from its `device` argument; Standard Mode uses physical GPU `1`, and High-Speed Mode uses physical GPUs `1,2` with AMP off for DDP stability.
 
 ## License
 
 Internal project — not for public distribution.
-
