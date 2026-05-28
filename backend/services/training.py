@@ -230,10 +230,61 @@ class TrainingService:
     def _normalize_preprocessing_config(self, config: dict) -> dict:
         raw = config.get('preprocessing_config') or {}
         resize_mode = raw.get('resize_mode') or config.get('resize_mode') or 'keep'
+        if resize_mode == 'fit':
+            resize_mode = 'letterbox'
+        if resize_mode not in {'keep', 'letterbox', 'stretch'}:
+            resize_mode = 'keep'
+        target_size = raw.get('target_size') or config.get('imgsz') or config.get('target_size') or 640
+        try:
+            target_size = int(target_size)
+        except (TypeError, ValueError):
+            target_size = 640
+        target_size = min(max(target_size, 32), 4096)
         return {
             'auto_orient': bool(raw.get('auto_orient', True)),
-            'resize_mode': 'fit' if resize_mode == 'fit' else 'keep',
+            'resize_mode': resize_mode,
+            'target_size': target_size,
         }
+
+    def _transform_detection_geometry(self, detections: list[dict], scale_x: float, scale_y: float, pad_x: float = 0.0, pad_y: float = 0.0) -> list[dict]:
+        transformed = []
+        for det in detections:
+            x1, y1, x2, y2 = det['box']
+            next_det = {
+                **det,
+                'box': [
+                    x1 * scale_x + pad_x,
+                    y1 * scale_y + pad_y,
+                    x2 * scale_x + pad_x,
+                    y2 * scale_y + pad_y,
+                ],
+            }
+            if det.get('mask'):
+                next_det['mask'] = [[float(point[0]) * scale_x + pad_x, float(point[1]) * scale_y + pad_y] for point in det['mask']]
+            transformed.append(next_det)
+        return transformed
+
+    def _preprocess_entry_image(self, image: np.ndarray, detections: list[dict], preprocessing_config: dict, task_type: str) -> tuple[np.ndarray, list[dict]]:
+        height, width = image.shape[:2]
+        detections = self._sanitize_detections(detections, width, height, task_type)
+        resize_mode = preprocessing_config.get('resize_mode', 'keep')
+        if resize_mode == 'keep' or not detections:
+            return image, detections
+        target = int(preprocessing_config.get('target_size') or 640)
+        if resize_mode == 'stretch':
+            resized = cv2.resize(image, (target, target), interpolation=cv2.INTER_AREA)
+            next_detections = self._transform_detection_geometry(detections, target / width, target / height)
+            return resized, self._sanitize_detections(next_detections, target, target, task_type)
+        scale = min(target / width, target / height)
+        next_width = max(1, int(round(width * scale)))
+        next_height = max(1, int(round(height * scale)))
+        resized = cv2.resize(image, (next_width, next_height), interpolation=cv2.INTER_AREA)
+        canvas = np.full((target, target, 3), 114, dtype=np.uint8)
+        pad_x = (target - next_width) // 2
+        pad_y = (target - next_height) // 2
+        canvas[pad_y:pad_y + next_height, pad_x:pad_x + next_width] = resized
+        next_detections = self._transform_detection_geometry(detections, scale, scale, pad_x, pad_y)
+        return canvas, self._sanitize_detections(next_detections, target, target, task_type)
 
     def _normalize_augmentation_config(self, config: dict) -> dict:
         raw = config.get('augmentation_config') or {'profile': 'baseline'}
@@ -492,14 +543,17 @@ class TrainingService:
             for entry in split_map[subset]:
                 image = self._read_entry_image(entry)
                 detections = self._sanitize_detections(entry['detections'], image.shape[1], image.shape[0], task_type)
+                image, detections = self._preprocess_entry_image(image, detections, preprocessing_config, task_type)
                 if self._write_image_and_label(dataset_path, subset, entry['export_filename'], image, detections, class_to_id, task_type):
                     split_counts[subset] += 1
         multiplier = int(augmentation_config.get('multiplier') or 1)
-        if multiplier > 1 and train_original > 0:
+        has_offline_steps = any(float(value or 0) > 0 for value in (augmentation_config.get('offline') or {}).values())
+        if multiplier > 1 and train_original > 0 and has_offline_steps:
             for copy_index in range(1, multiplier):
                 for entry in split_map.get('train', []):
                     image = self._read_entry_image(entry)
                     detections = self._sanitize_detections(entry['detections'], image.shape[1], image.shape[0], task_type)
+                    image, detections = self._preprocess_entry_image(image, detections, preprocessing_config, task_type)
                     aug_image, aug_detections = self._augment_entry(image, detections, augmentation_config, task_type, force=True)
                     stem, ext = os.path.splitext(entry['export_filename'])
                     filename = self._unique_name(f'{stem}-aug-{copy_index}{ext or ".jpg"}', set())
@@ -848,15 +902,17 @@ class TrainingService:
             entries, _source_count, classes = self._live_dataset_entries(dataset_name, task_type)
             source_name = dataset_name
         augmentation_config = self._normalize_augmentation_config(config)
+        preprocessing_config = self._normalize_preprocessing_config(config)
         samples = []
         for entry in entries[:3]:
             image = self._read_entry_image(entry)
             detections = self._sanitize_detections(entry['detections'], image.shape[1], image.shape[0], task_type)
-            aug_image, aug_detections = self._augment_entry(image, detections, augmentation_config, task_type, force=True)
+            preprocessed_image, preprocessed_detections = self._preprocess_entry_image(image, detections, preprocessing_config, task_type)
+            aug_image, aug_detections = self._augment_entry(preprocessed_image, preprocessed_detections, augmentation_config, task_type, force=True)
             samples.append({
                 'filename': entry['export_filename'],
                 'original': self._encode_preview(image, detections),
-                'preprocessed': self._encode_preview(image, detections),
+                'preprocessed': self._encode_preview(preprocessed_image, preprocessed_detections),
                 'augmented': self._encode_preview(aug_image, aug_detections),
             })
         return {
@@ -864,7 +920,7 @@ class TrainingService:
             'source_name': source_name,
             'task_type': task_type,
             'classes': classes,
-            'preprocessing_config': self._normalize_preprocessing_config(config),
+            'preprocessing_config': preprocessing_config,
             'augmentation_config': augmentation_config,
             'samples': samples,
         }

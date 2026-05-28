@@ -25,6 +25,30 @@ type DeleteTarget =
   | { kind: 'model-version'; id: string; name: string; jobName: string }
 const deleteTarget = ref<DeleteTarget | null>(null)
 const builderStep = ref(1)
+const showAugmentMenu = ref(false)
+type AugmentKey = 'fliplr' | 'flipud' | 'degrees' | 'translate' | 'scale' | 'shear' | 'hsv_h' | 'hsv_s' | 'hsv_v' | 'exposure' | 'blur' | 'noise' | 'mosaic' | 'mixup' | 'copy_paste' | 'erasing'
+const activeAugmentKey = ref<AugmentKey | null>(null)
+const augmentDraft = ref(0)
+
+const previewOffsets = [-1, 0, 1] as const
+const augmentationSteps = [
+  { key: 'degrees', label: 'Rotation', unit: 'deg', min: 0, max: 45, step: 1, defaultValue: 15, help: 'Adds camera roll variation while preserving object geometry.', materialized: true },
+  { key: 'fliplr', label: 'Horizontal Flip', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.5, help: 'Mirrors train images left to right when object direction is not fixed.', materialized: true },
+  { key: 'flipud', label: 'Vertical Flip', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.2, help: 'Use only when upside-down objects are valid in production.', materialized: true },
+  { key: 'noise', label: 'Noise', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.2, help: 'Adds sensor noise and compression-like variation.', materialized: true },
+  { key: 'blur', label: 'Blur', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.2, help: 'Helps with motion blur and slight focus errors.', materialized: true },
+  { key: 'exposure', label: 'Exposure', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.2, help: 'Varies brightness and contrast for lighting changes.', materialized: true },
+  { key: 'hsv_h', label: 'Hue', unit: '', min: 0, max: 0.2, step: 0.005, defaultValue: 0.02, help: 'Small hue shifts for color variation.', materialized: true },
+  { key: 'hsv_s', label: 'Saturation', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.3, help: 'Changes color intensity while retaining labels.', materialized: true },
+  { key: 'hsv_v', label: 'Brightness', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.25, help: 'Adjusts value channel for darker/brighter scenes.', materialized: true },
+  { key: 'translate', label: 'Translate', unit: '%', min: 0, max: 0.5, step: 0.01, defaultValue: 0.08, help: 'Moves objects in frame to reduce center bias.', materialized: true },
+  { key: 'scale', label: 'Scale / Zoom', unit: '%', min: 0, max: 0.9, step: 0.05, defaultValue: 0.25, help: 'Zooms in or out so object size varies.', materialized: true },
+  { key: 'shear', label: 'Shear', unit: 'deg', min: 0, max: 45, step: 1, defaultValue: 8, help: 'Adds mild perspective-like skew.', materialized: true },
+  { key: 'mosaic', label: 'Mosaic', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.5, help: 'Training-only YOLO augmentation combining multiple images.', materialized: false },
+  { key: 'mixup', label: 'MixUp', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.1, help: 'Training-only image blending for regularization.', materialized: false },
+  { key: 'copy_paste', label: 'Copy Paste', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.1, help: 'Training-only segment augmentation for object composition.', materialized: false },
+  { key: 'erasing', label: 'Erasing', unit: '%', min: 0, max: 1, step: 0.05, defaultValue: 0.1, help: 'Training-only random erasing/occlusion regularization.', materialized: false },
+] as const satisfies ReadonlyArray<{ key: AugmentKey; label: string; unit: string; min: number; max: number; step: number; defaultValue: number; help: string; materialized: boolean }>
 
 function reactiveState() {
   return {
@@ -37,21 +61,21 @@ function reactiveState() {
     splitVal: 20,
     splitTest: 10,
     autoOrient: true,
-    resizeMode: 'keep',
+    resizeMode: 'keep' as 'keep' | 'letterbox' | 'stretch',
     augmentMultiplier: 1,
-    augFlipHorizontal: 0.5,
+    augFlipHorizontal: 0,
     augFlipVertical: 0,
     augRotation: 0,
     augTranslate: 0,
     augScale: 0,
     augShear: 0,
-    augHsvHue: 0.015,
-    augHsvSaturation: 0.3,
-    augHsvValue: 0.2,
+    augHsvHue: 0,
+    augHsvSaturation: 0,
+    augHsvValue: 0,
     augExposure: 0,
     augBlur: 0,
     augNoise: 0,
-    augMosaic: 0.5,
+    augMosaic: 0,
     augMixup: 0,
     augCopyPaste: 0,
     augErasing: 0,
@@ -100,13 +124,25 @@ const previewVersionName = computed(() => {
   if (form.sourceType === 'zip' && form.zipFile) return form.zipFile.name.replace(/\.zip$/i, '')
   return 'Auto-named after source selection'
 })
-const preprocessingSummary = computed(() => `${form.resizeMode === 'keep' ? 'Keep original image size' : 'Fit images to training resolution'}; ${form.autoOrient ? 'auto orient on' : 'auto orient off'}.`)
+const resizeStrategyLabel = computed(() => {
+  if (form.resizeMode === 'letterbox') return `Letterbox to ${form.imgsz}x${form.imgsz}`
+  if (form.resizeMode === 'stretch') return `Stretch to ${form.imgsz}x${form.imgsz}`
+  return 'Keep original image size'
+})
+const preprocessingSummary = computed(() => `${resizeStrategyLabel.value}; ${form.autoOrient ? 'auto orient on' : 'auto orient off'}.`)
 const selectedDatasetProject = computed(() => datasetStore.projects.find((project) => project.name === form.selectedDataset) ?? null)
 const estimatedSourceImages = computed(() => selectedDatasetProject.value?.stats.accepted || selectedDatasetProject.value?.stats.total_images || 0)
 const estimatedTrainOriginal = computed(() => Math.round(estimatedSourceImages.value * (form.splitTrain / 100)))
-const estimatedGeneratedImages = computed(() => Math.max(0, estimatedTrainOriginal.value * (form.augmentMultiplier - 1)))
+const activeAugmentationSteps = computed(() => augmentationSteps.filter((step) => augmentValue(step.key) > 0))
+const activeMaterializedSteps = computed(() => activeAugmentationSteps.value.filter((step) => step.materialized))
+const estimatedGeneratedImages = computed(() => activeMaterializedSteps.value.length ? Math.max(0, estimatedTrainOriginal.value * (form.augmentMultiplier - 1)) : 0)
 const estimatedFinalImages = computed(() => estimatedSourceImages.value + estimatedGeneratedImages.value)
-const augmentationSummary = computed(() => `${form.augmentMultiplier}x train-only materialized policy; ${estimatedGeneratedImages.value} generated train images estimated. YOLO online args stay attached to the training run.`)
+const augmentationSummary = computed(() => activeAugmentationSteps.value.length
+  ? `${activeAugmentationSteps.value.length} optional steps; ${form.augmentMultiplier}x train-only cap; ${estimatedGeneratedImages.value} generated train images estimated.`
+  : 'No augmentation steps. Training uses original dataset images unless steps are added.')
+const availableAugmentationSteps = computed(() => augmentationSteps.filter((step) => !activeAugmentationSteps.value.some((active) => active.key === step.key)))
+const activeAugmentStep = computed(() => augmentationSteps.find((step) => step.key === activeAugmentKey.value) ?? null)
+const modalPreviewImage = computed(() => trainingStore.policyPreview?.samples?.[0]?.original.image ?? '')
 const metricTrends = [
   { key: 'map50', label: 'mAP50', tone: 'is-quality' },
   { key: 'map50_95', label: 'mAP50-95', tone: 'is-quality' },
@@ -154,7 +190,11 @@ function versionSplitCounts(version: DatasetVersion | null | undefined) {
 }
 
 function versionResize(version: DatasetVersion | null | undefined) {
-  return configText(version?.preprocessing_config.resize_mode, 'keep') === 'fit' ? 'Fit to train size' : 'Keep original'
+  const mode = configText(version?.preprocessing_config.resize_mode, 'keep')
+  const target = configText(version?.preprocessing_config.target_size, 'train')
+  if (mode === 'letterbox' || mode === 'fit') return `Letterbox ${target}`
+  if (mode === 'stretch') return `Stretch ${target}`
+  return 'Keep original'
 }
 
 function versionOrient(version: DatasetVersion | null | undefined) {
@@ -169,46 +209,135 @@ function versionAugment(version: DatasetVersion | null | undefined) {
 }
 
 function policyPreprocessingConfig() {
-  return { auto_orient: form.autoOrient, resize_mode: form.resizeMode }
+  return { auto_orient: form.autoOrient, resize_mode: form.resizeMode, target_size: form.imgsz }
+}
+
+function augmentValue(key: AugmentKey) {
+  const map: Record<AugmentKey, number> = {
+    fliplr: form.augFlipHorizontal,
+    flipud: form.augFlipVertical,
+    degrees: form.augRotation,
+    translate: form.augTranslate,
+    scale: form.augScale,
+    shear: form.augShear,
+    hsv_h: form.augHsvHue,
+    hsv_s: form.augHsvSaturation,
+    hsv_v: form.augHsvValue,
+    exposure: form.augExposure,
+    blur: form.augBlur,
+    noise: form.augNoise,
+    mosaic: form.augMosaic,
+    mixup: form.augMixup,
+    copy_paste: form.augCopyPaste,
+    erasing: form.augErasing,
+  }
+  return Number(map[key]) || 0
+}
+
+function setAugmentValue(key: AugmentKey, value: number) {
+  const next = Number(value) || 0
+  if (key === 'fliplr') form.augFlipHorizontal = next
+  else if (key === 'flipud') form.augFlipVertical = next
+  else if (key === 'degrees') form.augRotation = next
+  else if (key === 'translate') form.augTranslate = next
+  else if (key === 'scale') form.augScale = next
+  else if (key === 'shear') form.augShear = next
+  else if (key === 'hsv_h') form.augHsvHue = next
+  else if (key === 'hsv_s') form.augHsvSaturation = next
+  else if (key === 'hsv_v') form.augHsvValue = next
+  else if (key === 'exposure') form.augExposure = next
+  else if (key === 'blur') form.augBlur = next
+  else if (key === 'noise') form.augNoise = next
+  else if (key === 'mosaic') form.augMosaic = next
+  else if (key === 'mixup') form.augMixup = next
+  else if (key === 'copy_paste') form.augCopyPaste = next
+  else if (key === 'erasing') form.augErasing = next
+}
+
+function formatAugmentValue(key: AugmentKey, value = augmentValue(key)) {
+  const step = augmentationSteps.find((item) => item.key === key)
+  if (!step) return String(value)
+  if (step.unit === '%') return `${Math.round(value * 100)}%`
+  if (step.unit === 'deg') return `${value}deg`
+  return value.toString()
+}
+
+function openAugmentModal(key: AugmentKey) {
+  const step = augmentationSteps.find((item) => item.key === key)
+  if (!step) return
+  activeAugmentKey.value = key
+  augmentDraft.value = augmentValue(key) || step.defaultValue
+  showAugmentMenu.value = false
+}
+
+function closeAugmentModal() {
+  activeAugmentKey.value = null
+}
+
+function applyAugmentStep() {
+  if (!activeAugmentKey.value) return
+  setAugmentValue(activeAugmentKey.value, augmentDraft.value)
+  closeAugmentModal()
+}
+
+function removeAugmentStep(key: AugmentKey) {
+  setAugmentValue(key, 0)
+}
+
+function modalPreviewStyle(offset: -1 | 0 | 1) {
+  const key = activeAugmentKey.value
+  const value = offset === 0 ? 0 : augmentDraft.value * offset
+  const transforms: string[] = []
+  const filters: string[] = []
+  if (key === 'degrees') transforms.push(`rotate(${value}deg)`)
+  if (key === 'scale') transforms.push(`scale(${1 + value})`)
+  if (key === 'shear') transforms.push(`skewX(${value}deg)`)
+  if (key === 'translate') transforms.push(`translateX(${value * 42}px)`)
+  if (key === 'fliplr' && offset !== 0) transforms.push('scaleX(-1)')
+  if (key === 'flipud' && offset !== 0) transforms.push('scaleY(-1)')
+  if (key === 'blur' && offset !== 0) filters.push(`blur(${Math.max(1, augmentDraft.value * 6)}px)`)
+  if ((key === 'hsv_v' || key === 'exposure') && offset !== 0) filters.push(`brightness(${1 + value})`)
+  if (key === 'hsv_s' && offset !== 0) filters.push(`saturate(${1 + value})`)
+  if (key === 'hsv_h' && offset !== 0) filters.push(`hue-rotate(${value * 180}deg)`)
+  if (key === 'noise' && offset !== 0) filters.push(`contrast(${1 + augmentDraft.value})`)
+  return { transform: transforms.join(' ') || 'none', filter: filters.join(' ') || 'none' }
+}
+
+function modalPreviewLabel(offset: -1 | 0 | 1) {
+  if (offset === 0) return 'Original'
+  return offset < 0 ? `-${formatAugmentValue(activeAugmentKey.value || 'degrees', augmentDraft.value)}` : formatAugmentValue(activeAugmentKey.value || 'degrees', augmentDraft.value)
+}
+
+function activeOfflineConfig() {
+  const offline: Record<string, number> = {}
+  for (const step of augmentationSteps) {
+    if (!step.materialized) continue
+    const value = augmentValue(step.key)
+    if (value > 0) offline[step.key] = value
+  }
+  return offline
+}
+
+function activeOnlineConfig() {
+  const online: Record<string, number> = {}
+  for (const step of augmentationSteps) {
+    const value = augmentValue(step.key)
+    if (value > 0 && step.key !== 'exposure' && step.key !== 'blur' && step.key !== 'noise') online[step.key] = value
+  }
+  return online
 }
 
 function policyAugmentationConfig() {
   return {
     mode: 'hybrid',
-    profile: 'custom',
-    multiplier: Math.min(Math.max(Number(form.augmentMultiplier) || 1, 1), 5),
+    profile: activeAugmentationSteps.value.length ? 'custom' : 'none',
+    multiplier: activeMaterializedSteps.value.length ? Math.min(Math.max(Number(form.augmentMultiplier) || 1, 1), 5) : 1,
     apply_to: 'train',
-    offline: {
-      fliplr: Number(form.augFlipHorizontal) || 0,
-      flipud: Number(form.augFlipVertical) || 0,
-      degrees: Number(form.augRotation) || 0,
-      translate: Number(form.augTranslate) || 0,
-      scale: Number(form.augScale) || 0,
-      shear: Number(form.augShear) || 0,
-      hsv_h: Number(form.augHsvHue) || 0,
-      hsv_s: Number(form.augHsvSaturation) || 0,
-      hsv_v: Number(form.augHsvValue) || 0,
-      exposure: Number(form.augExposure) || 0,
-      blur: Number(form.augBlur) || 0,
-      noise: Number(form.augNoise) || 0,
-    },
-    online: {
-      hsv_h: Number(form.augHsvHue) || 0,
-      hsv_s: Number(form.augHsvSaturation) || 0,
-      hsv_v: Number(form.augHsvValue) || 0,
-      degrees: Number(form.augRotation) || 0,
-      translate: Number(form.augTranslate) || 0,
-      scale: Number(form.augScale) || 0,
-      shear: Number(form.augShear) || 0,
-      fliplr: Number(form.augFlipHorizontal) || 0,
-      flipud: Number(form.augFlipVertical) || 0,
-      mosaic: Number(form.augMosaic) || 0,
-      mixup: Number(form.augMixup) || 0,
-      copy_paste: Number(form.augCopyPaste) || 0,
-      erasing: Number(form.augErasing) || 0,
-    },
+    offline: activeOfflineConfig(),
+    online: activeOnlineConfig(),
   }
 }
+
 
 function metricValue(point: TrainingMetricPoint | null | undefined, key: MetricTrendKey) {
   return point?.[key] ?? null
@@ -628,7 +757,7 @@ async function recomputeFailedJob(jobId: string) {
                 <section v-else-if="builderStep === 3" class="space-y-(--spacing-md)">
                   <div>
                     <h2 class="text-[18px] font-medium text-ink">Policy</h2>
-                    <p class="text-[13px] text-ink-mute leading-[1.45]">Roboflow-like preprocessing, train-only augmentation size, and real preview samples are stored with the immutable Dataset Version.</p>
+                    <p class="text-[13px] text-ink-mute leading-[1.45]">Resize strategy is deterministic; augmentation is optional and added as explicit steps before the immutable Dataset Version is created.</p>
                   </div>
                   <div class="train-policy-sections">
                     <div class="train-policy-section">
@@ -637,45 +766,51 @@ async function recomputeFailedJob(jobId: string) {
                         <span>{{ preprocessingSummary }}</span>
                       </div>
                       <div class="train-version-fields">
-                        <label class="train-field"><span>Resize Mode</span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="fit">Fit to train resolution</option></select></label>
+                        <label class="train-field"><span>Resize Strategy</span><select v-model="form.resizeMode"><option value="keep">Keep original size</option><option value="letterbox">Letterbox to image size</option><option value="stretch">Stretch to image size</option></select></label>
+                        <label class="train-field"><span>Target Size</span><input :value="`${form.imgsz} x ${form.imgsz}`" disabled /></label>
                         <label class="train-field"><span>Auto Orient</span><select v-model="form.autoOrient"><option :value="true">Enabled</option><option :value="false">Disabled</option></select></label>
                       </div>
+                      <p class="train-version-note">Best practice: keep original or Letterbox. Stretch is available for Roboflow-style exports but can distort object shape.</p>
                     </div>
 
                     <div class="train-policy-section">
                       <div class="train-version-title">
                         <strong>2. Augmentation</strong>
-                        <span>Core image transforms are materialized for train split; advanced YOLO options stay online.</span>
+                        <span>{{ augmentationSummary }}</span>
                       </div>
-                      <div class="train-augment-grid">
-                        <label class="train-field"><span>Horizontal Flip</span><input v-model.number="form.augFlipHorizontal" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Vertical Flip</span><input v-model.number="form.augFlipVertical" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Rotation deg</span><input v-model.number="form.augRotation" type="number" min="0" max="45" step="1" /></label>
-                        <label class="train-field"><span>Translate</span><input v-model.number="form.augTranslate" type="number" min="0" max="0.5" step="0.01" /></label>
-                        <label class="train-field"><span>Scale</span><input v-model.number="form.augScale" type="number" min="0" max="0.9" step="0.05" /></label>
-                        <label class="train-field"><span>Shear deg</span><input v-model.number="form.augShear" type="number" min="0" max="45" step="1" /></label>
-                        <label class="train-field"><span>Hue</span><input v-model.number="form.augHsvHue" type="number" min="0" max="0.2" step="0.005" /></label>
-                        <label class="train-field"><span>Saturation</span><input v-model.number="form.augHsvSaturation" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Brightness</span><input v-model.number="form.augHsvValue" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Exposure</span><input v-model.number="form.augExposure" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Blur</span><input v-model.number="form.augBlur" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Noise</span><input v-model.number="form.augNoise" type="number" min="0" max="1" step="0.05" /></label>
+                      <div v-if="!activeAugmentationSteps.length" class="train-augment-empty">
+                        <strong>No augmentation steps</strong>
+                        <span>Add steps only when your dataset needs extra visual variation.</span>
                       </div>
-                      <div class="train-augment-advanced">
-                        <label class="train-field"><span>Mosaic</span><input v-model.number="form.augMosaic" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>MixUp</span><input v-model.number="form.augMixup" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Copy Paste</span><input v-model.number="form.augCopyPaste" type="number" min="0" max="1" step="0.05" /></label>
-                        <label class="train-field"><span>Erasing</span><input v-model.number="form.augErasing" type="number" min="0" max="1" step="0.05" /></label>
+                      <div v-else class="train-augment-step-list">
+                        <div v-for="step in activeAugmentationSteps" :key="step.key" class="train-augment-step-row">
+                          <button class="train-augment-step-main" @click="openAugmentModal(step.key)">
+                            <strong>{{ step.label }}</strong>
+                            <span>{{ formatAugmentValue(step.key) }} · {{ step.materialized ? 'materialized preview' : 'training-only' }}</span>
+                          </button>
+                          <button class="train-mini-action" @click="openAugmentModal(step.key)">Edit</button>
+                          <button class="train-mini-action is-danger" @click="removeAugmentStep(step.key)">Delete</button>
+                        </div>
+                      </div>
+                      <div class="train-add-augment">
+                        <button class="dataset-secondary-button" :aria-expanded="showAugmentMenu" @click="showAugmentMenu = !showAugmentMenu">Add Augmentation Step</button>
+                        <div v-if="showAugmentMenu" class="train-augment-menu">
+                          <button v-for="step in availableAugmentationSteps" :key="step.key" @click="openAugmentModal(step.key)">
+                            <strong>{{ step.label }}</strong>
+                            <span>{{ step.materialized ? 'Preview + snapshot' : 'Training-only' }}</span>
+                          </button>
+                          <span v-if="!availableAugmentationSteps.length" class="train-empty">All augmentation steps are already added.</span>
+                        </div>
                       </div>
                     </div>
 
                     <div class="train-policy-section">
                       <div class="train-version-title">
                         <strong>3. Generate Size</strong>
-                        <span>{{ augmentationSummary }}</span>
+                        <span>Maximum Version Size multiplies only train images and only when materialized augmentation steps exist.</span>
                       </div>
                       <div class="train-version-fields">
-                        <label class="train-field"><span>Maximum Version Size</span><select v-model.number="form.augmentMultiplier"><option :value="1">1x original</option><option :value="2">2x train</option><option :value="3">3x train</option><option :value="4">4x train</option><option :value="5">5x train</option></select></label>
+                        <label class="train-field"><span>Maximum Version Size</span><select v-model.number="form.augmentMultiplier" :disabled="!activeMaterializedSteps.length"><option :value="1">1x original</option><option :value="2">2x train</option><option :value="3">3x train</option><option :value="4">4x train</option><option :value="5">5x train</option></select></label>
                         <div class="train-version-status is-valid">
                           <span>Estimated final</span>
                           <strong>{{ estimatedFinalImages }} images</strong>
@@ -741,7 +876,7 @@ async function recomputeFailedJob(jobId: string) {
                       <div><span>Task</span><strong>{{ taskLabel(form.taskType) }}</strong></div>
                       <div><span>Architecture</span><strong>{{ form.family }} {{ form.size }} / {{ form.baseCheckpoint }}</strong></div>
                       <div><span>Split</span><strong>{{ form.splitTrain }} / {{ form.splitVal }} / {{ form.splitTest }}</strong></div>
-                      <div><span>Prep</span><strong>{{ form.resizeMode === 'keep' ? 'Keep size' : 'Fit size' }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
+                      <div><span>Prep</span><strong>{{ resizeStrategyLabel }} / {{ form.autoOrient ? 'Orient' : 'Raw orient' }}</strong></div>
                       <div><span>Augment</span><strong>{{ form.augmentMultiplier }}x train-only</strong></div>
                     </div>
                   </div>
@@ -1098,6 +1233,61 @@ async function recomputeFailedJob(jobId: string) {
       leave-active-class="transition ease-in duration-150"
       leave-to-class="opacity-0 scale-[0.98]"
     >
+      <div v-if="activeAugmentStep" class="dataset-dialog-backdrop" @click.self="closeAugmentModal">
+        <section class="train-augment-dialog" role="dialog" aria-modal="true" :aria-label="`${activeAugmentStep.label} augmentation`">
+          <header class="dataset-modal-header">
+            <div>
+              <h3 class="dataset-modal-title">{{ activeAugmentStep.label }}</h3>
+              <p class="dataset-modal-copy">{{ activeAugmentStep.help }}</p>
+            </div>
+            <button class="dataset-modal-close" @click="closeAugmentModal" :aria-label="`Close ${activeAugmentStep.label} augmentation dialog`">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </header>
+          <div class="train-augment-modal-body">
+            <div class="train-augment-modal-preview">
+              <figure v-for="offset in previewOffsets" :key="offset" :class="['train-augment-preview-frame', offset === 0 ? 'is-primary' : '']">
+                <div class="train-augment-preview-canvas">
+                  <img v-if="modalPreviewImage" :src="modalPreviewImage" alt="Augmentation preview sample" :style="modalPreviewStyle(offset)" />
+                  <div v-else class="train-augment-preview-placeholder" :style="modalPreviewStyle(offset)">
+                    <span></span>
+                    <i></i>
+                  </div>
+                </div>
+                <figcaption>{{ modalPreviewLabel(offset) }}</figcaption>
+              </figure>
+            </div>
+            <div class="train-augment-modal-controls">
+              <p>{{ activeAugmentStep.materialized ? 'This step is previewed and materialized into generated train images.' : 'This step is applied by YOLO during training and is not materialized into snapshot files.' }}</p>
+              <div class="train-slider-shell">
+                <div class="train-slider-labels">
+                  <span>{{ formatAugmentValue(activeAugmentStep.key, activeAugmentStep.min) }}</span>
+                  <strong>{{ formatAugmentValue(activeAugmentStep.key, augmentDraft) }}</strong>
+                  <span>{{ formatAugmentValue(activeAugmentStep.key, activeAugmentStep.max) }}</span>
+                </div>
+                <input v-model.number="augmentDraft" type="range" :min="activeAugmentStep.min" :max="activeAugmentStep.max" :step="activeAugmentStep.step" />
+              </div>
+              <div class="train-augment-help-box">
+                <strong>Why use {{ activeAugmentStep.label }}?</strong>
+                <span>{{ activeAugmentStep.help }}</span>
+              </div>
+            </div>
+          </div>
+          <footer class="dataset-modal-footer">
+            <button class="dataset-secondary-button" @click="closeAugmentModal">Go Back</button>
+            <button class="dataset-primary-button" @click="applyAugmentStep">Apply</button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
+
+    <Transition
+      enter-active-class="transition ease-out duration-200"
+      enter-from-class="opacity-0 scale-[0.98]"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition ease-in duration-150"
+      leave-to-class="opacity-0 scale-[0.98]"
+    >
       <div v-if="deleteTarget" class="dataset-dialog-backdrop" @click.self="closeDeleteDialog">
         <section class="dataset-delete-dialog">
           <header class="dataset-modal-header">
@@ -1179,6 +1369,41 @@ async function recomputeFailedJob(jobId: string) {
 .train-version-flow { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); overflow: visible; }
 .train-policy-sections { display: flex; flex-direction: column; gap: 12px; }
 .train-policy-section { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas-soft); }
+.train-augment-empty { display: flex; flex-direction: column; gap: 4px; min-height: 78px; justify-content: center; padding: 14px; border: 1px dashed var(--color-hairline-strong); border-radius: var(--radius-sm); background: var(--color-canvas); }
+.train-augment-empty strong { color: var(--color-ink); font-size: 13px; font-weight: 500; }
+.train-augment-empty span { color: var(--color-ink-mute); font-size: 12px; }
+.train-augment-step-list { display: flex; flex-direction: column; gap: 8px; }
+.train-augment-step-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); }
+.train-augment-step-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.train-augment-step-main strong { color: var(--color-ink); font-size: 13px; font-weight: 500; }
+.train-augment-step-main span { color: var(--color-ink-mute); font-size: 12px; }
+.train-add-augment { position: relative; display: inline-flex; align-self: flex-start; }
+.train-augment-menu { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; width: min(360px, calc(100vw - 40px)); max-height: 360px; overflow: auto; display: grid; gap: 6px; padding: 8px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas); box-shadow: 0 18px 46px rgba(0, 0, 0, 0.16); }
+.train-augment-menu button { display: flex; flex-direction: column; gap: 3px; padding: 10px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; text-align: left; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease; }
+.train-augment-menu button:hover, .train-augment-menu button:focus-visible { border-color: var(--color-hairline-strong); background: var(--color-canvas-soft); }
+.train-augment-menu strong { color: var(--color-ink); font-size: 13px; font-weight: 500; }
+.train-augment-menu span { color: var(--color-ink-mute); font-size: 12px; }
+.train-augment-dialog { width: min(920px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); background: var(--color-canvas); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.26); }
+.train-augment-modal-body { min-height: 0; display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(280px, 0.88fr); overflow: auto; border-top: 1px solid var(--color-hairline); border-bottom: 1px solid var(--color-hairline); }
+.train-augment-modal-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-content: center; padding: 24px; background: #d8d8d8; }
+.train-augment-preview-frame { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.train-augment-preview-frame.is-primary { grid-column: 1 / -1; }
+.train-augment-preview-canvas { width: min(210px, 100%); aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #f8fafc; }
+.train-augment-preview-canvas img { width: 78%; height: 78%; object-fit: cover; transition: transform 180ms ease, filter 180ms ease; }
+.train-augment-preview-placeholder { position: relative; width: 78%; height: 78%; border: 1px solid rgba(15, 23, 42, 0.22); background: linear-gradient(135deg, #f8fafc 0%, #c7d2fe 48%, #a7f3d0 100%); transition: transform 180ms ease, filter 180ms ease; }
+.train-augment-preview-placeholder span { position: absolute; left: 18%; top: 18%; width: 42%; height: 30%; border-radius: 4px; background: rgba(15, 23, 42, 0.72); }
+.train-augment-preview-placeholder i { position: absolute; right: 18%; bottom: 18%; width: 28%; height: 38%; border: 2px solid #2563eb; border-radius: 3px; }
+.train-augment-preview-frame figcaption { color: #374151; font-size: 12px; }
+.train-augment-modal-controls { display: flex; flex-direction: column; gap: 18px; padding: 22px; background: var(--color-canvas-soft); }
+.train-augment-modal-controls p { margin: 0; color: var(--color-ink-mute); font-size: 13px; line-height: 1.55; }
+.train-slider-shell { display: flex; flex-direction: column; gap: 8px; }
+.train-slider-labels { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; color: var(--color-ink-mute); font-size: 12px; }
+.train-slider-labels strong { justify-self: center; padding: 2px 7px; border-radius: var(--radius-sm); background: var(--color-primary); color: white; font-size: 13px; font-weight: 600; }
+.train-slider-labels span:last-child { justify-self: end; }
+.train-slider-shell input[type='range'] { width: 100%; accent-color: var(--color-primary); cursor: pointer; }
+.train-augment-help-box { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding: 14px; border-radius: var(--radius-md); background: #d8f3fb; color: #334155; }
+.train-augment-help-box strong { font-size: 14px; font-weight: 600; }
+.train-augment-help-box span { font-size: 12px; line-height: 1.6; }
 .train-augment-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .train-augment-advanced { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding-top: 12px; border-top: 1px solid var(--color-hairline); }
 .train-policy-preview-grid { display: flex; flex-direction: column; gap: 12px; }
@@ -1299,6 +1524,8 @@ async function recomputeFailedJob(jobId: string) {
   .train-version-preview { flex-direction: column; }
   .train-augment-grid, .train-augment-advanced { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .train-policy-preview-stages { grid-template-columns: 1fr; }
+  .train-augment-modal-body { grid-template-columns: 1fr; }
+  .train-augment-modal-preview { grid-template-columns: 1fr; }
   .train-preview-title { width: 100%; padding-right: 0; padding-bottom: 12px; border-right: 0; border-bottom: 1px solid var(--color-hairline); }
   .train-preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .train-metric-head, .train-metric-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1310,5 +1537,7 @@ async function recomputeFailedJob(jobId: string) {
   .train-model-card { grid-template-columns: 1fr; align-items: stretch; }
   .train-model-meta { justify-content: space-between; }
   .train-augment-grid, .train-augment-advanced, .train-version-fields { grid-template-columns: 1fr; }
+  .train-augment-step-row { grid-template-columns: 1fr; }
+  .train-augment-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
 }
 </style>

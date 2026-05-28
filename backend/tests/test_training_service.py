@@ -131,6 +131,34 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "images", "train", "train-a.jpg")))
         self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "labels", "test", "test-a.txt")))
 
+    def test_letterbox_resize_strategy_resizes_image_and_preserves_bbox_geometry(self):
+        self.dataset_service.create_project("resize-demo", ["bolt"])
+        self.dataset_service.save_image(
+            "resize-demo",
+            jpg_bytes(width=80, height=40),
+            [{"box": [20, 10, 60, 30], "label": "bolt", "confidence": 0.91}],
+            original_filename="wide-panel.jpg",
+        )
+
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "resize-demo",
+            {
+                "version_name": "resize-demo-v1",
+                "split_config": {"train": 100, "val": 0, "test": 0},
+                "preprocessing_config": {"auto_orient": True, "resize_mode": "letterbox", "target_size": 64},
+                "augmentation_config": {"mode": "hybrid", "multiplier": 1, "apply_to": "train"},
+            },
+        )
+
+        image_path = os.path.join(version["storage_path"], "dataset", "images", "train", "wide-panel.jpg")
+        image = cv2.imread(image_path)
+        self.assertEqual(image.shape[:2], (64, 64))
+        label_path = os.path.join(version["storage_path"], "dataset", "labels", "train", "wide-panel.txt")
+        values = [float(value) for value in Path(label_path).read_text().strip().split()[1:]]
+        self.assertEqual([round(value, 3) for value in values], [0.5, 0.5, 0.5, 0.25])
+        self.assertEqual(version["preprocessing_config"]["resize_mode"], "letterbox")
+        self.assertEqual(version["preprocessing_config"]["target_size"], 64)
+
     def test_hybrid_multiplier_materializes_augmented_images_only_in_train_split(self):
         self.dataset_service.create_project("aug-demo", ["bolt"])
         for index in range(4):
