@@ -29,6 +29,7 @@ const showAugmentMenu = ref(false)
 type AugmentKey = 'fliplr' | 'flipud' | 'degrees' | 'translate' | 'scale' | 'shear' | 'hsv_h' | 'hsv_s' | 'hsv_v' | 'exposure' | 'blur' | 'noise' | 'mosaic' | 'mixup' | 'copy_paste' | 'erasing'
 const activeAugmentKey = ref<AugmentKey | null>(null)
 const augmentDraft = ref(0)
+const augmentPreviewLoading = ref(false)
 
 const previewOffsets = [-1, 0, 1] as const
 const augmentationSteps = [
@@ -143,6 +144,7 @@ const augmentationSummary = computed(() => activeAugmentationSteps.value.length
 const availableAugmentationSteps = computed(() => augmentationSteps.filter((step) => !activeAugmentationSteps.value.some((active) => active.key === step.key)))
 const activeAugmentStep = computed(() => augmentationSteps.find((step) => step.key === activeAugmentKey.value) ?? null)
 const modalPreviewImage = computed(() => trainingStore.policyPreview?.samples?.[0]?.original.image ?? '')
+const modalPreviewFilename = computed(() => trainingStore.policyPreview?.samples?.[0]?.filename ?? '')
 const metricTrends = [
   { key: 'map50', label: 'mAP50', tone: 'is-quality' },
   { key: 'map50_95', label: 'mAP50-95', tone: 'is-quality' },
@@ -262,12 +264,20 @@ function formatAugmentValue(key: AugmentKey, value = augmentValue(key)) {
   return value.toString()
 }
 
-function openAugmentModal(key: AugmentKey) {
+async function openAugmentModal(key: AugmentKey) {
   const step = augmentationSteps.find((item) => item.key === key)
   if (!step) return
   activeAugmentKey.value = key
   augmentDraft.value = augmentValue(key) || step.defaultValue
   showAugmentMenu.value = false
+  if (!modalPreviewImage.value && sourceReady.value) {
+    augmentPreviewLoading.value = true
+    try {
+      await requestPolicyPreview(false)
+    } finally {
+      augmentPreviewLoading.value = false
+    }
+  }
 }
 
 function closeAugmentModal() {
@@ -489,26 +499,30 @@ async function buildVersion() {
   }
 }
 
-async function previewPolicy() {
-  form.localError = null
+async function requestPolicyPreview(showValidation = true) {
+  if (showValidation) form.localError = null
   if (form.sourceType === 'live' && !form.selectedDataset) {
-    form.localError = 'Pilih dataset project dulu untuk preview policy.'
-    return
+    if (showValidation) form.localError = 'Pilih dataset project dulu untuk preview policy.'
+    return null
   }
   if (form.sourceType === 'zip' && !form.zipFile) {
-    form.localError = 'Pilih export zip dulu untuk preview policy.'
-    return
+    if (showValidation) form.localError = 'Pilih export zip dulu untuk preview policy.'
+    return null
   }
+  return trainingStore.previewPolicy({
+    sourceType: form.sourceType,
+    datasetName: form.sourceType === 'live' ? form.selectedDataset : undefined,
+    file: form.sourceType === 'zip' ? form.zipFile : null,
+    splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
+    preprocessingConfig: policyPreprocessingConfig(),
+    augmentationConfig: policyAugmentationConfig(),
+    taskType: form.taskType,
+  })
+}
+
+async function previewPolicy() {
   try {
-    await trainingStore.previewPolicy({
-      sourceType: form.sourceType,
-      datasetName: form.sourceType === 'live' ? form.selectedDataset : undefined,
-      file: form.sourceType === 'zip' ? form.zipFile : null,
-      splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
-      preprocessingConfig: policyPreprocessingConfig(),
-      augmentationConfig: policyAugmentationConfig(),
-      taskType: form.taskType,
-    })
+    await requestPolicyPreview(true)
   } catch (err) {
     form.localError = err instanceof Error ? err.message : 'Gagal membuat preview policy'
   }
@@ -797,7 +811,7 @@ async function recomputeFailedJob(jobId: string) {
                         <div v-if="showAugmentMenu" class="train-augment-menu">
                           <button v-for="step in availableAugmentationSteps" :key="step.key" @click="openAugmentModal(step.key)">
                             <strong>{{ step.label }}</strong>
-                            <span>{{ step.materialized ? 'Preview + snapshot' : 'Training-only' }}</span>
+                            <span>{{ step.materialized ? 'Preview + snapshot' : 'Training-only' }} · Recommended {{ formatAugmentValue(step.key, step.defaultValue) }}</span>
                           </button>
                           <span v-if="!availableAugmentationSteps.length" class="train-empty">All augmentation steps are already added.</span>
                         </div>
@@ -1246,6 +1260,8 @@ async function recomputeFailedJob(jobId: string) {
           </header>
           <div class="train-augment-modal-body">
             <div class="train-augment-modal-preview">
+              <div v-if="augmentPreviewLoading" class="train-augment-preview-loading">Loading dataset sample...</div>
+              <div v-else-if="modalPreviewFilename" class="train-augment-preview-source">Sample: {{ modalPreviewFilename }}</div>
               <figure v-for="offset in previewOffsets" :key="offset" :class="['train-augment-preview-frame', offset === 0 ? 'is-primary' : '']">
                 <div class="train-augment-preview-canvas">
                   <img v-if="modalPreviewImage" :src="modalPreviewImage" alt="Augmentation preview sample" :style="modalPreviewStyle(offset)" />
@@ -1259,6 +1275,10 @@ async function recomputeFailedJob(jobId: string) {
             </div>
             <div class="train-augment-modal-controls">
               <p>{{ activeAugmentStep.materialized ? 'This step is previewed and materialized into generated train images.' : 'This step is applied by YOLO during training and is not materialized into snapshot files.' }}</p>
+              <div class="train-recommended-row">
+                <span>Recommended value</span>
+                <button type="button" @click="augmentDraft = activeAugmentStep.defaultValue">{{ formatAugmentValue(activeAugmentStep.key, activeAugmentStep.defaultValue) }}</button>
+              </div>
               <div class="train-slider-shell">
                 <div class="train-slider-labels">
                   <span>{{ formatAugmentValue(activeAugmentStep.key, activeAugmentStep.min) }}</span>
@@ -1386,6 +1406,7 @@ async function recomputeFailedJob(jobId: string) {
 .train-augment-dialog { width: min(920px, calc(100vw - 32px)); max-height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--color-hairline); border-radius: var(--radius-lg); background: var(--color-canvas); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.26); }
 .train-augment-modal-body { min-height: 0; display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(280px, 0.88fr); overflow: auto; border-top: 1px solid var(--color-hairline); border-bottom: 1px solid var(--color-hairline); }
 .train-augment-modal-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-content: center; padding: 24px; background: #d8d8d8; }
+.train-augment-preview-loading, .train-augment-preview-source { grid-column: 1 / -1; justify-self: start; min-height: 22px; padding: 3px 8px; border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.72); color: #374151; font-size: 12px; }
 .train-augment-preview-frame { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .train-augment-preview-frame.is-primary { grid-column: 1 / -1; }
 .train-augment-preview-canvas { width: min(210px, 100%); aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #f8fafc; }
@@ -1396,6 +1417,10 @@ async function recomputeFailedJob(jobId: string) {
 .train-augment-preview-frame figcaption { color: #374151; font-size: 12px; }
 .train-augment-modal-controls { display: flex; flex-direction: column; gap: 18px; padding: 22px; background: var(--color-canvas-soft); }
 .train-augment-modal-controls p { margin: 0; color: var(--color-ink-mute); font-size: 13px; line-height: 1.55; }
+.train-recommended-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); }
+.train-recommended-row span { color: var(--color-ink-mute); font-size: 12px; }
+.train-recommended-row button { min-height: 28px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--color-primary) 36%, var(--color-hairline)); border-radius: var(--radius-sm); background: color-mix(in srgb, var(--color-primary) 10%, var(--color-canvas)); color: var(--color-primary-deep); font-size: 12px; font-weight: 600; cursor: pointer; }
+.train-recommended-row button:hover, .train-recommended-row button:focus-visible { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 16%, var(--color-canvas)); }
 .train-slider-shell { display: flex; flex-direction: column; gap: 8px; }
 .train-slider-labels { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; color: var(--color-ink-mute); font-size: 12px; }
 .train-slider-labels strong { justify-self: center; padding: 2px 7px; border-radius: var(--radius-sm); background: var(--color-primary); color: white; font-size: 13px; font-weight: 600; }
