@@ -1,163 +1,363 @@
+<p align="center">
+  <img src="docs/assets/labellens-logo.svg" alt="LabelLens logo" width="180" />
+</p>
+
 # LabelLens
 
-Web-based object detection application powered by **YOLOE-26L** with support for text prompts and visual prompts (SAVPE).
+[![Frontend](https://img.shields.io/badge/frontend-Vue%203%20%2B%20Vite-42b883)](#tech-stack)
+[![Backend](https://img.shields.io/badge/backend-FastAPI-009688)](#tech-stack)
+[![Models](https://img.shields.io/badge/models-YOLOE%20%2B%20SAM2.1-111827)](#model-files)
+[![Status](https://img.shields.io/badge/status-implemented%2C%20pending%20E2E%20validation-f59e0b)](#validation-status)
 
-## References
-- `https://github.com/THU-MIG/yoloe`
-- `https://docs.ultralytics.com/models/yoloe`
-- `https://huggingface.co/spaces/jameslahm/yoloe`
+LabelLens is a local-network computer vision workspace for YOLOE-powered object detection, dataset iteration, and YOLO fine-tuning orchestration. It separates GPU-heavy inference/training workloads in a FastAPI backend from a Vue 3 SPA, with REST APIs for batch workflows and WebSockets for live RTSP streams.
 
-## Features
+The app is built for fast dataset loops: run prompt-free, text-prompt, or visual-prompt inference; review and correct labels; export YOLO/COCO datasets; then create immutable Train Tune dataset versions and launch training jobs.
 
-- **Feature Modes Page** — root path `/` always opens mode selection; choose Free Inference (no prompts, 1200+ LVIS categories via LRPC), Prompt Inference (text/visual prompts), or Train Tune, then enter the matching workspace
-- **Train Tune Workspace** — dedicated `/train-tune` YOLO detection/segmentation builder with task-selectable immutable Dataset Version snapshots, bbox or polygon-mask label export, missing-mask validation with Dataset Workspace handoff, preprocessing policy with Keep/Letterbox/Stretch resize strategies, Basic online augmentation or Advanced Add Augmentation Step workflow with optional 1x-5x train-only materialized images, smart recommended training settings by dataset size, Auto Batch (`batch=-1`), early-stopping Patience, real policy preview samples with bbox/mask overlays, locked version configuration preview, backend training config validation/preflight, compact model/job badges, JSON-safe metric history, compact metric trends plus dataset/run/compute details, `/train-tune/test/:id` custom model testing, Standard vs High-Speed RTX 5080 GPU modes, full-process cancellation, failed-job re-compute/delete, last-checkpoint resume, train logs/results CSV artifacts under `traintune-workspace/`, and model version registry
-- **Dataset Manager Page** — standalone `/datasets` workspace for multi-project dataset management with Inference-style header navigation, project/image delete controls, Select All Files gallery selection, real overlay thumbnail gallery review, cross-page modal inspector navigation, compact class/status review controls, zoomable/pannable review canvas, viewport-clamped Edit BBox popover, persisted per-dataset class colors with manual swatches, manual bbox add/edit/delete annotation editor, multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, Rapid Inference jobs, and YOLO/COCO export that preserves original input filenames in exported artifacts
-- **Free Inference Mode** — detect all visible objects without any prompt using YOLOE's internal vocabulary
-- **Text Prompt Detection** — type object labels (e.g. `person, car, dog`) to detect
-- **Visual Prompt Detection** — upload a reference image, draw guided bounding boxes with hover X/Y alignment lines, and detect visually similar objects via SAVPE encoder
-- **Image Detection** — upload static images (JPG, PNG)
-- **Video Processing** — upload video files (MP4, AVI, MOV) with frame-by-frame detection
-- **RTSP Live Streaming** — connect to RTSP camera streams with real-time WebSocket inference and visible connection errors
-- **Configurable Settings** — confidence threshold plus backend-rendered label, bbox, and clipped mask overlay toggles
-- **Floating Inference Panel** — compact right-side stats and scrollable detection log for active results
-- **Clear Media Workflow** — stop inference, clear current media, then switch Image/Video/RTSP modes without losing prompt state
-- **Workspace Auto-Label Modal** — trigger auto-save only from Auto-Label modal; RTSP saves continuous viewer frames while active, optional `MM:SS` timer stops auto-label only, and Stop Inference also stops auto-label
-- **Rapid Inference Workflow** — upload images or sample video frames into a dataset, configure Free/Text/Visual YOLOE grounding in Dataset Manager, load the required model, run batch inference with frame-by-frame progress, `Frame x/y` highlighting, and overlay preview, then inspect detections in a modal reviewer with accept/reject, manual bbox correction, direct label deletion, and multi-prompt Infer Next visual-prompt candidates for missing objects
+## Highlights
+
+| Area | What it does |
+|------|--------------|
+| Inference Workspace | Free Inference with YOLOE LRPC vocabulary, text prompts, visual prompts via SAVPE, image/video/RTSP inputs, configurable overlays, and a compact detection log. |
+| Dataset Manager | Multi-project dataset workspace with overlay gallery, modal review, manual bbox editing, class colors, accept/reject review, Infer Next visual-prompt propagation, and YOLO/COCO export. |
+| Auto-Labelling | Saves inference results into datasets from image, video, batch upload, or continuous RTSP viewer frames with optional timer control. |
+| SAM2.1 Auto-mask | Generates segmentation masks from manual bbox annotations when SAM is available; bbox saves remain non-fatal if SAM fails. |
+| Train Tune | Builds immutable detection/segmentation Dataset Versions, previews preprocessing/augmentation policy, recommends settings, runs training jobs, tracks metrics/artifacts, resumes checkpoints, and tests registered model versions. |
+| GPU Policy | Defaults LabelLens to physical GPUs `1,2`, leaving physical GPU `0` reserved for vLLM. Train Tune Standard uses GPU `1`; High-Speed uses GPUs `1,2` with AMP off. |
+
+## Validation Status
+
+Implementation is present across backend and frontend. Remaining work is end-to-end validation with real media, model outputs, RTSP feeds, SAM2.1 GPU execution, and real Train Tune detection/segmentation checkpoint runs.
+
+Backend unit tests currently cover dataset and Train Tune service/runtime behavior:
+
+```bash
+env/bin/python -m unittest discover backend/tests
+```
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser[Browser on LAN] --> SPA[Vue 3 SPA]
+  SPA --> API[FastAPI REST API]
+  SPA --> WS[WebSocket streams]
+
+  API --> Health[health router]
+  API --> Detect[detection router]
+  API --> Dataset[dataset router]
+  API --> Training[training router]
+  API --> SAM[sam router]
+  WS --> RTSP[RTSP stream service]
+  Training --> TrainWorker[train_worker.py]
+
+  Detect --> ModelService[YOLOE model service]
+  Dataset --> DatasetService[dataset service]
+  SAM --> SAMService[SAM2.1 service]
+  TrainWorker --> Ultralytics[Ultralytics training runtime]
+
+  ModelService --> YOLOE[(YOLOE weights)]
+  SAMService --> SAMWeights[(SAM2.1 weights)]
+  DatasetService --> Datasets[(datasets/)]
+  Training --> Versions[(datasets/_train_tune/)]
+  TrainWorker --> Workspace[(traintune-workspace/)]
+```
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | Vue 3 (Composition API) + TypeScript + Tailwind CSS v4 |
-| Backend | FastAPI (Python) |
-| AI Model | YOLOE-26L via Ultralytics (text + visual SAVPE prompts, segmentation masks) |
-| Communication | REST API (image/video) + WebSocket (RTSP) |
-| Media Processing | OpenCV, FFmpeg |
+|-------|------------|
+| Frontend | Vue 3 Composition API, TypeScript, Pinia, Tailwind CSS v4, Vite |
+| Backend | FastAPI, Uvicorn, Python, WebSockets |
+| CV Runtime | Ultralytics YOLOE, SAM2.1, PyTorch, OpenCV, Pillow, Albumentations |
+| Data/Artifacts | Local filesystem datasets, YOLO TXT, COCO JSON, Train Tune workspace artifacts |
+| Communication | REST for image/video/dataset/training APIs, WebSocket for RTSP and training progress |
 
 ## Project Structure
 
-```
+```text
 LabelLens/
-├── frontend/                # Vue 3 SPA
+├── frontend/                 # Vue 3 SPA
 │   └── src/
-│       ├── app/             # App shell, entrypoint, global style
-│       ├── pages/           # Logical pages (mode-select, datasets, train-tune, workspace)
-│       │   ├── datasets/    # Dataset Manager gallery, review modal, manual bbox editor, auto-label wizard
-│       │   ├── train-tune/  # Training builder, live progress, result pages, custom model testing
-│       │   └── workspace/
-│       │       ├── components/   # Workspace layout/display blocks
-│       │       └── sections/     # Grounding, media, settings sections
-│       ├── shared/          # Shared api, composables, stores, types
-│       └── assets/          # Static assets
-├── backend/                 # FastAPI server
-│   ├── routers/             # API endpoints (health, detection, stream, dataset, training)
-│   ├── services/            # Model, video, RTSP, activity, training, runtime services
-│   ├── train_worker.py      # Background training worker process for Train Tune jobs
-│   └── utils/               # Drawing, encoding helpers
-├── docs/plans/              # Saved implementation plans
-├── PRD.md                   # Product requirements document
-├── DESIGN.md                # Supabase-inspired design system tokens
-└── AGENTS.md                # Agent guidelines & project overview
+│       ├── app/              # App shell, entrypoint, global styles
+│       ├── pages/            # mode-select, workspace, datasets, train-tune
+│       ├── shared/           # API clients, composables, Pinia stores, shared types
+│       └── assets/           # Static frontend assets
+├── backend/                  # FastAPI backend
+│   ├── routers/              # health, detection, stream, dataset, training, sam
+│   ├── services/             # model, dataset, video, rtsp, training, SAM services
+│   ├── tests/                # backend unit tests
+│   ├── train_worker.py       # background Train Tune worker process
+│   └── utils/                # drawing, encoding, masks, postprocess helpers
+├── datasets/                 # runtime dataset storage, gitignored
+├── docs/                     # project documentation and assets
+│   ├── assets/               # README and documentation media
+│   ├── plans/                # implementation plans, not intended for commits unless requested
+│   └── superpowers/specs/    # design specs, gitignored by project policy
+├── models/                   # local model weights
+├── temp/                     # runtime/debug snapshots
+├── traintune-workspace/      # Train Tune output artifacts
+├── DESIGN.md                 # UI design tokens and visual system
+├── PRD.md                    # product requirements
+├── AGENTS.md                 # agent/project instructions
+├── CLAUDE.md                 # mirrored agent/project instructions
+└── run-dev.sh                # local frontend + backend runner
 ```
+
+## Model Files
+
+Place model weights under `models/` on the target machine.
+
+| File | Purpose | Required for |
+|------|---------|--------------|
+| `models/yoloe-26l-seg.pt` | YOLOE prompt model | Text Prompt, Visual Prompt, image/video/RTSP prompt inference |
+| `models/yoloe-26l-seg-pf.pt` | YOLOE prompt-free/LRPC model | Free Inference and prompt-free batch workflows |
+| `models/sam2.1_l.pt` | SAM2.1 Hiera Large | Auto-mask generation from manual bbox annotations |
+
+The repository may contain local weights during development, but production and fresh machines should verify these paths explicitly.
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.10+
-- Node.js 18+
-- YOLOE-26L segmentation model weight (`models/yoloe-26l-seg.pt` for prompt mode, `models/yoloe-26l-seg-pf.pt` for free mode)
+- Node.js 18+ and npm
+- Backend virtual environment at `env/`
+- Required model files in `models/`
+- CUDA-capable GPU setup for real inference/training workloads
 
-### Run Frontend + Backend (Recommended)
+Install backend dependencies into the repo-local environment:
+
+```bash
+env/bin/python -m pip install -r backend/requirements.txt
+```
+
+Install frontend dependencies:
+
+```bash
+cd frontend
+npm install
+```
+
+### Run Frontend + Backend
+
+From the repository root:
 
 ```bash
 ./run-dev.sh
 ```
 
-Default URL:
-- Frontend: `http://localhost:8282`
-- Backend API: `http://localhost:3131`
+Default URLs:
 
-### Backend
+| Service | URL |
+|---------|-----|
+| Frontend | `http://localhost:8282` |
+| Backend API | `http://localhost:3131` |
+| LAN frontend | `http://<your-ip>:8282` |
+| LAN backend | `http://<your-ip>:3131` |
+
+### Run Backend Only
 
 ```bash
-pip install -r backend/requirements.txt
-CUDA_DEVICE_ORDER=PCI_BUS_ID DEVICE=0 python -m uvicorn backend.main:app --host 0.0.0.0 --port 3131 --reload
+CUDA_DEVICE_ORDER=PCI_BUS_ID DEVICE=0 \
+  env/bin/python -m uvicorn backend.main:app \
+  --host 0.0.0.0 \
+  --port 3131 \
+  --reload
 ```
 
-### Frontend
+### Run Frontend Only
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm run dev -- --host 0.0.0.0 --port 8282
 ```
 
-Frontend dev server runs at `http://<your-ip>:8282`. Backend API runs at `http://<your-ip>:3131`.
+## Core Workflows
 
-## Usage
+### 1. Inference Workspace
 
-1. **Select Mode** — open `/`, choose Free Inference, Prompt Inference, or Train Tune on the landing page
-2. **Text Prompt** — type comma-separated labels in the grounding prompt field (Prompt mode only)
-3. **Visual Prompt** — switch to "Visual Prompt" tab, upload a reference image, draw bounding boxes on target objects, assign labels (Prompt mode only)
-4. **Select media** — choose Image / Video / RTSP before adding media input
-5. **Adjust settings** — set confidence threshold and choose label/bbox/mask overlays before starting inference; image/video changes require rerun, RTSP changes require restarting the stream
-6. **Run or switch media** — Start/Stop can reuse the current media; use Clear Media after stopping inference to switch modes
-7. **Start Inference** — click "Start Inference" to run detection; RTSP connection/config errors appear in the viewer and stats/logs float on the right side
-8. **Auto-Label (optional)** — open Dataset section in sidebar, start Auto-Label via modal, and stop from modal or Stop Inference. For RTSP, optional `MM:SS` timer stops auto-label while stream keeps running.
-9. **Switch Mode** — click "Switch Mode" in the header to return to mode selection
+1. Open `/` and choose Free Inference or Prompt Inference.
+2. In Prompt mode, choose Text Prompt or Visual Prompt.
+3. Add image, video, or RTSP input.
+4. Adjust confidence, label, bbox, and mask overlay settings.
+5. Start inference.
+6. Use the floating inference panel for stats and detection logs.
+7. Stop inference and clear media before switching input mode.
 
-### Train Tune
+### 2. Dataset Manager
 
-1. Open `/train-tune` from the Feature Modes page.
-2. Follow the builder stepper: choose a **Live Dataset** or **Export ZIP**, select **Detection** or **Segmentation**, configure YOLO11/YOLO26 architecture and training settings, then define split and the Roboflow-like Policy sections.
-3. In **Policy**, choose resize strategy (**Keep original**, **Letterbox to image size**, or **Stretch to image size**) and select **Basic** augmentation for a safe online-only YOLO preset or **Advanced** to configure Add Augmentation Step controls. In Advanced mode, choose **Maximum Version Size** from 1x-5x only when materialized augmentation steps exist, and generate preview samples to inspect original/preprocessed/augmented images with bbox/mask overlays. Offline generated images are materialized only into the train split; val/test stay original.
-4. Review the Snapshot Preview and create the immutable **Dataset Version**. Segmentation versions require every accepted object to already have a mask; missing masks are listed so they can be fixed in Dataset Workspace.
-5. Select a Dataset Version from the sidebar to inspect its locked split, preprocessing, augmentation, source, **Recommended Settings** result, and **Refresh Estimate** result in **Training Preview**. Recommendations choose epochs, Patience, Auto Batch, image size, and Basic augmentation from the dataset image count; users can apply or override them.
-6. Click **Start Training Job** from Training Preview to jump into the dedicated live monitor page at `/train-tune/jobs/:id`.
-7. Watch compact metric trends, scrollable epoch history, dataset/run/compute configuration, ETA, checkpoints, train log/results CSV paths, and job events on that live progress page. Temporary `NaN` metrics from Ultralytics are sanitized so training job navigation remains available while runs continue.
-8. Open the result page to inspect best metrics, full metric trends, Dataset Version configuration, and Training Configuration used by the model; use **Test Model** to run the registered artifact with bbox/mask overlays.
-9. Delete unused Dataset Versions from the builder sidebar when a snapshot should be removed; versions referenced by jobs or models stay protected.
-10. Delete a Model Version from its modal when its registered model, linked Training Job, metrics, and output folder should be removed; failed jobs still have their own **Re-compute** or **Delete** actions, and failed/cancelled jobs with `last.pt` can be resumed.
-11. Review the dedicated result page at `/train-tune/results/:id` once a job completes, or test the artifact at `/train-tune/test/:id`.
+1. Open `/datasets`.
+2. Create or open a dataset project.
+3. Add images, sampled video frames, or Rapid Inference uploads.
+4. Review thumbnails with real bbox/mask overlays.
+5. Open the modal reviewer for zoom/pan inspection.
+6. Accept, reject, edit, add, or delete annotations.
+7. Use Infer Next to propagate visual-prompt candidates to following images.
+8. Export accepted labels as YOLO TXT or COCO JSON.
 
-Train Tune run artifacts are written to `traintune-workspace/<job-name>-<job-id>/`.
+### 3. Auto-Labelling
 
-### Dataset Manager
+1. Open the Workspace Dataset section.
+2. Start Auto-Label from the modal.
+3. Select target dataset and frame sampling rate.
+4. For RTSP, optionally set an `MM:SS` timer.
+5. Stop auto-label from the modal or stop inference.
 
-1. Open `/datasets` from the Feature Modes page or directly in the browser.
-2. Create, open, or delete a dataset project from the Dataset Manager overview.
-3. Click **Rapid Inference** and upload either multiple images or one video. Video frames are sampled once based on the selected FPS until the video ends.
-4. Choose Free, Text, or Visual prompt mode. Visual prompt uses an inline reference image + bbox annotation editor.
-5. Load the required YOLOE model, start inference, and watch frame-by-frame progress with `Frame x/y` highlighting and overlay preview.
-6. Inspect the paginated thumbnail gallery (25 images per page) with real bbox/mask overlays. Use Select All Files for the visible page/filter, delete selected images, delete a single card, or click any image to open the centered review modal with bbox/label/mask overlays, cross-page Prev/Next navigation, zoom/pan canvas controls, compact class filters with editable color swatches, per-object visibility, accept/reject controls, manual bbox add/edit/delete, direct saved-label delete, simplified multi-prompt Infer Next visual-prompt candidate review, and image delete.
-7. For missing objects in sequential images, check one or more saved annotations as prompts, load the prompt model if needed, run **Infer Next**, then use **Accept** or **Reject** on individual candidates, or **Accept All & Continue** to save all visible candidates and propagate forward.
-8. Delete any saved Rapid/Batch, Manual, or Visual Assist annotation directly from its detection row when it should not be exported.
-9. Export accepted detections as YOLO TXT or COCO JSON with train/val split.
+### 4. Train Tune
+
+1. Open `/train-tune`.
+2. Select a live dataset or import an export ZIP.
+3. Choose Detection or Segmentation.
+4. Configure preprocessing policy: Keep, Letterbox, or Stretch.
+5. Choose Basic online augmentation or Advanced materialized augmentation.
+6. Generate policy preview samples.
+7. Create an immutable Dataset Version.
+8. Review recommended settings and training estimate.
+9. Start a training job and monitor `/train-tune/jobs/:id`.
+10. Review results at `/train-tune/results/:id`.
+11. Test a registered artifact at `/train-tune/test/:id`.
+
+## Routes
+
+| Route | Purpose |
+|-------|---------|
+| `/` | Feature Modes landing page |
+| `/workspace` | Free/Text/Visual inference workspace after model load |
+| `/datasets` | Dataset Manager |
+| `/train-tune` | Train Tune builder |
+| `/train-tune/jobs/:id` | Live training progress |
+| `/train-tune/results/:id` | Training result details |
+| `/train-tune/test/:id` | Registered model artifact testing |
+
+## API Surface
+
+Main backend endpoints live under `/api`, except WebSocket stream routes.
+
+| Area | Examples |
+|------|----------|
+| Health/model | `GET /api/health`, `GET /api/model/status`, `POST /api/model/load`, `POST /api/model/load-custom` |
+| Detection | `POST /api/detect/image`, `POST /api/detect/video` |
+| Dataset | `GET /api/datasets`, `POST /api/datasets`, `POST /api/datasets/{name}/label-jobs`, `POST /api/datasets/{name}/export` |
+| SAM | `GET /api/sam/status`, `POST /api/sam/load`, `POST /api/sam/unload` |
+| Training | `GET /api/training/dataset-versions`, `POST /api/training/jobs`, `POST /api/training/jobs/{job_id}/resume`, `GET /api/training/models` |
+| WebSockets | `/ws/stream`, `/api/ws/training/{job_id}` |
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODEL_PATH` | `models/yoloe-26l-seg.pt` | Path to YOLOE model weights; set `models/yoloe-26s-seg.pt` to roll back |
-| `LABELLENS_CUDA_VISIBLE_DEVICES` | `1,2` | Physical CUDA devices visible to LabelLens; keeps the RTX 4090 at physical index `0` reserved for vLLM |
-| `DEVICE` | `0` | Local CUDA device for YOLOE inference; with the default visible set, this maps to physical RTX 5080 index `1` |
-| `SAM_DEVICE` | `1` | Local CUDA device for SAM2.1; with the default visible set, this maps to physical RTX 5080 index `2` |
-| `CUDA_DEVICE_ORDER` | `PCI_BUS_ID` | Keeps PyTorch CUDA indexes aligned with `nvidia-smi` PCI order |
+| `MODEL_PATH` | `models/yoloe-26l-seg.pt` | Prompt-mode YOLOE model weights |
+| `LABELLENS_CUDA_VISIBLE_DEVICES` | `1,2` | Physical CUDA devices visible to LabelLens |
+| `DEVICE` | `0` | Local CUDA device for YOLOE inference after visible-device mapping |
+| `SAM_ENABLED` | `true` | Enables SAM2.1 service endpoints and auto-mask attempts |
+| `SAM_MODEL` | `sam2.1_l.pt` | SAM model filename or Ultralytics model identifier |
+| `SAM_DEVICE` | `1` | Local CUDA device for SAM2.1 after visible-device mapping |
+| `CUDA_DEVICE_ORDER` | `PCI_BUS_ID` | Keeps CUDA indexes aligned with `nvidia-smi` PCI order |
 | `HOST` | `0.0.0.0` | Backend host |
 | `PORT` | `3131` | Backend port |
+| `FRONTEND_PORT` | `8282` | Frontend dev server port used by `run-dev.sh` |
 | `CORS_ORIGINS` | `*` | Allowed CORS origins |
-| `TRAIN_VISIBLE_DEVICES_STANDARD` | `1` | Physical CUDA devices exposed to Standard Mode Train Tune jobs; default maps to the first RTX 5080 |
-| `TRAIN_VISIBLE_DEVICES_HIGH_SPEED` | `1,2` | Physical CUDA devices exposed to High-Speed Train Tune jobs; default maps to both RTX 5080 cards |
+| `TRAIN_VISIBLE_DEVICES_STANDARD` | `1` | Physical CUDA devices exposed to Standard Mode Train Tune jobs |
+| `TRAIN_VISIBLE_DEVICES_HIGH_SPEED` | `1,2` | Physical CUDA devices exposed to High-Speed Train Tune jobs |
 | `TRAIN_DEVICE_STANDARD` | `1` | Physical CUDA device string passed to Ultralytics for Standard Mode |
 | `TRAIN_DEVICE_HIGH_SPEED` | `1,2` | Physical CUDA device string passed to Ultralytics for High-Speed Mode |
 | `TRAIN_AMP_STANDARD` | `true` | Enables AMP for Standard Mode |
-| `TRAIN_AMP_HIGH_SPEED` | `false` | Disables AMP for High-Speed DDP on RTX 5080 to avoid CUDA illegal-instruction failures |
-| `LABELLENS_TRAIN_DDP_FIND_UNUSED` | `0` | Set to `1` to opt into the Ultralytics DDP `find_unused_parameters=True` patch for runs that need it |
-| `LABELLENS_TRAIN_TUNE_FAKE` | `0` | Set to `1` to run mock training jobs that stream progress without real weights |
+| `TRAIN_AMP_HIGH_SPEED` | `false` | Disables AMP for High-Speed DDP on RTX 5080 |
+| `LABELLENS_TRAIN_DDP_FIND_UNUSED` | `0` | Set to `1` to opt into the Ultralytics DDP `find_unused_parameters=True` patch |
+| `LABELLENS_TRAIN_TUNE_FAKE` | `0` | Set to `1` to run mock training jobs without real weights |
 
-LabelLens defaults to `CUDA_VISIBLE_DEVICES=1,2` so the RTX 4090 at physical GPU `0` remains reserved for vLLM. Train Tune passes physical device IDs to Ultralytics because Ultralytics rewrites `CUDA_VISIBLE_DEVICES` from its `device` argument; Standard Mode uses physical GPU `1`, and High-Speed Mode uses physical GPUs `1,2` with AMP off for DDP stability.
+## Runtime Storage
+
+| Path | Purpose |
+|------|---------|
+| `datasets/` | Dataset projects, images, annotations, exports, and Train Tune dataset metadata |
+| `datasets/_train_tune/` | Immutable Dataset Version snapshots and training metadata |
+| `traintune-workspace/` | Train Tune run folders, checkpoints, logs, and results CSV files |
+| `temp/` | Runtime/debug snapshots |
+| `models/` | Local YOLOE and SAM2.1 weights |
+
+## Testing
+
+Run backend unit tests:
+
+```bash
+env/bin/python -m unittest discover backend/tests
+```
+
+Run frontend typecheck/build:
+
+```bash
+cd frontend
+npm run build
+```
+
+Run both app services for manual validation:
+
+```bash
+./run-dev.sh
+```
+
+Suggested manual validation checklist:
+
+- Load Free Inference model and run image detection.
+- Load Prompt model and run Text Prompt detection.
+- Run Visual Prompt detection using a reference image and bbox.
+- Process a sample video with frame progress.
+- Connect to a known-good RTSP feed.
+- Save auto-label results into a dataset.
+- Review, edit, accept/reject, and export labels in Dataset Manager.
+- Generate SAM2.1 masks from manual bboxes.
+- Create Train Tune detection and segmentation Dataset Versions.
+- Run Standard and High-Speed Train Tune jobs with real checkpoints.
+- Open result and Test Model pages for completed model versions.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---------|-------|
+| Model load fails | Verify `models/yoloe-26l-seg.pt` or `models/yoloe-26l-seg-pf.pt` exists and is readable. |
+| Free Inference unavailable | Verify `models/yoloe-26l-seg-pf.pt` is present. |
+| SAM status is disabled/offline | Check `SAM_ENABLED`, `SAM_MODEL`, `SAM_DEVICE`, and CUDA availability. |
+| CUDA device mismatch | Confirm `LABELLENS_CUDA_VISIBLE_DEVICES`, `DEVICE`, `SAM_DEVICE`, and `CUDA_DEVICE_ORDER=PCI_BUS_ID`. |
+| RTSP stream does not connect | Test the RTSP URL separately, then check backend logs and network/firewall access. |
+| Train Tune job fails immediately | Verify checkpoint path, task type compatibility, dataset version labels, and GPU policy env vars. |
+| High-Speed DDP errors | Keep `TRAIN_AMP_HIGH_SPEED=false`; try Standard Mode to isolate multi-GPU issues. |
+| Frontend cannot reach backend | Confirm backend is on `0.0.0.0:3131` and CORS/network settings allow the client host. |
+
+## Documentation Index
+
+| File | Purpose |
+|------|---------|
+| `PRD.md` | Product requirements and feature intent |
+| `DESIGN.md` | Supabase-inspired design system and UI tokens |
+| `AGENTS.md` | Project state and agent operating rules |
+| `CLAUDE.md` | Mirrored project state and agent operating rules |
+| `docs/ARCHITECTURE.md` | Frontend/backend/service/data flow architecture |
+| `docs/API.md` | FastAPI endpoint catalog and WebSocket notes |
+| `docs/MODELS.md` | YOLOE, SAM2.1, checkpoint, and GPU mapping guide |
+| `docs/WORKFLOWS.md` | End-to-end operator workflows |
+| `docs/TESTING.md` | Unit, build, manual E2E, and hardware validation checklist |
+| `docs/OPERATIONS.md` | Local LAN runbook, runtime paths, env vars, troubleshooting |
+| `docs/REFERENCES.md` | External and project-local reference catalog |
+| `docs/plans/` | Implementation plans created during development |
+
+## References
+
+LabelLens uses more than YOLOE. See `docs/REFERENCES.md` for the full reference catalog.
+
+Core references:
+
+| Area | Reference |
+|------|-----------|
+| YOLOE | `https://github.com/THU-MIG/yoloe` |
+| Ultralytics YOLOE | `https://docs.ultralytics.com/models/yoloe` |
+| SAM via Ultralytics | `https://docs.ultralytics.com/models/sam/` |
+| FastAPI | `https://fastapi.tiangolo.com/` |
+| Vue 3 | `https://vuejs.org/guide/introduction.html` |
+| Vite | `https://vite.dev/guide/` |
+| OpenCV | `https://docs.opencv.org/` |
+| Albumentations | `https://albumentations.ai/docs/` |
 
 ## License
 
-Internal project — not for public distribution.
+Internal project - not for public distribution.

@@ -48,30 +48,39 @@ LabelLens/
 │   ├── train_worker.py  (background training worker process for Train Tune jobs)
 │   └── utils/           (drawing.py, encoding.py, masks.py, postprocess.py)
 ├── datasets/            (runtime dataset storage, gitignored)
-├── docs/plans/          (saved implementation plans)
-├── docs/superpowers/specs/ (design specs)
+├── docs/
+│   ├── ARCHITECTURE.md  (system architecture and data flow)
+│   ├── API.md           (REST/WebSocket endpoint catalog)
+│   ├── MODELS.md        (YOLOE/SAM/checkpoint and GPU guide)
+│   ├── WORKFLOWS.md     (operator workflows)
+│   ├── TESTING.md       (automated/manual validation checklist)
+│   ├── OPERATIONS.md    (local LAN runbook and troubleshooting)
+│   ├── REFERENCES.md    (external and project-local references)
+│   ├── assets/          (README and documentation media)
+│   ├── plans/           (saved implementation plans)
+│   └── superpowers/specs/ (design specs)
 ├── temp/                (runtime/debug snapshots)
-├── PRD.md, DESIGN.md, AGENTS.md, README.md
+├── PRD.md, DESIGN.md, AGENTS.md, CLAUDE.md, README.md
 ```
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** In active development. All three inference phases (Image, Video, RTSP) remain scaffolded and integrated. Core backend model service supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred — users always land on `/` (Feature Modes), navigate to `/workspace` after inference model load, while Dataset Manager remains independently available at `/datasets` and Train Tune is independently available at `/train-tune`. Frontend UI components are built with DESIGN.md Supabase-inspired tokens. BBox annotation canvas tool with hover/drag X/Y guides, floating compact inference panel, scrollable detection log, backend-rendered clipped mask overlay, state-preserving collapsible Controls panel, explicit Clear Media mode switching, paginated real-overlay thumbnail dataset gallery with Select All Files, Dataset Manager delete confirmation modals, centered modal review with compact class/status controls, zoom/pan review canvas, viewport-clamped bbox editor popover, persisted per-dataset class colors, image delete, manual bbox add/edit/delete, simplified multi-prompt Infer Next visual-prompt candidate auto-save review, direct saved-label delete, cross-page Prev/Next, Rapid Inference job polling with frame-by-frame progress, workspace RTSP auto-label continuous save with optional timer, and Train Tune detection/segmentation task selection / Policy with Basic or Advanced augmentation / preview samples / locked Dataset Version summary / compact metric trends / config validation and preflight / scrollable epoch history / result metadata / queue / resume / model registry / Test Model route are functional.
+**Condition:** Implemented and awaiting full end-to-end validation. All three inference phases (Image, Video, RTSP) are scaffolded, integrated, and routed through the backend model service, which supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred: users land on `/` (Feature Modes), navigate to `/workspace` after inference model load, while Dataset Manager remains independently available at `/datasets` and Train Tune is independently available at `/train-tune`. Frontend UI components use the DESIGN.md Supabase-inspired tokens. Backend unit coverage exists for dataset and Train Tune services/runtime.
 
-``` 
-In THIS (**Being Developed**) section, always double-check features or items that have been completed. Make sure the features are working and set them aside or remove them from the list. 
-```
+**Implemented and pending end-to-end validation:**
 
-**Being Developed:**
+- **Inference Workspaces:** Free Mode, Text Prompt, Visual Prompt, Image Detection, Video Processing, and RTSP WebSocket streaming are implemented across backend and frontend. Validation still needs real YOLOE weights, sample videos, and live RTSP feeds on target hardware.
+- **Dataset Manager / Auto-Labelling / Rapid Inference:** Standalone Dataset Manager, delete controls, Select All Files, paginated overlay gallery, modal review, zoom/pan canvas, viewport-clamped bbox editor, persisted class colors, manual bbox add/edit/delete, direct saved-label delete, multi-prompt Infer Next, Rapid Inference jobs, workspace image/video/RTSP auto-save, and YOLO/COCO export are implemented. Validation still needs complete runs with actual model outputs.
+- **Train Tune / Custom Model Reuse:** Detection vs segmentation task selection, Dataset Version snapshots, bbox/polygon export, missing-mask validation, preprocessing Policy, Basic/Advanced augmentation, smart defaults, policy previews, locked Dataset Version summaries, backend validation/preflight, queueing, Standard vs High-Speed RTX 5080 GPU policy, cancellation, recompute/delete, resume from `last.pt`, train log/results CSV tracking, live websocket progress, metric trends, model registry, result pages, and `/train-tune/test/:id` artifact testing are implemented. Validation still needs real detection and segmentation checkpoint runs.
+- **SAM2.1 Auto-mask:** Backend `SAMService`, status/load/unload endpoints, dataset-scoped mask generation, and frontend auto-mask flow for manual bbox save are implemented. Validation still needs full SAM2.1 GPU execution checks on the target RTX 5080 device.
 
-- SAM2.1 Auto-mask: Backend (SAMService on GPU 1, lazy load, thread-safe) + Frontend (auto-mask on manual bbox save in ReviewPage) + API endpoints (status/load/unload, dataset-scoped mask generation) implemented — needs `models/sam2.1_l.pt` placement and end-to-end testing with SAM2.1 weights on GPU 1 (RTX 5080)
-- Train Tune / Custom Model Reuse: detection vs segmentation task selection, bbox/polygon Dataset Version export, missing-mask validation, Policy sections, Keep/Letterbox/Stretch resize strategies, Basic online augmentation, Advanced optional augmentation step modals with train-only materialization, smart recommended epochs/Patience/Auto Batch settings, real policy preview samples with bbox/mask overlays, locked Dataset Version preview, modal Dataset Version/Model Version deletion, compact model/job cards, backend training validation/preflight, queueing, Standard vs High-Speed RTX 5080 GPU policy, full-process cancel, resume from `last.pt`, train log/results CSV tracking, live websocket progress, compact metric trends, dataset/run/compute configuration detail panels, scrollable epoch history, model registry, and `/train-tune/test/:id` artifact testing are implemented — needs end-to-end validation with real detection and segmentation checkpoints
-- Auto-Labelling / Rapid Inference: Standalone Dataset Manager page, project overview/delete controls, image bulk/card/review delete controls, Select All Files, real overlay paginated thumbnail gallery, centered modal review with cross-page navigation, compact class/status controls, zoomable/pannable canvas, viewport-clamped bbox editor, persisted manual class colors, manual bbox add/edit/delete, simplified multi-prompt Infer Next visual-prompt candidates with per-candidate Accept/Reject plus Accept All & Continue, direct saved-label delete, batch label jobs with frame-by-frame progress, inline Free/Text/Visual prompt wizard, and workspace image/video/RTSP auto-save hook implemented — needs end-to-end testing with actual model weights
-- Free Mode Inference: Backend + Frontend complete — needs `models/yoloe-26l-seg-pf.pt` placement and testing
-- Phase 1 (Image Detection): Backend + Frontend complete — needs end-to-end testing with actual YOLOE model weights
-- Phase 2 (Video Processing): Backend + Frontend complete — needs testing with sample videos
-- Phase 3 (RTSP Streaming): Backend WebSocket + Frontend integration complete — needs testing with live RTSP feeds
-- Overall: Awaiting `models/yoloe-26l-seg.pt` and `models/yoloe-26l-seg-pf.pt` placement plus real YOLO detection/segmentation training checkpoints / hardware validation on RTX 5080 devices. LabelLens defaults to `CUDA_VISIBLE_DEVICES=1,2` so RTX 4090 physical GPU `0` is reserved for vLLM. Train Tune defaults to physical GPU `1` for Standard Mode and physical GPUs `1,2` for High-Speed Mode, passed directly to Ultralytics with `CUDA_DEVICE_ORDER=PCI_BUS_ID`; High-Speed DDP defaults AMP off.
+**Operational validation still needed:**
+
+- Verify required model files on the target machine: `models/yoloe-26l-seg.pt`, `models/yoloe-26l-seg-pf.pt`, and `models/sam2.1_l.pt`.
+- Run full image/video/RTSP inference validation with real media and expected detections.
+- Run Train Tune detection and segmentation jobs using real checkpoints, including Standard Mode and High-Speed Mode.
+- Confirm SAM2.1 mask generation quality and failure behavior when SAM is unavailable.
+- Confirm physical GPU mapping: LabelLens defaults to `CUDA_VISIBLE_DEVICES=1,2` so physical GPU `0` (RTX 4090) remains reserved for vLLM. Train Tune defaults to physical GPU `1` for Standard Mode and physical GPUs `1,2` for High-Speed Mode, passed directly to Ultralytics with `CUDA_DEVICE_ORDER=PCI_BUS_ID`; High-Speed DDP defaults AMP off.
 
 
 =====================
