@@ -239,6 +239,7 @@ def actual_train(job: dict, version: dict):
             train_args = {
                 'data': version['dataset_yaml'],
                 'epochs': int(job.get('epochs', 50)),
+                'patience': int(job.get('patience', 30)),
                 'imgsz': int(job.get('imgsz', 640)),
                 'batch': int(job.get('batch', 8)),
                 'workers': int(job.get('workers', 2)),

@@ -165,6 +165,35 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertTrue(train_called[0]["amp"])
         self.assertNotIn("unsupported", train_called[0])
 
+    def test_actual_train_forwards_patience_and_auto_batch(self):
+        train_called = []
+
+        class DetectModel:
+            task = "detect"
+
+            def train(self, **kwargs):
+                train_called.append(kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ultralytics = SimpleNamespace(YOLO=lambda _checkpoint: DetectModel())
+            job = {
+                "output_dir": os.path.join(tmp, "run"),
+                "base_checkpoint": "models/yolo26n.pt",
+                "training_mode": "standard",
+                "task_type": "detect",
+                "epochs": 100,
+                "patience": 25,
+                "batch": -1,
+            }
+            with (
+                patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "emit"),
+            ):
+                train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
+
+        self.assertEqual(train_called[0]["patience"], 25)
+        self.assertEqual(train_called[0]["batch"], -1)
+
     def test_actual_train_uses_local_devices_for_high_speed_visible_5080s(self):
         train_called = []
 

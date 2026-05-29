@@ -63,6 +63,17 @@ export interface TrainingEstimate {
   task_type: TrainingTaskType
 }
 
+export interface TrainingRecommendation {
+  dataset_version_id: string
+  image_count: number
+  epochs: number
+  patience: number
+  batch: number
+  imgsz: number
+  augmentation_mode: 'basic' | 'advanced'
+  reason: string
+}
+
 export interface TrainingJob {
   id: string
   job_name: string
@@ -75,6 +86,7 @@ export interface TrainingJob {
   device_policy: string
   training_mode: 'standard' | 'high_speed'
   epochs: number
+  patience?: number
   imgsz: number
   batch: number
   workers: number
@@ -224,6 +236,7 @@ export async function estimateTraining(payload: {
   family: string
   size: string
   epochs: number
+  patience?: number
   imgsz: number
   batch: number
   workers: number
@@ -231,6 +244,17 @@ export async function estimateTraining(payload: {
   task_type: TrainingTaskType
 }): Promise<TrainingEstimate> {
   const res = await api.post('/training/estimate', payload)
+  return res.data
+}
+
+export async function recommendTraining(payload: {
+  dataset_version_id: string
+  family?: string
+  size?: string
+  imgsz?: number
+  task_type?: TrainingTaskType
+}): Promise<TrainingRecommendation> {
+  const res = await api.post('/training/recommend', payload)
   return res.data
 }
 
@@ -251,6 +275,7 @@ export async function createTrainingJob(payload: {
   size: string
   base_checkpoint: string
   epochs: number
+  patience: number
   imgsz: number
   batch: number
   workers: number

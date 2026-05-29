@@ -148,6 +148,18 @@ async def estimate_training(payload: dict = Body(...)):
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.post('/training/recommend')
+async def recommend_training(payload: dict = Body(...)):
+    try:
+        version_id = payload['dataset_version_id']
+    except KeyError as exc:
+        raise HTTPException(400, 'dataset_version_id is required') from exc
+    try:
+        return training_service.recommend_training_settings(version_id, payload)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.get('/training/jobs')
 async def list_training_jobs():
     return training_service.list_training_jobs()

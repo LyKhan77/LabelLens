@@ -976,16 +976,41 @@ class TrainingService:
             'task_type': version.get('task_type', 'detect'),
         }
 
+    def recommend_training_settings(self, version_id: str, config: dict | None = None) -> dict:
+        version = self.get_dataset_version(version_id)
+        images = int(version['summary'].get('final_image_count') or version['summary'].get('usable_labeled_images') or 0)
+        if images < 50:
+            epochs, patience, reason = 200, 40, 'Very small dataset; use a higher epoch cap with early stopping.'
+        elif images < 100:
+            epochs, patience, reason = 150, 30, 'Small dataset; allow extra passes while early stopping controls overfit.'
+        elif images < 500:
+            epochs, patience, reason = 100, 25, 'Medium dataset; balanced epoch cap with early stopping.'
+        else:
+            epochs, patience, reason = 75, 20, 'Larger dataset; lower epoch cap is usually enough with early stopping.'
+        return {
+            'dataset_version_id': version_id,
+            'image_count': images,
+            'epochs': epochs,
+            'patience': patience,
+            'batch': -1,
+            'imgsz': int((config or {}).get('imgsz') or 640),
+            'augmentation_mode': 'basic',
+            'reason': reason,
+        }
+
     def _validate_training_config(self, config: dict, version: dict) -> dict:
         try:
             epochs = int(config.get('epochs', 50))
+            patience = int(config.get('patience', 30))
             imgsz = int(config.get('imgsz', 640))
             batch = int(config.get('batch', 8))
             workers = int(config.get('workers', 2))
         except (TypeError, ValueError) as exc:
-            raise ValueError('epochs, imgsz, batch, and workers must be integers') from exc
+            raise ValueError('epochs, patience, imgsz, batch, and workers must be integers') from exc
         if not 1 <= epochs <= 500:
             raise ValueError('epochs must be between 1 and 500')
+        if not 0 <= patience <= 100:
+            raise ValueError('patience must be between 0 and 100')
         if imgsz < 320 or imgsz > 2048 or imgsz % 32 != 0:
             raise ValueError('imgsz must be a multiple of 32 between 320 and 2048')
         if batch != -1 and not 1 <= batch <= 128:
@@ -1022,6 +1047,7 @@ class TrainingService:
             'size': size,
             'training_mode': mode,
             'epochs': epochs,
+            'patience': patience,
             'imgsz': imgsz,
             'batch': batch,
             'workers': workers,
@@ -1079,6 +1105,7 @@ class TrainingService:
             'device_policy': 'dual_5080' if mode == 'high_speed' else 'second_5080',
             'training_mode': mode,
             'epochs': validated['epochs'],
+            'patience': validated['patience'],
             'imgsz': validated['imgsz'],
             'batch': validated['batch'],
             'workers': validated['workers'],
@@ -1151,6 +1178,7 @@ class TrainingService:
                 'size': job.get('architecture_size', 'n'),
                 'base_checkpoint': job.get('base_checkpoint', ''),
                 'epochs': job.get('epochs', 50),
+                'patience': job.get('patience', 30),
                 'imgsz': job.get('imgsz', 640),
                 'batch': job.get('batch', 8),
                 'workers': job.get('workers', 2),
@@ -1175,6 +1203,7 @@ class TrainingService:
                 'size': job.get('architecture_size', 'n'),
                 'base_checkpoint': last_checkpoint,
                 'epochs': job.get('epochs', 50),
+                'patience': job.get('patience', 30),
                 'imgsz': job.get('imgsz', 640),
                 'batch': job.get('batch', 8),
                 'workers': job.get('workers', 2),

@@ -313,6 +313,25 @@ class TrainingRouterTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('epochs must be between', response.json()['detail'])
 
+    def test_recommend_training_endpoint_returns_smart_defaults(self):
+        version = training_service.create_dataset_version_from_live_dataset(
+            'demo',
+            {
+                'version_name': 'recommend',
+                'split_config': {'train': 70, 'val': 20, 'test': 10},
+                'preprocessing_config': {},
+                'augmentation_config': {'profile': 'baseline'},
+            },
+        )
+
+        response = self.client.post('/api/training/recommend', json={'dataset_version_id': version['id']})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload['epochs'], 200)
+        self.assertEqual(payload['patience'], 40)
+        self.assertEqual(payload['batch'], -1)
+
     def test_resume_training_job_endpoint_queues_retry(self):
         version = training_service.create_dataset_version_from_live_dataset(
             'demo',

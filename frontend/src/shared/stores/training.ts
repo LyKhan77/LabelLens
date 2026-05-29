@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { DatasetVersion, ModelVersion, TrainingEstimate, TrainingEvent, TrainingJob, TrainingMetricPoint, TrainingPolicyPreview } from '../api/training'
+import type { DatasetVersion, ModelVersion, TrainingEstimate, TrainingEvent, TrainingJob, TrainingMetricPoint, TrainingPolicyPreview, TrainingRecommendation } from '../api/training'
 import * as api from '../api/training'
 
 export const useTrainingStore = defineStore('training', () => {
@@ -13,6 +13,7 @@ export const useTrainingStore = defineStore('training', () => {
   const jobMetrics = ref<TrainingMetricPoint[]>([])
   const liveEvents = ref<TrainingEvent[]>([])
   const currentEstimate = ref<TrainingEstimate | null>(null)
+  const currentRecommendation = ref<TrainingRecommendation | null>(null)
   const policyPreview = ref<TrainingPolicyPreview | null>(null)
   const policyPreviewLoading = ref(false)
   const loading = ref(false)
@@ -73,12 +74,18 @@ export const useTrainingStore = defineStore('training', () => {
     if (selectedVersion.value?.id === versionId) {
       selectedVersion.value = null
       currentEstimate.value = null
+      currentRecommendation.value = null
     }
   }
 
   async function estimate(payload: Parameters<typeof api.estimateTraining>[0]) {
     currentEstimate.value = await api.estimateTraining(payload)
     return currentEstimate.value
+  }
+
+  async function recommend(payload: Parameters<typeof api.recommendTraining>[0]) {
+    currentRecommendation.value = await api.recommendTraining(payload)
+    return currentRecommendation.value
   }
 
   async function refreshJobs() {
@@ -289,6 +296,7 @@ export const useTrainingStore = defineStore('training', () => {
     jobMetrics.value = []
     liveEvents.value = []
     currentEstimate.value = null
+    currentRecommendation.value = null
     disconnectJob()
   }
 
@@ -302,6 +310,7 @@ export const useTrainingStore = defineStore('training', () => {
     jobMetrics,
     liveEvents,
     currentEstimate,
+    currentRecommendation,
     policyPreview,
     policyPreviewLoading,
     loading,
@@ -313,6 +322,7 @@ export const useTrainingStore = defineStore('training', () => {
     importVersion,
     deleteVersion,
     estimate,
+    recommend,
     refreshJobs,
     refreshModels,
     refreshVersions,

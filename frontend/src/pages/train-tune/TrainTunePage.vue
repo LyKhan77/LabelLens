@@ -86,8 +86,9 @@ function reactiveState() {
     size: 'n' as 'n' | 's' | 'm' | 'l',
     baseCheckpoint: 'yolo11n.pt',
     epochs: 50,
+    patience: 30,
     imgsz: 640,
-    batch: 8,
+    batch: -1,
     workers: 2,
     trainingMode: 'standard' as 'standard' | 'high_speed',
     jobName: '',
@@ -114,7 +115,7 @@ const resultJob = computed(() => trainingStore.selectedJob)
 const builderSummary = computed(() => trainingStore.selectedVersion?.summary ?? null)
 const liveSourceVersion = computed(() => trainingStore.versions.find((version) => version.id === trainingStore.selectedJob?.dataset_version_id) ?? null)
 const sourceReady = computed(() => form.sourceType === 'live' ? Boolean(form.selectedDataset) : Boolean(form.zipFile))
-const architectureReady = computed(() => Boolean(form.baseCheckpoint) && form.epochs > 0 && form.imgsz > 0 && form.batch > 0 && form.workers > 0)
+const architectureReady = computed(() => Boolean(form.baseCheckpoint) && form.epochs > 0 && form.patience >= 0 && form.imgsz > 0 && (form.batch === -1 || form.batch > 0) && form.workers >= 0)
 const splitReady = computed(() => totalSplit.value === 100)
 const previewSourceName = computed(() => {
   if (form.sourceType === 'live') return form.selectedDataset || 'Select a dataset project'
@@ -213,6 +214,10 @@ function versionAugment(version: DatasetVersion | null | undefined) {
   const multiplier = Number(config.multiplier ?? 1)
   const mode = configText(config.mode, configText(config.profile, 'baseline'))
   return multiplier > 1 ? `${mode} · ${multiplier}x train` : mode
+}
+
+function batchLabel(batch: number | undefined) {
+  return batch === -1 ? 'Auto' : String(batch ?? 'N/A')
 }
 
 function policyPreprocessingConfig() {
@@ -508,6 +513,7 @@ async function buildVersion() {
     }
     builderStep.value = builderSteps.length
     await refreshEstimate()
+    await refreshRecommendation()
   } catch (err) {
     const detail = (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail
     if (detail && typeof detail === 'object' && (detail as { code?: string }).code === 'missing_segmentation_masks') {
@@ -564,6 +570,7 @@ async function refreshEstimate() {
       family: form.family,
       size: form.size,
       epochs: form.epochs,
+      patience: form.patience,
       imgsz: form.imgsz,
       batch: form.batch,
       workers: form.workers,
@@ -573,6 +580,34 @@ async function refreshEstimate() {
   } catch (err) {
     form.localError = err instanceof Error ? err.message : 'Gagal membuat estimasi training'
   }
+}
+
+async function refreshRecommendation() {
+  const version = trainingStore.selectedVersion
+  if (!version) return null
+  try {
+    return await trainingStore.recommend({
+      dataset_version_id: version.id,
+      family: form.family,
+      size: form.size,
+      imgsz: form.imgsz,
+      task_type: version.task_type,
+    })
+  } catch (err) {
+    form.localError = err instanceof Error ? err.message : 'Gagal membuat rekomendasi training'
+    return null
+  }
+}
+
+async function applyRecommendedSettings() {
+  const recommendation = trainingStore.currentRecommendation ?? await refreshRecommendation()
+  if (!recommendation) return
+  form.epochs = recommendation.epochs
+  form.patience = recommendation.patience
+  form.batch = recommendation.batch
+  form.imgsz = recommendation.imgsz
+  form.augmentationMode = recommendation.augmentation_mode
+  await refreshEstimate()
 }
 
 async function submitJob() {
@@ -590,6 +625,7 @@ async function submitJob() {
       size: form.size,
       base_checkpoint: form.baseCheckpoint,
       epochs: form.epochs,
+      patience: form.patience,
       imgsz: form.imgsz,
       batch: form.batch,
       workers: form.workers,
@@ -615,6 +651,7 @@ async function openResult(modelId: string) {
 async function pickVersion(version: DatasetVersion) {
   trainingStore.selectedVersion = version
   versionDeleteError.value = null
+  await refreshRecommendation()
   await refreshEstimate()
 }
 
@@ -912,8 +949,9 @@ async function resumeJob(jobId: string) {
                     <label class="train-field"><span class="train-label-with-info">Job Name <span class="train-param-help" tabindex="0" aria-label="Human-readable run name." data-tip="Name used to identify this run and its output artifact folder.">?</span></span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
                     <label class="train-field"><span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses both GPUs and waits until inference is idle.">?</span></span><select v-model="form.trainingMode"><option value="standard">Standard · 1x RTX 5080</option><option value="high_speed">High-Speed · 2x RTX 5080</option></select></label>
                     <label class="train-field"><span class="train-label-with-info">Epochs <span class="train-param-help" tabindex="0" aria-label="Number of full training passes." data-tip="How many full passes through the training split the worker runs.">?</span></span><input v-model.number="form.epochs" type="number" min="1" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Patience <span class="train-param-help" tabindex="0" aria-label="Early stopping patience." data-tip="Stops training after this many epochs without validation improvement.">?</span></span><input v-model.number="form.patience" type="number" min="0" max="100" /></label>
                     <label class="train-field"><span class="train-label-with-info">Image Size <span class="train-param-help" tabindex="0" aria-label="Training image resolution." data-tip="Input resolution in pixels. Higher values keep detail but cost more VRAM.">?</span></span><input v-model.number="form.imgsz" type="number" min="320" step="32" /></label>
-                    <label class="train-field"><span class="train-label-with-info">Batch <span class="train-param-help" tabindex="0" aria-label="Images per training step." data-tip="Number of images processed per step. Higher batch can be faster but uses more VRAM.">?</span></span><input v-model.number="form.batch" type="number" min="1" /></label>
+                    <label class="train-field"><span class="train-label-with-info">Batch <span class="train-param-help" tabindex="0" aria-label="Images per training step." data-tip="Auto lets Ultralytics choose a batch size based on available GPU memory.">?</span></span><select v-model.number="form.batch"><option :value="-1">Auto</option><option :value="4">4</option><option :value="8">8</option><option :value="16">16</option><option :value="32">32</option></select></label>
                     <label class="train-field"><span class="train-label-with-info">Workers <span class="train-param-help" tabindex="0" aria-label="Data loader worker count." data-tip="Parallel workers used to load and prepare training images.">?</span></span><input v-model.number="form.workers" type="number" min="1" /></label>
                   </div>
                   <p class="train-version-note">{{ form.taskType === 'segment' ? 'Segmentation snapshots require every accepted object to have a mask from Dataset Workspace/SAM2.1. Segment models output both bbox and mask.' : 'Detection snapshots train bbox-only labels. Segmentation masks are ignored unless the Segmentation task is selected.' }}</p>
@@ -970,22 +1008,38 @@ async function resumeJob(jobId: string) {
                 <div>
                   <span class="text-[12px] uppercase tracking-[0.16em] text-primary font-medium">Summary</span>
                   <h2 class="text-[24px] tracking-[-0.42px] font-medium text-ink mt-(--spacing-xs)">Training Preview</h2>
-                </div>
-                <div class="flex flex-wrap justify-end gap-(--spacing-sm)">
-                  <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Refresh Estimate</button>
-                  <button class="dataset-primary-button" :disabled="!trainingStore.currentEstimate" @click="submitJob">Start Training Job</button>
-                </div>
-              </div>
+	                </div>
+	                <div class="flex flex-wrap justify-end gap-(--spacing-sm)">
+	                  <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshRecommendation">Refresh Recommendation</button>
+	                  <button class="dataset-secondary-button" :disabled="!builderReady" @click="refreshEstimate">Refresh Estimate</button>
+	                  <button class="dataset-primary-button" :disabled="!trainingStore.currentEstimate" @click="submitJob">Start Training Job</button>
+	                </div>
+	              </div>
 
-              <div v-if="builderSummary" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
-                <div class="train-stat train-stat-wide"><span>Dataset Version</span><strong>{{ trainingStore.selectedVersion?.version_name }}</strong><small>{{ trainingStore.selectedVersion?.source_name }}</small></div>
+	              <div v-if="trainingStore.currentRecommendation" class="train-version-preview mb-(--spacing-md)">
+	                <div class="train-preview-title">
+	                  <span>Recommended Settings</span>
+	                  <strong>{{ trainingStore.currentRecommendation.epochs }} epochs · patience {{ trainingStore.currentRecommendation.patience }}</strong>
+	                </div>
+	                <div class="train-preview-grid">
+	                  <div><span>Dataset Size</span><strong>{{ trainingStore.currentRecommendation.image_count }} images</strong></div>
+	                  <div><span>Batch</span><strong>{{ batchLabel(trainingStore.currentRecommendation.batch) }}</strong></div>
+	                  <div><span>Image Size</span><strong>{{ trainingStore.currentRecommendation.imgsz }} px</strong></div>
+	                  <div><span>Augment</span><strong>{{ trainingStore.currentRecommendation.augmentation_mode }}</strong></div>
+	                  <div class="train-stat-wide"><span>Reason</span><strong>{{ trainingStore.currentRecommendation.reason }}</strong></div>
+	                </div>
+	                <button class="dataset-primary-button" @click="applyRecommendedSettings">Apply Recommended Settings</button>
+	              </div>
+
+	              <div v-if="builderSummary" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
+	                <div class="train-stat train-stat-wide"><span>Dataset Version</span><strong>{{ trainingStore.selectedVersion?.version_name }}</strong><small>{{ trainingStore.selectedVersion?.source_name }}</small></div>
                 <div class="train-stat"><span>Usable Images</span><strong>{{ builderSummary.usable_labeled_images }}</strong><small>{{ builderSummary.original_file_count }} original files</small></div>
                 <div class="train-stat"><span>Annotations</span><strong>{{ builderSummary.total_annotations }}</strong><small>{{ builderSummary.average_annotations_per_image }} avg / image</small></div>
                 <div class="train-stat"><span>Classes</span><strong>{{ builderSummary.class_count }}</strong><small>{{ builderSummary.classes.join(', ') }}</small></div>
                 <div class="train-stat"><span>Split Policy</span><strong>{{ versionSplit(trainingStore.selectedVersion) }}</strong><small>{{ versionSplitCounts(trainingStore.selectedVersion) }} images train / val / test</small></div>
                 <div class="train-stat"><span>Preprocessing</span><strong>{{ versionResize(trainingStore.selectedVersion) }}</strong><small>{{ versionOrient(trainingStore.selectedVersion) }}</small></div>
                 <div class="train-stat"><span>Augmentation</span><strong>{{ versionAugment(trainingStore.selectedVersion) }}</strong><small>Locked in Dataset Version</small></div>
-                <div class="train-stat"><span>Training Config</span><strong>{{ taskLabel(trainingStore.selectedVersion?.task_type || form.taskType) }} / {{ form.family }} {{ form.size }}</strong><small>{{ form.epochs }} epochs · {{ form.trainingMode === 'high_speed' ? '2x RTX 5080' : '1x RTX 5080' }} · batch {{ form.batch }}</small></div>
+                <div class="train-stat"><span>Training Config</span><strong>{{ taskLabel(trainingStore.selectedVersion?.task_type || form.taskType) }} / {{ form.family }} {{ form.size }}</strong><small>{{ form.epochs }} epochs · patience {{ form.patience }} · batch {{ batchLabel(form.batch) }}</small></div>
                 <div class="train-stat" v-if="trainingStore.currentEstimate"><span>Estimate</span><strong>{{ trainingStore.currentEstimate.estimated_time_range_minutes[0] }}-{{ trainingStore.currentEstimate.estimated_time_range_minutes[1] }} min</strong><small>{{ trainingStore.currentEstimate.estimated_disk_usage_mb }} MB · {{ trainingStore.currentEstimate.estimated_vram_tier }} VRAM tier</small></div>
               </div>
               <div v-else class="text-[13px] text-ink-mute">Create or select a Dataset Version first. Split, preprocessing, and augmentation stay locked after the snapshot is stored.</div>
@@ -1092,7 +1146,7 @@ async function resumeJob(jobId: string) {
                 <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-(--spacing-md)">
                   <div class="train-stat"><span>Job</span><strong>{{ trainingStore.selectedJob.job_name }}</strong><small>{{ taskLabel(trainingStore.selectedJob.task_type) }} / {{ trainingStore.selectedJob.architecture_family }} / {{ trainingStore.selectedJob.architecture_size }}</small></div>
                   <div class="train-stat"><span>Dataset Version</span><strong>{{ trainingStore.selectedJob.dataset_version_name }}</strong><small>{{ trainingStore.selectedJob.class_names.join(', ') }}</small></div>
-                  <div class="train-stat"><span>Epoch</span><strong>{{ latestMetric ? `${latestMetric.epoch}/${latestMetric.total_epochs ?? trainingStore.selectedJob.epochs}` : `0/${trainingStore.selectedJob.epochs}` }}</strong><small>{{ trainingStore.selectedJob.training_mode }}</small></div>
+                  <div class="train-stat"><span>Epoch</span><strong>{{ latestMetric ? `${latestMetric.epoch}/${latestMetric.total_epochs ?? trainingStore.selectedJob.epochs}` : `0/${trainingStore.selectedJob.epochs}` }}</strong><small>patience {{ trainingStore.selectedJob.patience ?? 30 }} · {{ trainingStore.selectedJob.training_mode }}</small></div>
                   <div class="train-stat"><span>ETA</span><strong>{{ latestMetric?.eta_sec ?? 0 }} sec</strong><small>{{ latestMetric?.elapsed_sec ?? 0 }} sec elapsed</small></div>
                   <div class="train-stat"><span>mAP50</span><strong>{{ latestMetric?.map50 ?? 0 }}</strong><small>mAP50-95 {{ latestMetric?.map50_95 ?? 0 }}</small></div>
                   <div class="train-stat"><span>Precision / Recall</span><strong>{{ latestMetric?.precision ?? 0 }} / {{ latestMetric?.recall ?? 0 }}</strong><small>lr {{ latestMetric?.lr ?? 0 }}</small></div>
@@ -1163,7 +1217,7 @@ async function resumeJob(jobId: string) {
                   <div><span>Preprocessing</span><strong>{{ versionResize(liveSourceVersion) }}</strong><small>{{ versionOrient(liveSourceVersion) }}</small></div>
                   <div><span>Augmentation</span><strong>{{ versionAugment(liveSourceVersion) }}</strong><small>immutable profile</small></div>
                   <div><span>Checkpoint</span><strong>{{ trainingStore.selectedJob.base_checkpoint }}</strong><small>{{ taskLabel(trainingStore.selectedJob.task_type) }} / {{ trainingStore.selectedJob.architecture_family }} {{ trainingStore.selectedJob.architecture_size }}</small></div>
-                    <div><span>Run Settings</span><strong>{{ trainingStore.selectedJob.epochs }} epochs / {{ trainingStore.selectedJob.imgsz }} px</strong><small>batch {{ trainingStore.selectedJob.batch }} / workers {{ trainingStore.selectedJob.workers }} / {{ trainingStore.selectedJob.training_mode }}</small></div>
+                    <div><span>Run Settings</span><strong>{{ trainingStore.selectedJob.epochs }} epochs / {{ trainingStore.selectedJob.imgsz }} px</strong><small>patience {{ trainingStore.selectedJob.patience ?? 30 }} / batch {{ batchLabel(trainingStore.selectedJob.batch) }} / workers {{ trainingStore.selectedJob.workers }}</small></div>
                     <div><span>Compute</span><strong>{{ trainingStore.selectedJob.cuda_visible_devices || trainingStore.selectedJob.device_policy }}</strong><small>device {{ trainingStore.selectedJob.train_device || 'pending' }} / AMP {{ trainingStore.selectedJob.amp === null || trainingStore.selectedJob.amp === undefined ? 'pending' : trainingStore.selectedJob.amp ? 'on' : 'off' }}</small></div>
                   </div>
               </div>
@@ -1267,7 +1321,7 @@ async function resumeJob(jobId: string) {
                 <h3 class="text-[16px] font-medium text-ink mb-(--spacing-md)">Training Configuration</h3>
                 <div class="train-policy-grid">
                   <div><span>Checkpoint</span><strong>{{ resultJob.base_checkpoint }}</strong><small>{{ taskLabel(resultJob.task_type) }} / {{ resultJob.architecture_family }} {{ resultJob.architecture_size }}</small></div>
-                  <div><span>Run Settings</span><strong>{{ resultJob.epochs }} epochs / {{ resultJob.imgsz }} px</strong><small>batch {{ resultJob.batch }} / workers {{ resultJob.workers }}</small></div>
+                  <div><span>Run Settings</span><strong>{{ resultJob.epochs }} epochs / {{ resultJob.imgsz }} px</strong><small>patience {{ resultJob.patience ?? 30 }} / batch {{ batchLabel(resultJob.batch) }} / workers {{ resultJob.workers }}</small></div>
                   <div><span>Compute</span><strong>{{ resultJob.training_mode }}</strong><small>{{ resultJob.device_policy }}</small></div>
                 </div>
               </div>

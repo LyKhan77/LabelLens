@@ -586,6 +586,71 @@ class TrainingServiceTest(unittest.TestCase):
                 inference_active=False,
             )
 
+    def test_recommend_training_settings_uses_dataset_size_buckets(self):
+        version = self._create_demo_version()
+        version["summary"]["final_image_count"] = 42
+        small = self.training_service.recommend_training_settings(version["id"], {})
+        version["summary"]["final_image_count"] = 80
+        self.training_service._write_json(self.training_service._version_meta_path(version["id"]), version)
+        medium = self.training_service.recommend_training_settings(version["id"], {})
+        version["summary"]["final_image_count"] = 300
+        self.training_service._write_json(self.training_service._version_meta_path(version["id"]), version)
+        larger = self.training_service.recommend_training_settings(version["id"], {})
+
+        self.assertEqual(small["epochs"], 200)
+        self.assertEqual(small["patience"], 40)
+        self.assertEqual(small["batch"], -1)
+        self.assertEqual(small["augmentation_mode"], "basic")
+        self.assertIn("small dataset", small["reason"])
+        self.assertEqual(medium["epochs"], 150)
+        self.assertEqual(medium["patience"], 30)
+        self.assertEqual(larger["epochs"], 100)
+        self.assertEqual(larger["patience"], 25)
+
+    def test_create_training_job_persists_patience_and_auto_batch(self):
+        version = self._create_demo_version()
+
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "auto-batch",
+                "dataset_version_id": version["id"],
+                "family": "yolo11",
+                "size": "n",
+                "base_checkpoint": "mock",
+                "epochs": 100,
+                "patience": 25,
+                "imgsz": 640,
+                "batch": -1,
+                "workers": 2,
+                "training_mode": "standard",
+            },
+            inference_active=False,
+        )
+
+        self.assertEqual(job["patience"], 25)
+        self.assertEqual(job["batch"], -1)
+
+    def test_create_training_job_rejects_invalid_patience(self):
+        version = self._create_demo_version()
+
+        with self.assertRaisesRegex(ValueError, "patience must be between"):
+            self.training_service.create_training_job(
+                {
+                    "job_name": "bad-patience",
+                    "dataset_version_id": version["id"],
+                    "family": "yolo11",
+                    "size": "n",
+                    "base_checkpoint": "mock",
+                    "epochs": 100,
+                    "patience": 101,
+                    "imgsz": 640,
+                    "batch": 8,
+                    "workers": 2,
+                    "training_mode": "standard",
+                },
+                inference_active=False,
+            )
+
     def test_resume_training_job_queues_from_existing_last_checkpoint(self):
         version = self._create_demo_version()
         job = self.training_service.create_training_job(
