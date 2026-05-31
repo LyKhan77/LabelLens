@@ -84,17 +84,30 @@ def _env_bool(name: str, default: bool) -> bool:
 
 def resolve_training_device_policy(job: dict) -> dict:
     high_speed = job.get('training_mode') == 'high_speed'
-    visible_key = 'TRAIN_VISIBLE_DEVICES_HIGH_SPEED' if high_speed else 'TRAIN_VISIBLE_DEVICES_STANDARD'
-    local_key = 'TRAIN_DEVICE_HIGH_SPEED' if high_speed else 'TRAIN_DEVICE_STANDARD'
-    amp_key = 'TRAIN_AMP_HIGH_SPEED' if high_speed else 'TRAIN_AMP_STANDARD'
-    visible_default = '1,2' if high_speed else '1'
-    cuda_visible_devices = os.getenv(visible_key, visible_default)
+
+    # Check persisted training GPU config first
+    saved = None
+    try:
+        from backend.services.gpu import gpu_service
+        saved = gpu_service.get_training_config()
+    except Exception:
+        pass
+
+    if saved:
+        visible_devices = saved.get('visible_devices', '1,2' if high_speed else '1')
+        amp = saved.get('amp', not high_speed)
+    else:
+        visible_key = 'TRAIN_VISIBLE_DEVICES_HIGH_SPEED' if high_speed else 'TRAIN_VISIBLE_DEVICES_STANDARD'
+        amp_key = 'TRAIN_AMP_HIGH_SPEED' if high_speed else 'TRAIN_AMP_STANDARD'
+        visible_devices = os.getenv(visible_key, '1,2' if high_speed else '1')
+        amp = _env_bool(amp_key, not high_speed)
+
     return {
         'cuda_device_order': os.getenv('CUDA_DEVICE_ORDER', 'PCI_BUS_ID'),
-        'cuda_visible_devices': cuda_visible_devices,
-        'device': os.getenv(local_key, cuda_visible_devices),
-        'local_device': _local_device_arg(cuda_visible_devices),
-        'amp': _env_bool(amp_key, not high_speed),
+        'cuda_visible_devices': visible_devices,
+        'device': visible_devices,
+        'local_device': _local_device_arg(visible_devices),
+        'amp': amp,
     }
 
 
