@@ -33,6 +33,10 @@ class ModelService:
         self._vpe_labels: list[str] = []
         self.device = DEVICE
 
+    def set_device(self, device: str | int):
+        """Update the device for future predictions and model loading."""
+        self.device = str(device)
+
     def load_model(self, mode: str):
         if mode not in MODEL_MODES:
             raise ValueError(f"Unknown mode: {mode}. Must be one of {list(MODEL_MODES)}")

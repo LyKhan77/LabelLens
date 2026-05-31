@@ -25,6 +25,10 @@ class SAMService:
         self._loading = False
         self._lock = threading.Lock()
 
+    def set_device(self, device: str | int):
+        """Update the device for future SAM operations."""
+        self.device = str(device)
+
     def _ensure_loaded(self):
         if not SAM_ENABLED:
             raise RuntimeError("SAM is disabled (SAM_ENABLED=false)")
