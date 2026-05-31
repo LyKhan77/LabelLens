@@ -74,14 +74,14 @@ class GpuService:
                 )
 
         return {
-            "yoloe_device": os.getenv("DEVICE", "0"),
-            "sam_device": os.getenv("SAM_DEVICE", "1"),
+            "yoloe_device": int(os.getenv("DEVICE", "0")),
+            "sam_device": int(os.getenv("SAM_DEVICE", "1")),
         }
 
-    def save_inference_config(self, yoloe_device: str, sam_device: str) -> dict:
+    def save_inference_config(self, yoloe_device: int, sam_device: int) -> dict:
         """Validate device indices against detected GPUs and persist config."""
         detected = self.detect_gpus()
-        valid_indices = {str(g["index"]) for g in detected}
+        valid_indices = {g["index"] for g in detected}
 
         if not detected:
             raise RuntimeError("No CUDA GPUs detected")
@@ -90,7 +90,7 @@ class GpuService:
             if value not in valid_indices:
                 raise ValueError(
                     f"Invalid {label} '{value}'; "
-                    f"available indices: {sorted(valid_indices, key=int)}"
+                    f"available indices: {sorted(valid_indices)}"
                 )
 
         data = {"yoloe_device": yoloe_device, "sam_device": sam_device}

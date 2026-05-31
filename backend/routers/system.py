@@ -14,8 +14,8 @@ router = APIRouter()
 
 
 class GpuConfigRequest(BaseModel):
-    yoloe_device: str
-    sam_device: str
+    yoloe_device: int
+    sam_device: int
 
 
 class TrainingGpuConfigRequest(BaseModel):
