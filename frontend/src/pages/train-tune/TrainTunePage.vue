@@ -7,7 +7,7 @@ import { useTheme } from '../../shared/composables/useTheme'
 import { useTrainingStore } from '../../shared/stores/training'
 import type { DatasetVersion, ModelVersion, TrainingJob, TrainingMetricPoint } from '../../shared/api/training'
 import { getTrainingGpus } from '../../shared/api/system'
-import type { GpuInfo, TrainingGpuConfig } from '../../shared/types'
+import type { GpuInfo } from '../../shared/types'
 
 const props = defineProps<{ path: string }>()
 

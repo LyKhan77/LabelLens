@@ -33,3 +33,4 @@ onUnmounted(() => window.removeEventListener('popstate', syncPath))
     <ModeSelectPage v-else />
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
   </div>
+</template>
