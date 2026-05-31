@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import CORS_ORIGINS
-from backend.routers import dataset, detection, health, sam, stream, training
+from backend.routers import dataset, detection, health, sam, stream, system, training
 from backend.services.model import model_service
 from backend.services.training import training_service
 
@@ -31,3 +31,4 @@ app.include_router(detection.router, prefix="/api")
 app.include_router(stream.router)
 app.include_router(training.router, prefix='/api')
 app.include_router(sam.router, prefix="/api")
+app.include_router(system.router, prefix="/api")
