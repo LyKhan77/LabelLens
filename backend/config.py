@@ -14,6 +14,8 @@ MAX_IMAGE_SIZE = 10 * 1024 * 1024
 MAX_VIDEO_SIZE = 100 * 1024 * 1024
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
+import torch
+
 # Load persisted GPU config, fall back to env defaults
 _gpu_config_path = Path(os.getenv("GPU_CONFIG_PATH", "gpu_config.json"))
 if _gpu_config_path.exists():
@@ -27,3 +29,7 @@ if _gpu_config_path.exists():
 else:
     DEVICE = os.getenv("DEVICE", "0")
     SAM_DEVICE = os.getenv("SAM_DEVICE", "1")
+
+if not torch.cuda.is_available():
+    DEVICE = "cpu"
+    SAM_DEVICE = "cpu"

@@ -6,6 +6,8 @@ import { useBackendStatus } from '../../shared/composables/useBackendStatus'
 import { useTheme } from '../../shared/composables/useTheme'
 import { useTrainingStore } from '../../shared/stores/training'
 import type { DatasetVersion, ModelVersion, TrainingJob, TrainingMetricPoint } from '../../shared/api/training'
+import { getTrainingGpus } from '../../shared/api/system'
+import type { GpuInfo, TrainingGpuConfig } from '../../shared/types'
 
 const props = defineProps<{ path: string }>()
 
@@ -16,6 +18,7 @@ const { yoloeStatus, samStatus } = useBackendStatus()
 const { theme, toggle } = useTheme()
 
 const form = reactive(reactiveState())
+const detectedGpus = ref<GpuInfo[]>([])
 const versionDeleteError = ref<string | null>(null)
 const deleteError = ref<string | null>(null)
 const deletingTarget = ref(false)
@@ -91,6 +94,8 @@ function reactiveState() {
     batch: -1,
     workers: 2,
     trainingMode: 'standard' as 'standard' | 'high_speed',
+    trainingDevice: '1' as string,
+    trainingDevices: [1] as number[],
     jobName: '',
     localError: null as string | null,
   }
@@ -451,6 +456,29 @@ async function hydrate() {
   await loadRouteState()
 }
 
+async function loadTrainingGpus() {
+  try {
+    const res = await getTrainingGpus()
+    detectedGpus.value = res.gpus
+    form.trainingMode = res.training_config.training_mode
+  } catch {
+    detectedGpus.value = []
+  }
+}
+
+function onTrainingModeChange() {
+  if (form.trainingMode === 'standard') {
+    form.trainingDevices = form.trainingDevices.slice(0, 1)
+    form.trainingDevice = String(form.trainingDevices[0] ?? 0)
+  }
+}
+
+function toggleTrainingGpu(index: number) {
+  const i = form.trainingDevices.indexOf(index)
+  if (i >= 0) form.trainingDevices.splice(i, 1)
+  else form.trainingDevices.push(index)
+}
+
 async function loadRouteState() {
   if (routeView.value === 'job' && routeId.value) {
     await trainingStore.selectJob(routeId.value)
@@ -463,7 +491,7 @@ async function loadRouteState() {
   }
 }
 
-onMounted(hydrate)
+onMounted(() => { hydrate(); loadTrainingGpus() })
 
 watch(() => props.path, async () => {
   await loadRouteState()
@@ -947,7 +975,8 @@ async function resumeJob(jobId: string) {
                     <label class="train-field"><span class="train-label-with-info">Size <span class="train-param-help" tabindex="0" aria-label="Model size tier." data-tip="Larger sizes can improve accuracy but use more VRAM and train slower.">?</span></span><select v-model="form.size"><option value="n">n</option><option value="s">s</option><option value="m">m</option><option value="l">l</option></select></label>
                     <label class="train-field train-field-span"><span class="train-label-with-info">Base Checkpoint <span class="train-param-help" tabindex="0" aria-label="Starting model weights." data-tip="Must match the selected task: detection checkpoints for bbox training, -seg checkpoints for segmentation.">?</span></span><input v-model="form.baseCheckpoint" :placeholder="form.taskType === 'segment' ? 'yolo26n-seg.pt' : 'yolo26n.pt'" /></label>
                     <label class="train-field"><span class="train-label-with-info">Job Name <span class="train-param-help" tabindex="0" aria-label="Human-readable run name." data-tip="Name used to identify this run and its output artifact folder.">?</span></span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
-                    <label class="train-field"><span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses both GPUs and waits until inference is idle.">?</span></span><select v-model="form.trainingMode"><option value="standard">Standard · 1x RTX 5080</option><option value="high_speed">High-Speed · 2x RTX 5080</option></select></label>
+                    <label class="train-field"><span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses all selected GPUs and waits until inference is idle.">?</span></span><select v-model="form.trainingMode" @change="onTrainingModeChange"><option value="standard">Standard · 1 GPU</option><option value="high_speed">High-Speed · 2+ GPUs</option></select></label>
+                    <label v-if="detectedGpus.length > 0" class="train-field"><span class="train-label-with-info">Training GPU <span class="train-param-help" tabindex="0" aria-label="Training GPU device." data-tip="Select which detected GPU(s) to use for training.">?</span></span><select v-if="form.trainingMode === 'standard'" v-model="form.trainingDevice"><option v-for="gpu in detectedGpus" :key="gpu.index" :value="String(gpu.index)">GPU {{ gpu.index }} — {{ gpu.name }} ({{ gpu.vram_total_mb }} MB)</option></select><div v-else class="flex flex-wrap gap-2"><label v-for="gpu in detectedGpus" :key="gpu.index" class="flex items-center gap-1.5 text-xs text-ink"><input type="checkbox" :value="gpu.index" :checked="form.trainingDevices.includes(gpu.index)" @change="toggleTrainingGpu(gpu.index)" />GPU {{ gpu.index }} — {{ gpu.name }}</label></div></label>
                     <label class="train-field"><span class="train-label-with-info">Epochs <span class="train-param-help" tabindex="0" aria-label="Number of full training passes." data-tip="How many full passes through the training split the worker runs.">?</span></span><input v-model.number="form.epochs" type="number" min="1" /></label>
                     <label class="train-field"><span class="train-label-with-info">Patience <span class="train-param-help" tabindex="0" aria-label="Early stopping patience." data-tip="Stops training after this many epochs without validation improvement.">?</span></span><input v-model.number="form.patience" type="number" min="0" max="100" /></label>
                     <label class="train-field"><span class="train-label-with-info">Image Size <span class="train-param-help" tabindex="0" aria-label="Training image resolution." data-tip="Input resolution in pixels. Higher values keep detail but cost more VRAM.">?</span></span><input v-model.number="form.imgsz" type="number" min="320" step="32" /></label>
@@ -994,7 +1023,7 @@ async function resumeJob(jobId: string) {
                     <button v-if="builderStep > 1" class="dataset-secondary-button" @click="previousBuilderStep">Back</button>
                     <button v-if="builderStep < builderSteps.length" class="dataset-primary-button" @click="nextBuilderStep">Continue</button>
                   </div>
-                  <p v-if="form.trainingMode === 'high_speed'" class="train-warning">High-Speed Mode uses both RTX 5080 devices. The job only starts when inference is idle, and new inference requests remain blocked until the run finishes.</p>
+                  <p v-if="form.trainingMode === 'high_speed'" class="train-warning">High-Speed Mode uses {{ form.trainingDevices.length }} GPU(s). The job only starts when inference is idle, and new inference requests remain blocked until the run finishes.</p>
                   <div v-if="form.localError || trainingStore.error" class="space-y-(--spacing-sm)">
                     <p class="train-error">{{ form.localError || trainingStore.error }}</p>
                     <button v-if="form.taskType === 'segment' && form.selectedDataset" class="dataset-secondary-button" @click="navigate('/datasets')">Open Dataset Workspace</button>
