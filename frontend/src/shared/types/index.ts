@@ -49,3 +49,37 @@ export type MediaMode = 'image' | 'video' | 'rtsp'
 export type PromptMode = 'text' | 'visual' | 'free'
 export type InferenceMode = 'free' | 'prompt'
 export type ViewerState = 'empty' | 'loading' | 'result' | 'video' | 'rtsp'
+
+// GPU Detection
+export interface GpuInfo {
+  index: number
+  name: string
+  vram_total_mb: number
+  vram_used_mb: number
+  uuid: string
+}
+
+export interface GpuConfig {
+  yoloe_device: number
+  sam_device: number
+  updated_at?: string
+}
+
+export interface TrainingGpuConfig {
+  training_mode: 'standard' | 'high_speed'
+  training_device: string
+  visible_devices: string
+  amp: boolean
+  updated_at?: string
+}
+
+export interface GpuListResponse {
+  gpus: GpuInfo[]
+  cuda_visible_devices: string
+  inference_config: GpuConfig
+}
+
+export interface TrainingGpuListResponse {
+  gpus: GpuInfo[]
+  training_config: TrainingGpuConfig
+}
