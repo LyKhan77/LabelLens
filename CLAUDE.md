@@ -12,7 +12,7 @@
 ## Key Features - ALWAYS Update this section based on Changes or Features Made
 
 - **Feature Modes Page** — Deterministic landing page at `/` with mode selection: Free Inference (LRPC, 1200+ LVIS categories), Prompt Inference (text/visual), or Train Tune, then navigates to the matching workspace
-- **Train Tune Workspace** — dedicated `/train-tune` YOLO detection/segmentation builder with task-selectable immutable Dataset Version snapshots, bbox or polygon-mask label export, missing-mask validation with Dataset Workspace handoff, preprocessing Policy with Keep/Letterbox/Stretch resize strategies, Basic online augmentation or Advanced Add Augmentation Step workflow with optional 1x-5x train-only materialized images, smart recommended training settings by dataset size, Auto Batch (`batch=-1`), early-stopping Patience, real backend policy preview samples with bbox/mask overlays, locked split/prep/augmentation summary, backend training config validation/preflight, modal deletion for unused dataset versions and model versions with linked job history, compact model/job badges, JSON-safe metric history with non-blocking job navigation, compact metric trends plus scrollable epoch history and dataset/run/compute details on live progress and model result views, dedicated `/train-tune/jobs/:id` live progress pages, dedicated `/train-tune/results/:id` result pages, dedicated `/train-tune/test/:id` model testing, Standard vs High-Speed GPU modes with RTX 5080 physical GPU mapping (`device=1` or `1,2` for Ultralytics, AMP off for High-Speed DDP), full-process cancellation, failed-job re-compute/delete, last-checkpoint resume, train log/results CSV artifacts under `traintune-workspace/`, and model version registry. LabelLens globally defaults to physical GPUs `1,2` so physical GPU `0` (RTX 4090) remains reserved for vLLM.
+- **Train Tune Workspace** — dedicated `/train-tune` YOLO detection/segmentation builder with task-selectable immutable Dataset Version snapshots, bbox or polygon-mask label export, missing-mask validation with Dataset Workspace handoff, preprocessing Policy with Keep/Letterbox/Stretch resize strategies, Basic online augmentation or Advanced Add Augmentation Step workflow with optional 1x-5x train-only materialized images, smart recommended training settings by dataset size, Auto Batch (`batch=-1`), early-stopping Patience, real backend policy preview samples with bbox/mask overlays, locked split/prep/augmentation summary, backend training config validation/preflight, modal deletion for unused dataset versions and model versions with linked job history, compact model/job badges, JSON-safe metric history with non-blocking job navigation, compact metric trends plus scrollable epoch history and dataset/run/compute details on live progress and model result views, dedicated `/train-tune/jobs/:id` live progress pages, dedicated `/train-tune/results/:id` result pages, dedicated `/train-tune/test/:id` model testing, Standard vs High-Speed GPU modes with auto-detected GPU selection (manual assignment from detected devices), full-process cancellation, failed-job re-compute/delete, last-checkpoint resume, train log/results CSV artifacts under `traintune-workspace/`, and model version registry.
 - **Free Inference Mode** — Prompt-free detection using YOLOE LRPC internal vocabulary (separate `yoloe-26l-seg-pf.pt` weights, no user prompts needed)
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
@@ -24,6 +24,7 @@
 - **Auto-Labelling** — Save inference results as labeled datasets for YOLO fine-tuning. Trigger from Workspace Auto-Label modal or batch upload via Dataset Manager. While active on RTSP, continuous viewer-frame annotations are saved until auto-label is stopped (modal, optional MM:SS timer, or Stop Inference). Accept/reject detections, add/edit/delete manual bboxes, and use per-class/per-object overlay controls. Export in YOLO TXT + COCO JSON formats with train/val split, preserving original input filenames in exported artifacts whenever available.
 - **Dataset Manager** — Standalone `/datasets` page for multi-project dataset management with Inference-style header navigation, delete confirmation modals, Select All Files gallery selection, real overlay paginated thumbnail gallery (25/page), centered modal review with cross-page Prev/Next, compact class/status review controls, zoomable/pannable review canvas for pixel-level bbox editing, viewport-clamped Edit BBox popover, per-dataset manual class colors, manual bbox add/edit/delete annotation editor, simplified multi-prompt Infer Next visual-prompt candidate propagation with per-candidate Accept/Reject plus Accept All & Continue, direct annotation delete, granular overlay controls and image delete, Rapid Inference jobs with frame-by-frame `Frame x/y` progress, configurable frame sampling, and zip export.
 - **SAM2.1 Auto-mask** — SAM2.1 (Hiera Large) runs on GPU 1 independently from YOLOE on GPU 0. Automatically generates mask segmentation when users draw manual bbox annotations in Dataset Manager review. Lazy-loaded, thread-safe, with status/load/unload API endpoints. Non-fatal — bbox saves without mask if SAM unavailable.
+- **GPU Settings** — Auto-detect CUDA GPUs at runtime via `torch.cuda`. Settings modal (gear icon in header) for manual YOLOE/SAM device assignment with hot-swap model reload. Persistent inference config via `gpu_config.json`. Train Tune has separate GPU detection and selection for Standard (1 GPU) and High-Speed (2+ GPUs) modes via `training_gpu_config.json`. Both configs loaded on startup with env var fallback.
 
 ## Project Structure - ALWAYS Update this section based on Changes or Features Made
 
@@ -31,8 +32,9 @@
 LabelLens/
 ├── frontend/src/
 │   ├── shared/
-│   │   ├── api/             (client.ts, detection.ts, ws.ts, dataset.ts, training.ts, sam.ts)
+│   │   ├── api/             (client.ts, detection.ts, ws.ts, dataset.ts, training.ts, sam.ts, system.ts)
 │   │   ├── composables/     (useBackendStatus.ts, useWebSocket.ts)
+│   │   ├── components/      (SettingsModal.vue)
 │   │   ├── stores/          (inference.ts, dataset.ts, training.ts — Pinia)
 │   │   └── types/           (index.ts)
 │   └── pages/
@@ -42,9 +44,9 @@ LabelLens/
 │       ├── train-tune/      (TrainTunePage — builder/live/result routes, TestModelPage — artifact testing)
 │       └── workspace/       (components, sections)
 ├── backend/
-│   ├── routers/         (health.py, detection.py, stream.py, dataset.py, training.py, sam.py)
+│   ├── routers/         (health.py, detection.py, stream.py, dataset.py, training.py, sam.py, system.py)
 │   ├── services/        (model.py, video.py, rtsp.py, dataset.py, activity.py, training.py,
-│   │                    training_events.py, training_runtime.py, sam.py)
+│   │                    training_events.py, training_runtime.py, sam.py, gpu.py)
 │   ├── train_worker.py  (background training worker process for Train Tune jobs)
 │   └── utils/           (drawing.py, encoding.py, masks.py, postprocess.py)
 ├── datasets/            (runtime dataset storage, gitignored)
@@ -80,7 +82,7 @@ LabelLens/
 - Run full image/video/RTSP inference validation with real media and expected detections.
 - Run Train Tune detection and segmentation jobs using real checkpoints, including Standard Mode and High-Speed Mode.
 - Confirm SAM2.1 mask generation quality and failure behavior when SAM is unavailable.
-- Confirm physical GPU mapping: LabelLens defaults to `CUDA_VISIBLE_DEVICES=1,2` so physical GPU `0` (RTX 4090) remains reserved for vLLM. Train Tune defaults to physical GPU `1` for Standard Mode and physical GPUs `1,2` for High-Speed Mode, passed directly to Ultralytics with `CUDA_DEVICE_ORDER=PCI_BUS_ID`; High-Speed DDP defaults AMP off.
+- Confirm physical GPU mapping: LabelLens defaults to `CUDA_VISIBLE_DEVICES=1,2` but now supports runtime auto-detection and manual reassignment via Settings modal. Train Tune GPU selection uses auto-detected devices for Standard (1 GPU) and High-Speed (2+ GPUs) modes. Both configs persist to JSON files with env var fallback.
 
 
 =====================
