@@ -337,6 +337,7 @@ Suggested manual validation checklist:
 | `docs/MODELS.md` | YOLOE, SAM2.1, checkpoint, and GPU mapping guide |
 | `docs/WORKFLOWS.md` | End-to-end operator workflows |
 | `docs/TESTING.md` | Unit, build, manual E2E, and hardware validation checklist |
+| `docs/INSTALLATION.md` | Full installation guide (prerequisites, setup, config, troubleshooting) |
 | `docs/OPERATIONS.md` | Local LAN runbook, runtime paths, env vars, troubleshooting |
 | `docs/REFERENCES.md` | External and project-local reference catalog |
 | `docs/plans/` | Implementation plans created during development |
