@@ -83,7 +83,6 @@ class SAMService:
         results = self.model.predict(
             source=image,
             bboxes=[[bbox]],
-            device=self.device,
             verbose=False,
         )
         inference_ms = (time.perf_counter() - t0) * 1000
@@ -103,7 +102,6 @@ class SAMService:
             res = self.model.predict(
                 source=image,
                 bboxes=[[bbox]],
-                device=self.device,
                 verbose=False,
             )
             t_total += (time.perf_counter() - t0) * 1000

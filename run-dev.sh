@@ -36,7 +36,6 @@ echo "Starting backend on :$BACKEND_PORT ..."
 (
   cd "$ROOT_DIR"
   CUDA_DEVICE_ORDER="${CUDA_DEVICE_ORDER:-PCI_BUS_ID}" \
-  DEVICE="${DEVICE:-0}" \
   "$PYTHON_BIN" -m uvicorn backend.main:app \
     --host "${HOST:-0.0.0.0}" \
     --port "$BACKEND_PORT" \

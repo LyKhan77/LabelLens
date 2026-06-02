@@ -115,7 +115,7 @@ class ModelService:
         if self.current_mode == "custom":
             t0 = time.perf_counter()
             results = self.model.predict(
-                image, conf=conf, device=self.device, verbose=False, retina_masks=True
+                image, conf=conf, verbose=False, retina_masks=True
             )
             inference_ms = (time.perf_counter() - t0) * 1000
             return self._parse_results(results, inference_ms)
@@ -126,7 +126,7 @@ class ModelService:
 
         t0 = time.perf_counter()
         results = self.model.predict(
-            image, conf=conf, device=self.device, verbose=False, retina_masks=True
+            image, conf=conf, verbose=False, retina_masks=True
         )
         inference_ms = (time.perf_counter() - t0) * 1000
 
@@ -140,7 +140,7 @@ class ModelService:
         self._require_model()
         t0 = time.perf_counter()
         results = self.model.predict(
-            image, conf=conf, device=self.device, verbose=False, retina_masks=True
+            image, conf=conf, verbose=False, retina_masks=True
         )
         inference_ms = (time.perf_counter() - t0) * 1000
         return self._parse_results(results, inference_ms)
@@ -181,7 +181,6 @@ class ModelService:
                 visual_prompts=visual_prompts,
                 refer_image=refer_path,
                 predictor=predictor_cls,
-                device=self.device,
                 conf=0.01,
                 verbose=False,
                 retina_masks=True,
@@ -201,7 +200,7 @@ class ModelService:
         self._require_model()
         t0 = time.perf_counter()
         results = self.model.predict(
-            image, conf=conf, device=self.device, verbose=False, retina_masks=True
+            image, conf=conf, verbose=False, retina_masks=True
         )
         inference_ms = (time.perf_counter() - t0) * 1000
 
