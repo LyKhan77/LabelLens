@@ -181,7 +181,6 @@ watch(
 )
 
 // Class management
-const classesExpanded = ref(false)
 const editingClassLabel = ref<string | null>(null)
 const renameInputValue = ref('')
 const renamingClass = ref(false)
@@ -313,52 +312,51 @@ function closeClassDeleteDialog() {
         <strong >{{ metrics.reviewQueue }}</strong>
         <small >Rejected or pending verification</small>
       </div>
-      <div class="dataset-metric-card dataset-class-metric" :class="{ 'is-expanded': classesExpanded }">
-        <div class="dataset-class-metric-header" @click="classesExpanded = !classesExpanded">
-          <div>
-            <label>Classes</label>
-            <strong class="text-primary">{{ metrics.classes }}</strong>
-            <small v-if="!classesExpanded">{{ (project?.stats.classes ?? []).join(', ') || 'No classes yet' }}</small>
-          </div>
-          <svg class="w-4 h-4 text-ink-mute transition-transform" :class="{ 'rotate-180': classesExpanded }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9" /></svg>
-        </div>
-        <div v-if="classesExpanded" class="dataset-class-manager" @click.stop>
-          <div v-if="classEntries.length" class="dataset-class-list">
-            <div v-for="entry in classEntries" :key="entry.label" class="dataset-class-entry">
-              <input
-                type="color"
-                class="dataset-class-color-input"
-                :value="classColor(entry.label)"
-                :aria-label="`Set ${entry.label} color`"
-                @click.stop
-                @input.stop="updateClassColor(entry.label, $event)"
-              />
-              <template v-if="editingClassLabel === entry.label">
-                <input
-                  class="dataset-class-rename-input"
-                  v-model="renameInputValue"
-                  :disabled="renamingClass"
-                  @keydown.enter.stop="confirmRenameClass"
-                  @keydown.escape.stop="cancelRenameClass"
-                  @blur="confirmRenameClass"
-                  @click.stop
-                  @dblclick.stop
-                />
-              </template>
-              <template v-else>
-                <span class="dataset-class-name" @dblclick.stop="startRenameClass(entry.label)">{{ entry.label }}</span>
-              </template>
-              <span class="dataset-class-count">{{ entry.count }}</span>
-              <button
-                class="dataset-class-entry-delete"
-                @click.stop="requestDeleteClass(entry.label)"
-                aria-label="Delete class"
-              >
-                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-          </div>
-          <div v-else class="text-[11px] text-ink-mute py-2 text-center">No classes yet</div>
+      <div class="dataset-metric-card">
+        <label >Classes</label>
+        <strong class="text-primary">{{ metrics.classes }}</strong>
+        <small >{{ metrics.classes }} distinct labels in dataset</small>
+      </div>
+    </div>
+
+    <div v-if="classEntries.length" class="dataset-class-section">
+      <div class="dataset-class-section-header">
+        <label>Labels</label>
+        <small>{{ classEntries.length }} classes · double-click to rename · click color to change</small>
+      </div>
+      <div class="dataset-class-pills">
+        <div v-for="entry in classEntries" :key="entry.label" class="dataset-class-pill">
+          <input
+            type="color"
+            class="dataset-class-color-input"
+            :value="classColor(entry.label)"
+            :aria-label="`Set ${entry.label} color`"
+            @click.stop
+            @input.stop="updateClassColor(entry.label, $event)"
+          />
+          <template v-if="editingClassLabel === entry.label">
+            <input
+              class="dataset-class-rename-input"
+              v-model="renameInputValue"
+              :disabled="renamingClass"
+              @keydown.enter.stop="confirmRenameClass"
+              @keydown.escape.stop="cancelRenameClass"
+              @blur="confirmRenameClass"
+              @click.stop
+              @dblclick.stop
+            />
+          </template>
+          <template v-else>
+            <span class="dataset-class-pill-name" @dblclick.stop="startRenameClass(entry.label)">{{ entry.label }}</span>
+          </template>
+          <span class="dataset-class-pill-count">{{ entry.count }}</span>
+          <button
+            class="dataset-class-pill-delete"
+            @click.stop="requestDeleteClass(entry.label)"
+            aria-label="Delete class"
+          >
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
       </div>
     </div>

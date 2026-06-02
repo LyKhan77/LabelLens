@@ -1307,67 +1307,73 @@
     outline: none;
   }
 
-  /* Class management in DatasetDetail */
-  .dataset-class-metric {
-    cursor: pointer;
-    grid-column: span 1;
+  /* Class management — standalone section */
+  .dataset-class-section {
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-md);
+    background: var(--color-canvas);
+    padding: 10px 14px;
   }
 
-  .dataset-class-metric.is-expanded {
-    grid-row: span 2;
-  }
-
-  .dataset-class-metric-header {
+  .dataset-class-section-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 8px;
   }
 
-  .dataset-class-manager {
-    margin-top: 8px;
-    border-top: 1px solid var(--color-hairline);
-    padding-top: 6px;
+  .dataset-class-section-header label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-ink-mute);
+    font-weight: 600;
   }
 
-  .dataset-class-list {
+  .dataset-class-section-header small {
+    font-size: 10px;
+    color: var(--color-ink-mute);
+  }
+
+  .dataset-class-pills {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  .dataset-class-entry {
-    display: flex;
-    align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
-    height: 24px;
-    padding: 0 4px;
-    border-radius: var(--radius-sm);
-    transition: background 0.1s;
   }
 
-  .dataset-class-entry:hover {
+  .dataset-class-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 6px 0 4px;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-sm);
+    background: var(--color-canvas-soft);
+    transition: border-color 0.12s, background 0.12s;
+  }
+
+  .dataset-class-pill:hover {
+    border-color: rgba(255, 255, 255, 0.22);
     background: rgba(255, 255, 255, 0.04);
   }
 
-  .dataset-class-name {
-    flex: 1;
+  .dataset-class-pill-name {
     font-size: 11px;
     color: var(--color-ink);
     cursor: default;
   }
 
-  .dataset-class-count {
+  .dataset-class-pill-count {
     font-size: 10px;
     color: var(--color-ink-mute);
-    min-width: 20px;
-    text-align: right;
+    padding-left: 2px;
+    border-left: 1px solid var(--color-hairline);
   }
 
-  .dataset-class-entry-delete {
-    width: 20px;
-    height: 20px;
+  .dataset-class-pill-delete {
+    width: 18px;
+    height: 18px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1378,13 +1384,14 @@
     border-radius: var(--radius-sm);
     opacity: 0;
     transition: opacity 0.12s, color 0.12s;
+    margin-left: -2px;
   }
 
-  .dataset-class-entry:hover .dataset-class-entry-delete {
+  .dataset-class-pill:hover .dataset-class-pill-delete {
     opacity: 1;
   }
 
-  .dataset-class-entry-delete:hover {
+  .dataset-class-pill-delete:hover {
     color: #EF4444;
     background: rgba(239, 68, 68, 0.08);
   }
