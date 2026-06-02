@@ -361,7 +361,7 @@
     outline: none;
   }
 
-  .dataset-media-stage.is-zoomed .dataset-editor-plane {
+  .dataset-media-stage.is-zoomed .dataset-editor-plane.tool-bbox {
     cursor: crosshair;
   }
 
@@ -2543,7 +2543,7 @@
 }
 
   .dataset-editor-plane {
-    cursor: crosshair;
+    /* cursor controlled by tool-select/bbox/pan classes */
   }
 
   .dataset-editor-guides {
