@@ -26,11 +26,11 @@ onUnmounted(() => window.removeEventListener('popstate', syncPath))
 
 <template>
   <div class="h-screen flex flex-col bg-canvas">
-    <DatasetsPage v-if="path === '/datasets'" />
-    <TestModelPage v-else-if="path.match(/^\/train-tune\/test\/[^/]+$/)" :model-id="path.split('/').filter(Boolean)[2]" />
-    <TrainTunePage v-else-if="path.startsWith('/train-tune')" :path="path" />
+    <DatasetsPage v-if="path === '/datasets'" @open-settings="showSettings = true" />
+    <TestModelPage v-else-if="path.match(/^\/train-tune\/test\/[^/]+$/)" :model-id="path.split('/').filter(Boolean)[2]" @open-settings="showSettings = true" />
+    <TrainTunePage v-else-if="path.startsWith('/train-tune')" :path="path" @open-settings="showSettings = true" />
     <WorkspacePage v-else-if="path === '/workspace' && store.modelLoaded" @open-settings="showSettings = true" />
-    <ModeSelectPage v-else />
+    <ModeSelectPage v-else @open-settings="showSettings = true" />
     <SettingsModal v-if="showSettings" @close="showSettings = false" />
   </div>
 </template>

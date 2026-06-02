@@ -3,7 +3,8 @@ import os
 from pathlib import Path
 
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
-os.environ.setdefault("CUDA_VISIBLE_DEVICES", os.getenv("LABELLENS_CUDA_VISIBLE_DEVICES", "1,2"))
+if "LABELLENS_CUDA_VISIBLE_DEVICES" in os.environ:
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", os.environ["LABELLENS_CUDA_VISIBLE_DEVICES"])
 
 MODEL_PATH = os.getenv("MODEL_PATH", "models/yoloe-26l-seg.pt")
 SAM_MODEL = os.getenv("SAM_MODEL", "sam2.1_l.pt")

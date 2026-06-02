@@ -63,10 +63,10 @@ async function apply() {
 
 <template>
   <div
-    class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+    class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
     @click.self="emit('close')"
   >
-    <div class="bg-canvas rounded-(--radius-lg) border border-hairline w-full max-w-lg max-h-[85vh] flex flex-col">
+    <div class="bg-canvas rounded-(--radius-lg) border border-hairline w-full max-w-[480px] max-h-[85vh] flex flex-col shadow-xl">
       <!-- Header -->
       <div class="flex items-center justify-between px-(--spacing-xxl) py-4 border-b border-hairline">
         <h3 class="text-[16px] font-medium text-ink">GPU Settings</h3>
