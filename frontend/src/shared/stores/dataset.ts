@@ -85,18 +85,16 @@ export const useDatasetStore = defineStore('dataset', () => {
 
   async function renameClass(oldLabel: string, newLabel: string) {
     if (!currentProject.value) return
-    const updated = await api.renameClass(currentProject.value, oldLabel, newLabel)
-    const idx = projects.value.findIndex((p) => p.name === updated.name)
-    if (idx >= 0) projects.value.splice(idx, 1, updated)
+    await api.renameClass(currentProject.value, oldLabel, newLabel)
+    await fetchProjects()
     if (selectedImage.value) await selectImage(selectedImage.value)
     await fetchImages(imagesPage.value)
   }
 
   async function deleteClass(label: string) {
     if (!currentProject.value) return
-    const updated = await api.deleteClass(currentProject.value, label)
-    const idx = projects.value.findIndex((p) => p.name === updated.name)
-    if (idx >= 0) projects.value.splice(idx, 1, updated)
+    await api.deleteClass(currentProject.value, label)
+    await fetchProjects()
     if (selectedImage.value) await selectImage(selectedImage.value)
     await fetchImages(imagesPage.value)
   }
