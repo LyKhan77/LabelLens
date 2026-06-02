@@ -27,7 +27,8 @@ class SAMService:
 
     def set_device(self, device: str | int):
         """Update the device for future SAM operations."""
-        self.device = str(device)
+        s = str(device)
+        self.device = s if s.startswith("cuda") or s == "cpu" else f"cuda:{s}"
 
     def _ensure_loaded(self):
         if not SAM_ENABLED:

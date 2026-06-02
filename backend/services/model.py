@@ -35,7 +35,8 @@ class ModelService:
 
     def set_device(self, device: str | int):
         """Update the device for future predictions and model loading."""
-        self.device = str(device)
+        s = str(device)
+        self.device = s if s.startswith("cuda") or s == "cpu" else f"cuda:{s}"
 
     def load_model(self, mode: str):
         if mode not in MODEL_MODES:
@@ -53,6 +54,7 @@ class ModelService:
             torch.cuda.empty_cache()
 
         self.model = YOLOE(source)
+        self.model.to(self.device)
 
         # If auto-downloaded, move to models/ and clean up CWD spawn
         if not local_exists:
@@ -94,7 +96,7 @@ class ModelService:
             "mode": self.current_mode,
             "loaded": self.model is not None,
             "model_name": os.path.basename(self.model_path) if self.model_path else None,
-            "device": f"cuda:{self.device}",
+            "device": self.device,
             "class_names": self.current_classes if self.current_mode == "custom" else [],
             "task_type": self.current_task_type,
         }

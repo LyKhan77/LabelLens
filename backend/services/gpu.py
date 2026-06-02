@@ -45,7 +45,7 @@ class GpuService:
                     "vram_used_mb": round(
                         torch.cuda.memory_allocated(i) / (1024 * 1024)
                     ),
-                    "uuid": props.uuid if hasattr(props, "uuid") else None,
+                    "uuid": str(props.uuid) if hasattr(props, "uuid") else None,
                 }
             )
         return gpus

@@ -17,19 +17,29 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
 import torch
 
+def _to_cuda_device(val: str | int) -> str:
+    """Normalise a device value to 'cuda:X' or 'cpu'."""
+    s = str(val)
+    if s == "cpu":
+        return "cpu"
+    if s.startswith("cuda"):
+        return s
+    return f"cuda:{s}"
+
+
 # Load persisted GPU config, fall back to env defaults
 _gpu_config_path = Path(os.getenv("GPU_CONFIG_PATH", "gpu_config.json"))
 if _gpu_config_path.exists():
     try:
         _cfg = json.loads(_gpu_config_path.read_text())
-        DEVICE = str(_cfg.get("yoloe_device", os.getenv("DEVICE", "0")))
-        SAM_DEVICE = str(_cfg.get("sam_device", os.getenv("SAM_DEVICE", "1")))
+        DEVICE = _to_cuda_device(_cfg.get("yoloe_device", os.getenv("DEVICE", "0")))
+        SAM_DEVICE = _to_cuda_device(_cfg.get("sam_device", os.getenv("SAM_DEVICE", "1")))
     except (json.JSONDecodeError, OSError):
-        DEVICE = os.getenv("DEVICE", "0")
-        SAM_DEVICE = os.getenv("SAM_DEVICE", "1")
+        DEVICE = _to_cuda_device(os.getenv("DEVICE", "0"))
+        SAM_DEVICE = _to_cuda_device(os.getenv("SAM_DEVICE", "1"))
 else:
-    DEVICE = os.getenv("DEVICE", "0")
-    SAM_DEVICE = os.getenv("SAM_DEVICE", "1")
+    DEVICE = _to_cuda_device(os.getenv("DEVICE", "0"))
+    SAM_DEVICE = _to_cuda_device(os.getenv("SAM_DEVICE", "1"))
 
 if not torch.cuda.is_available():
     DEVICE = "cpu"
