@@ -42,11 +42,12 @@ class SAMService:
                 raise RuntimeError("SAM model is currently loading")
             self._loading = True
             try:
-                logger.info("Loading SAM2.1 on cuda:%s...", self.device)
+                logger.info("Loading SAM2.1 on %s...", self.device)
                 model_path = f"models/{SAM_MODEL}"
                 local_exists = os.path.isfile(model_path)
                 source = model_path if local_exists else SAM_MODEL
                 self.model = SAM(source)
+                self.model.to(self.device)
                 # If auto-downloaded, move to models/
                 if not local_exists:
                     os.makedirs("models", exist_ok=True)
@@ -68,7 +69,7 @@ class SAMService:
             "loaded": self._loaded,
             "loading": self._loading,
             "model": SAM_MODEL if self._loaded else None,
-            "device": f"cuda:{self.device}",
+            "device": self.device,
         }
 
     def predict_mask_from_bbox(
