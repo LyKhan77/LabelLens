@@ -481,6 +481,20 @@ function toggleTrainingGpu(index: number) {
   else form.trainingDevices.push(index)
 }
 
+function isGpuSelected(index: number): boolean {
+  if (form.trainingMode === 'standard') return form.trainingDevice === String(index)
+  return form.trainingDevices.includes(index)
+}
+
+function selectGpu(index: number) {
+  if (form.trainingMode === 'standard') {
+    form.trainingDevice = String(index)
+    form.trainingDevices = [index]
+  } else {
+    toggleTrainingGpu(index)
+  }
+}
+
 async function loadRouteState() {
   if (routeView.value === 'job' && routeId.value) {
     await trainingStore.selectJob(routeId.value)
@@ -988,8 +1002,29 @@ async function resumeJob(jobId: string) {
                     <label class="train-field"><span class="train-label-with-info">Size <span class="train-param-help" tabindex="0" aria-label="Model size tier." data-tip="Larger sizes can improve accuracy but use more VRAM and train slower.">?</span></span><select v-model="form.size"><option value="n">n</option><option value="s">s</option><option value="m">m</option><option value="l">l</option></select></label>
                     <label class="train-field train-field-span"><span class="train-label-with-info">Base Checkpoint <span class="train-param-help" tabindex="0" aria-label="Starting model weights." data-tip="Must match the selected task: detection checkpoints for bbox training, -seg checkpoints for segmentation.">?</span></span><input v-model="form.baseCheckpoint" :placeholder="form.taskType === 'segment' ? 'yolo26n-seg.pt' : 'yolo26n.pt'" /></label>
                     <label class="train-field"><span class="train-label-with-info">Job Name <span class="train-param-help" tabindex="0" aria-label="Human-readable run name." data-tip="Name used to identify this run and its output artifact folder.">?</span></span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
-                    <label class="train-field"><span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses all selected GPUs and waits until inference is idle.">?</span></span><select v-model="form.trainingMode" @change="onTrainingModeChange"><option value="standard">Standard · 1 GPU</option><option value="high_speed">High-Speed · 2+ GPUs</option></select></label>
-                    <label v-if="detectedGpus.length > 0" class="train-field"><span class="train-label-with-info">Training GPU <span class="train-param-help" tabindex="0" aria-label="Training GPU device." data-tip="Select which detected GPU(s) to use for training.">?</span></span><select v-if="form.trainingMode === 'standard'" v-model="form.trainingDevice"><option v-for="gpu in detectedGpus" :key="gpu.index" :value="String(gpu.index)">GPU {{ gpu.index }} — {{ gpu.name }} ({{ gpu.vram_total_mb }} MB)</option></select><div v-else class="flex flex-wrap gap-2"><label v-for="gpu in detectedGpus" :key="gpu.index" class="flex items-center gap-1.5 text-xs text-ink"><input type="checkbox" :value="gpu.index" :checked="form.trainingDevices.includes(gpu.index)" @change="toggleTrainingGpu(gpu.index)" />GPU {{ gpu.index }} — {{ gpu.name }}</label></div></label>
+                    <div class="train-field train-field-span">
+                      <span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses all selected GPUs and waits until inference is idle.">?</span></span>
+                      <div class="grid grid-cols-2 gap-(--spacing-md)">
+                        <button type="button" class="train-choice" :class="form.trainingMode === 'standard' ? 'is-active' : ''" @click="form.trainingMode = 'standard'; onTrainingModeChange()">
+                          <strong>Standard</strong>
+                          <span>1 GPU, starts immediately</span>
+                        </button>
+                        <button type="button" class="train-choice" :class="form.trainingMode === 'high_speed' ? 'is-active' : ''" @click="form.trainingMode = 'high_speed'">
+                          <strong>High-Speed</strong>
+                          <span>2+ GPUs, waits for idle inference</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div v-if="detectedGpus.length > 0" class="train-field train-field-span">
+                      <span class="train-label-with-info">Training GPU <span class="train-param-help" tabindex="0" aria-label="Training GPU device." data-tip="Select which detected GPU(s) to use for training.">?</span></span>
+                      <div class="flex flex-wrap gap-(--spacing-sm)">
+                        <button v-for="gpu in detectedGpus" :key="gpu.index" type="button" class="train-gpu-chip" :class="isGpuSelected(gpu.index) ? 'is-active' : ''" @click="selectGpu(gpu.index)">
+                          <strong>GPU {{ gpu.index }}</strong>
+                          <span>{{ gpu.name }}</span>
+                          <span class="train-gpu-vram">{{ Math.round(gpu.vram_total_mb / 1024) }} GB</span>
+                        </button>
+                      </div>
+                    </div>
                     <label class="train-field"><span class="train-label-with-info">Epochs <span class="train-param-help" tabindex="0" aria-label="Number of full training passes." data-tip="How many full passes through the training split the worker runs.">?</span></span><input v-model.number="form.epochs" type="number" min="1" /></label>
                     <label class="train-field"><span class="train-label-with-info">Patience <span class="train-param-help" tabindex="0" aria-label="Early stopping patience." data-tip="Stops training after this many epochs without validation improvement.">?</span></span><input v-model.number="form.patience" type="number" min="0" max="100" /></label>
                     <label class="train-field"><span class="train-label-with-info">Image Size <span class="train-param-help" tabindex="0" aria-label="Training image resolution." data-tip="Input resolution in pixels. Higher values keep detail but cost more VRAM.">?</span></span><input v-model.number="form.imgsz" type="number" min="320" step="32" /></label>
@@ -1514,6 +1549,18 @@ async function resumeJob(jobId: string) {
 .train-choice strong { font-size: 14px; color: var(--color-ink); }
 .train-choice span { font-size: 12px; line-height: 1.45; color: var(--color-ink-mute); }
 .train-choice.is-active { border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-hairline)); background: color-mix(in srgb, var(--color-primary) 10%, var(--color-canvas-soft)); }
+
+.train-gpu-chip {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px 14px;
+  border: 1px solid var(--color-hairline); border-radius: var(--radius-md);
+  background: var(--color-canvas); cursor: pointer; min-width: 140px;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.train-gpu-chip strong { font-size: 13px; color: var(--color-ink); }
+.train-gpu-chip span { font-size: 11px; color: var(--color-ink-mute); line-height: 1.35; }
+.train-gpu-chip .train-gpu-vram { color: var(--color-primary-deep); font-weight: 600; font-size: 11px; }
+.train-gpu-chip.is-active { border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-hairline)); background: color-mix(in srgb, var(--color-primary) 10%, var(--color-canvas-soft)); }
+.train-gpu-chip.is-active .train-gpu-vram { color: var(--color-primary); }
 
 .train-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--color-ink-mute); }
 .train-field-span { grid-column: span 2; }
