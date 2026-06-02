@@ -104,6 +104,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 const guideStyle = computed(() => {
+  if (props.activeTool !== 'bbox') return null
   const point = hoverPoint.value
   if (!point || drag || panDrag) return null
   return {
@@ -275,10 +276,11 @@ function onPlanePointerDown(e: PointerEvent) {
 }
 
 function onBoxPointerDown(e: PointerEvent, det: DatasetOverlayDetection) {
-  if (spacePressed.value && canPan.value) {
+  if (props.activeTool === 'pan' || (spacePressed.value && canPan.value)) {
     onPlanePointerDown(e)
     return
   }
+  if (props.activeTool !== 'select' && props.activeTool !== 'bbox') return
   if (det.id == null) return
   emit('select', det.id)
   const point = pointFromEvent(e)

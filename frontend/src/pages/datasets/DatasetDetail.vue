@@ -179,6 +179,80 @@ watch(
     selectedImageIds.value = new Set(Array.from(selectedImageIds.value).filter((id) => visible.has(id)))
   },
 )
+
+// Class management
+const classesExpanded = ref(false)
+const editingClassLabel = ref<string | null>(null)
+const renameInputValue = ref('')
+const renamingClass = ref(false)
+const showClassDeleteConfirm = ref(false)
+const pendingDeleteClass = ref<string | null>(null)
+const deletingClass = ref(false)
+
+const classEntries = computed(() => {
+  const counts = project.value?.stats?.class_counts ?? {}
+  const classes = project.value?.stats?.classes ?? []
+  return classes.map((cls) => ({ label: cls, count: counts[cls] ?? 0 }))
+})
+
+const globalClassCount = computed(() => project.value?.stats?.class_counts ?? {})
+
+function classColor(label: string): string {
+  return store.classColor(label)
+}
+
+async function updateClassColor(label: string, event: Event) {
+  const color = (event.target as HTMLInputElement).value
+  await store.setClassColor(label, color)
+}
+
+function startRenameClass(cls: string) {
+  editingClassLabel.value = cls
+  renameInputValue.value = cls
+}
+
+async function confirmRenameClass() {
+  const oldLabel = editingClassLabel.value
+  const newLabel = renameInputValue.value.trim()
+  if (!oldLabel || !newLabel || oldLabel === newLabel) {
+    editingClassLabel.value = null
+    return
+  }
+  renamingClass.value = true
+  try {
+    await store.renameClass(oldLabel, newLabel)
+  } finally {
+    renamingClass.value = false
+    editingClassLabel.value = null
+  }
+}
+
+function cancelRenameClass() {
+  editingClassLabel.value = null
+  renameInputValue.value = ''
+}
+
+function requestDeleteClass(cls: string) {
+  pendingDeleteClass.value = cls
+  showClassDeleteConfirm.value = true
+}
+
+async function confirmDeleteClass() {
+  if (!pendingDeleteClass.value) return
+  deletingClass.value = true
+  try {
+    await store.deleteClass(pendingDeleteClass.value)
+  } finally {
+    deletingClass.value = false
+    showClassDeleteConfirm.value = false
+    pendingDeleteClass.value = null
+  }
+}
+
+function closeClassDeleteDialog() {
+  showClassDeleteConfirm.value = false
+  pendingDeleteClass.value = null
+}
 </script>
 
 <template>
@@ -239,10 +313,53 @@ watch(
         <strong >{{ metrics.reviewQueue }}</strong>
         <small >Rejected or pending verification</small>
       </div>
-      <div class="dataset-metric-card">
-        <label >Distinct Classes</label>
-        <strong class="text-primary">{{ metrics.classes }}</strong>
-        <small >{{ (project?.stats.classes ?? []).join(', ') || 'No classes yet' }}</small>
+      <div class="dataset-metric-card dataset-class-metric" :class="{ 'is-expanded': classesExpanded }">
+        <div class="dataset-class-metric-header" @click="classesExpanded = !classesExpanded">
+          <div>
+            <label>Classes</label>
+            <strong class="text-primary">{{ metrics.classes }}</strong>
+            <small v-if="!classesExpanded">{{ (project?.stats.classes ?? []).join(', ') || 'No classes yet' }}</small>
+          </div>
+          <svg class="w-4 h-4 text-ink-mute transition-transform" :class="{ 'rotate-180': classesExpanded }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9" /></svg>
+        </div>
+        <div v-if="classesExpanded" class="dataset-class-manager" @click.stop>
+          <div v-if="classEntries.length" class="dataset-class-list">
+            <div v-for="entry in classEntries" :key="entry.label" class="dataset-class-entry">
+              <input
+                type="color"
+                class="dataset-class-color-input"
+                :value="classColor(entry.label)"
+                :aria-label="`Set ${entry.label} color`"
+                @click.stop
+                @input.stop="updateClassColor(entry.label, $event)"
+              />
+              <template v-if="editingClassLabel === entry.label">
+                <input
+                  class="dataset-class-rename-input"
+                  v-model="renameInputValue"
+                  :disabled="renamingClass"
+                  @keydown.enter.stop="confirmRenameClass"
+                  @keydown.escape.stop="cancelRenameClass"
+                  @blur="confirmRenameClass"
+                  @click.stop
+                  @dblclick.stop
+                />
+              </template>
+              <template v-else>
+                <span class="dataset-class-name" @dblclick.stop="startRenameClass(entry.label)">{{ entry.label }}</span>
+              </template>
+              <span class="dataset-class-count">{{ entry.count }}</span>
+              <button
+                class="dataset-class-entry-delete"
+                @click.stop="requestDeleteClass(entry.label)"
+                aria-label="Delete class"
+              >
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+          </div>
+          <div v-else class="text-[11px] text-ink-mute py-2 text-center">No classes yet</div>
+        </div>
       </div>
     </div>
 
@@ -450,5 +567,30 @@ watch(
         </section>
       </div>
     </Transition>
+
+    <div v-if="showClassDeleteConfirm && pendingDeleteClass" class="dataset-review-confirm">
+      <section class="dataset-delete-dialog">
+        <header class="dataset-modal-header">
+          <div>
+            <h3 class="dataset-modal-title">Delete Class</h3>
+            <p class="dataset-modal-copy">This action cannot be undone.</p>
+          </div>
+          <button class="dataset-modal-close" :disabled="deletingClass" @click="closeClassDeleteDialog" aria-label="Close">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </header>
+        <div class="dataset-modal-body dataset-form-stack">
+          <p class="text-[13px] text-ink-mute leading-relaxed">
+            Delete class <span class="font-medium text-ink">"{{ pendingDeleteClass }}"</span> and its <span class="font-medium text-ink">{{ globalClassCount[pendingDeleteClass] ?? 0 }}</span> detections across all images?
+          </p>
+        </div>
+        <footer class="dataset-modal-footer">
+          <button class="dataset-secondary-button" :disabled="deletingClass" @click="closeClassDeleteDialog">Cancel</button>
+          <button class="dataset-primary-button" :disabled="deletingClass" @click="confirmDeleteClass">
+            {{ deletingClass ? 'Deleting...' : 'Delete' }}
+          </button>
+        </footer>
+      </section>
+    </div>
   </section>
 </template>

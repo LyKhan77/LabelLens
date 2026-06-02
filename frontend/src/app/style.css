@@ -1307,6 +1307,88 @@
     outline: none;
   }
 
+  /* Class management in DatasetDetail */
+  .dataset-class-metric {
+    cursor: pointer;
+    grid-column: span 1;
+  }
+
+  .dataset-class-metric.is-expanded {
+    grid-row: span 2;
+  }
+
+  .dataset-class-metric-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .dataset-class-manager {
+    margin-top: 8px;
+    border-top: 1px solid var(--color-hairline);
+    padding-top: 6px;
+  }
+
+  .dataset-class-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .dataset-class-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 4px;
+    border-radius: var(--radius-sm);
+    transition: background 0.1s;
+  }
+
+  .dataset-class-entry:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .dataset-class-name {
+    flex: 1;
+    font-size: 11px;
+    color: var(--color-ink);
+    cursor: default;
+  }
+
+  .dataset-class-count {
+    font-size: 10px;
+    color: var(--color-ink-mute);
+    min-width: 20px;
+    text-align: right;
+  }
+
+  .dataset-class-entry-delete {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--color-ink-mute);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    transition: opacity 0.12s, color 0.12s;
+  }
+
+  .dataset-class-entry:hover .dataset-class-entry-delete {
+    opacity: 1;
+  }
+
+  .dataset-class-entry-delete:hover {
+    color: #EF4444;
+    background: rgba(239, 68, 68, 0.08);
+  }
+
   .dataset-prompt-action-bar {
     position: absolute;
     bottom: 16px;

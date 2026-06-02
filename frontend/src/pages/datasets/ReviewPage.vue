@@ -34,12 +34,6 @@ const deletingDetectionIds = ref<Set<number>>(new Set())
 const promptDetectionIds = ref<Set<number>>(new Set())
 const showDetectionDeleteConfirm = ref(false)
 const pendingDeleteDetection = ref<DetectionAnnotation | null>(null)
-const editingClassLabel = ref<string | null>(null)
-const renameInputValue = ref('')
-const showClassDeleteConfirm = ref(false)
-const pendingDeleteClass = ref<string | null>(null)
-const deletingClass = ref(false)
-const renamingClass = ref(false)
 const activeTool = ref<'select' | 'bbox' | 'pan'>('select')
 const samEnabled = ref(true)
 
@@ -101,56 +95,6 @@ async function updateClassColor(label: string, event: Event) {
   const color = (event.target as HTMLInputElement).value
   await store.setClassColor(label, color)
 }
-
-function startRenameClass(cls: string) {
-  editingClassLabel.value = cls
-  renameInputValue.value = cls
-}
-
-async function confirmRenameClass() {
-  const oldLabel = editingClassLabel.value
-  const newLabel = renameInputValue.value.trim()
-  if (!oldLabel || !newLabel || oldLabel === newLabel) {
-    editingClassLabel.value = null
-    return
-  }
-  renamingClass.value = true
-  try {
-    await store.renameClass(oldLabel, newLabel)
-  } finally {
-    renamingClass.value = false
-    editingClassLabel.value = null
-  }
-}
-
-function cancelRenameClass() {
-  editingClassLabel.value = null
-  renameInputValue.value = ''
-}
-
-function requestDeleteClass(cls: string) {
-  pendingDeleteClass.value = cls
-  showClassDeleteConfirm.value = true
-}
-
-async function confirmDeleteClass() {
-  if (!pendingDeleteClass.value) return
-  deletingClass.value = true
-  try {
-    await store.deleteClass(pendingDeleteClass.value)
-  } finally {
-    deletingClass.value = false
-    showClassDeleteConfirm.value = false
-    pendingDeleteClass.value = null
-  }
-}
-
-function closeClassDeleteDialog() {
-  showClassDeleteConfirm.value = false
-  pendingDeleteClass.value = null
-}
-
-const globalClassCount = computed(() => store.currentProjectData?.stats?.class_counts ?? {})
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
@@ -569,10 +513,6 @@ function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') closeDetectionDeleteDialog()
     return
   }
-  if (showClassDeleteConfirm.value) {
-    if (e.key === 'Escape') closeClassDeleteDialog()
-    return
-  }
   if (e.key === 'Escape') closePanel()
   if (e.key === 'ArrowRight') navigateNext()
   if (e.key === 'ArrowLeft') navigatePrev()
@@ -860,46 +800,22 @@ onUnmounted(() => {
               </div>
 
               <div v-if="classes.length" class="dataset-class-filters">
-                <div
+                <button
                   v-for="([cls, count]) in classes"
                   :key="cls"
-                  class="dataset-class-chip-row"
                   :class="{ 'opacity-35 line-through': isClassHidden(cls) }"
+                  @click="store.toggleClassVisibility(cls)"
                 >
-                  <button @click="store.toggleClassVisibility(cls)">
-                    <input
-                      type="color"
-                      class="dataset-class-color-input"
-                      :value="classColor(cls)"
-                      :aria-label="`Set ${cls} color`"
-                      @click.stop
-                      @input.stop="updateClassColor(cls, $event)"
-                    />
-                    <template v-if="editingClassLabel === cls">
-                      <input
-                        class="dataset-class-rename-input"
-                        v-model="renameInputValue"
-                        :disabled="renamingClass"
-                        @keydown.enter.stop="confirmRenameClass"
-                        @keydown.escape.stop="cancelRenameClass"
-                        @blur="confirmRenameClass"
-                        @click.stop
-                        @dblclick.stop
-                        ref="renameInputRefs"
-                      />
-                    </template>
-                    <template v-else>
-                      <span @dblclick.stop="startRenameClass(cls)">{{ cls }} ({{ count }})</span>
-                    </template>
-                  </button>
-                  <button
-                    class="dataset-class-delete-trigger"
-                    @click.stop="requestDeleteClass(cls)"
-                    aria-label="Delete class"
-                  >
-                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
-                  </button>
-                </div>
+                  <input
+                    type="color"
+                    class="dataset-class-color-input"
+                    :value="classColor(cls)"
+                    :aria-label="`Set ${cls} color`"
+                    @click.stop
+                    @input.stop="updateClassColor(cls, $event)"
+                  />
+                  {{ cls }} ({{ count }})
+                </button>
               </div>
             </section>
 
@@ -1062,31 +978,6 @@ onUnmounted(() => {
           <button class="dataset-secondary-button" :disabled="isDeletingDetection(pendingDeleteDetection.id)" @click="closeDetectionDeleteDialog">Cancel</button>
           <button class="dataset-primary-button" :disabled="isDeletingDetection(pendingDeleteDetection.id)" @click="confirmDeleteDetection">
             {{ isDeletingDetection(pendingDeleteDetection.id) ? 'Deleting...' : 'Delete' }}
-          </button>
-        </footer>
-      </section>
-    </div>
-
-    <div v-if="showClassDeleteConfirm && pendingDeleteClass" class="dataset-review-confirm">
-      <section class="dataset-delete-dialog">
-        <header class="dataset-modal-header">
-          <div>
-            <h3 class="dataset-modal-title">Delete Class</h3>
-            <p class="dataset-modal-copy">This action cannot be undone.</p>
-          </div>
-          <button class="dataset-modal-close" :disabled="deletingClass" @click="closeClassDeleteDialog" aria-label="Close delete class dialog">
-            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </header>
-        <div class="dataset-modal-body dataset-form-stack">
-          <p class="text-[13px] text-ink-mute leading-relaxed">
-            Delete class <span class="font-medium text-ink">"{{ pendingDeleteClass }}"</span> and its <span class="font-medium text-ink">{{ globalClassCount[pendingDeleteClass] ?? 0 }}</span> detections across all images?
-          </p>
-        </div>
-        <footer class="dataset-modal-footer">
-          <button class="dataset-secondary-button" :disabled="deletingClass" @click="closeClassDeleteDialog">Cancel</button>
-          <button class="dataset-primary-button" :disabled="deletingClass" @click="confirmDeleteClass">
-            {{ deletingClass ? 'Deleting...' : 'Delete' }}
           </button>
         </footer>
       </section>
