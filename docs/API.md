@@ -92,6 +92,15 @@ Backend sends JSON frame payloads or `{ "error": "..." }`.
 | PATCH | `/api/datasets/{name}/images/{img_id}/review` | Save accept/reject review state |
 | DELETE | `/api/datasets/{name}/images/{img_id}` | Delete image and annotations |
 
+## System / GPU
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/system/gpus` | List auto-detected CUDA GPUs with VRAM info, UUID, and current inference config |
+| PUT | `/api/system/gpu-config` | Update YOLOE/SAM device assignment with hot-swap reload; body `{ "yoloe_device": int, "sam_device": int }` |
+| GET | `/api/system/gpus/training` | List auto-detected CUDA GPUs with current training GPU config |
+| PUT | `/api/training/gpu-config` | Update training GPU mode and device selection; body `{ "training_mode": "standard"|"high_speed", "training_device": str, "visible_devices": str, "amp": bool }` |
+
 ## SAM2.1
 
 | Method | Path | Purpose |
