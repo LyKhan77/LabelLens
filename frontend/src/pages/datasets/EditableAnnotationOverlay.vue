@@ -18,6 +18,7 @@ const props = withDefaults(defineProps<{
   draftBox?: Box | null
   editorOpen?: boolean
   classColors?: Record<string, string>
+  activeTool?: 'select' | 'bbox' | 'pan'
 }>(), {
   alt: '',
   width: null,
@@ -30,6 +31,7 @@ const props = withDefaults(defineProps<{
   draftBox: null,
   editorOpen: false,
   classColors: () => ({}),
+  activeTool: 'bbox',
 })
 
 const emit = defineEmits<{
@@ -251,7 +253,7 @@ function onWheel(e: WheelEvent) {
 }
 
 function onPlanePointerDown(e: PointerEvent) {
-  if (spacePressed.value && canPan.value) {
+  if ((props.activeTool === 'pan' || spacePressed.value) && canPan.value) {
     panDrag = {
       pointerId: e.pointerId,
       startClient: { x: e.clientX, y: e.clientY },
@@ -261,12 +263,15 @@ function onPlanePointerDown(e: PointerEvent) {
     e.preventDefault()
     return
   }
-  const point = pointFromEvent(e)
-  if (!point) return
-  drag = { action: 'create', pointerId: e.pointerId, start: point, box: [point.x, point.y, point.x, point.y] }
-  isDraggingAnnotation.value = true
-  planeRef.value?.setPointerCapture(e.pointerId)
-  e.preventDefault()
+  if (props.activeTool === 'select') return
+  if (props.activeTool === 'bbox') {
+    const point = pointFromEvent(e)
+    if (!point) return
+    drag = { action: 'create', pointerId: e.pointerId, start: point, box: [point.x, point.y, point.x, point.y] }
+    isDraggingAnnotation.value = true
+    planeRef.value?.setPointerCapture(e.pointerId)
+    e.preventDefault()
+  }
 }
 
 function onBoxPointerDown(e: PointerEvent, det: DatasetOverlayDetection) {
@@ -427,6 +432,7 @@ watch(() => [props.width, props.height, props.imageSrc], () => {
     <div
       ref="planeRef"
       class="dataset-media-plane dataset-editor-plane"
+      :class="`tool-${props.activeTool}`"
       :style="planeStyle"
       @pointerdown="onPlanePointerDown"
       @pointermove="onPointerMove"

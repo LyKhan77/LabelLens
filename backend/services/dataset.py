@@ -86,6 +86,7 @@ class DatasetService:
         accepted = 0
         rejected = 0
         classes: set[str] = set()
+        class_counts: dict[str, int] = {}
 
         for fname in os.listdir(ann_dir):
             if not fname.endswith(".json"):
@@ -95,7 +96,9 @@ class DatasetService:
                 ann = json.load(f)
             for det in ann.get("detections", []):
                 total_annotations += 1
-                classes.add(det["label"])
+                label = det["label"]
+                classes.add(label)
+                class_counts[label] = class_counts.get(label, 0) + 1
                 if det.get("accepted", True):
                     accepted += 1
                 else:
@@ -107,6 +110,7 @@ class DatasetService:
             "accepted": accepted,
             "rejected": rejected,
             "classes": sorted(classes),
+            "class_counts": class_counts,
         }
 
     def list_projects(self) -> list[dict]:
@@ -500,6 +504,107 @@ class DatasetService:
             meta["class_to_id"] = class_to_id
         self._ensure_class_colors(meta)
         meta["class_colors"][label] = normalized_color
+        self._write_meta(name, meta)
+        return meta
+
+    def rename_class(self, name: str, old_label: str, new_label: str) -> dict:
+        """Rename a class across all annotations. Merges if new_label already exists."""
+        pdir = self._project_dir(name)
+        if not os.path.isdir(pdir):
+            raise FileNotFoundError(f"Dataset '{name}' not found")
+        old_label = self._clean_label(old_label)
+        new_label = self._clean_label(new_label)
+        if old_label == new_label:
+            return self._read_meta(name)
+
+        meta = self._read_meta(name)
+        class_to_id = meta.get("class_to_id", {})
+        class_colors = meta.get("class_colors", {})
+
+        if old_label not in class_to_id:
+            raise ValueError(f"Class '{old_label}' not found")
+
+        ann_dir = os.path.join(pdir, "annotations")
+        new_cls_id = class_to_id.get(new_label)
+
+        # Merge case: new_label already exists
+        if new_cls_id is not None:
+            for fname in os.listdir(ann_dir):
+                if not fname.endswith(".json"):
+                    continue
+                fpath = os.path.join(ann_dir, fname)
+                with open(fpath) as f:
+                    ann = json.load(f)
+                changed = False
+                for det in ann.get("detections", []):
+                    if det.get("label") == old_label:
+                        det["label"] = new_label
+                        det["cls_id"] = new_cls_id
+                        changed = True
+                if changed:
+                    with open(fpath, "w") as f:
+                        json.dump(ann, f, indent=2)
+            # Remove old class from mappings
+            del class_to_id[old_label]
+            class_colors.pop(old_label, None)
+        else:
+            # Simple rename: swap key, preserve id and color
+            old_id = class_to_id.pop(old_label)
+            class_to_id[new_label] = old_id
+            if old_label in class_colors:
+                class_colors[new_label] = class_colors.pop(old_label)
+            for fname in os.listdir(ann_dir):
+                if not fname.endswith(".json"):
+                    continue
+                fpath = os.path.join(ann_dir, fname)
+                with open(fpath) as f:
+                    ann = json.load(f)
+                changed = False
+                for det in ann.get("detections", []):
+                    if det.get("label") == old_label:
+                        det["label"] = new_label
+                        changed = True
+                if changed:
+                    with open(fpath, "w") as f:
+                        json.dump(ann, f, indent=2)
+
+        meta["class_to_id"] = class_to_id
+        meta["class_colors"] = class_colors
+        self._write_meta(name, meta)
+        return meta
+
+    def delete_class(self, name: str, label: str) -> dict:
+        """Delete a class and all its detections across all images."""
+        pdir = self._project_dir(name)
+        if not os.path.isdir(pdir):
+            raise FileNotFoundError(f"Dataset '{name}' not found")
+        label = self._clean_label(label)
+
+        meta = self._read_meta(name)
+        class_to_id = meta.get("class_to_id", {})
+        class_colors = meta.get("class_colors", {})
+        if label not in class_to_id:
+            raise ValueError(f"Class '{label}' not found")
+
+        del class_to_id[label]
+        class_colors.pop(label, None)
+
+        ann_dir = os.path.join(pdir, "annotations")
+        for fname in os.listdir(ann_dir):
+            if not fname.endswith(".json"):
+                continue
+            fpath = os.path.join(ann_dir, fname)
+            with open(fpath) as f:
+                ann = json.load(f)
+            remaining = [d for d in ann.get("detections", []) if d.get("label") != label]
+            if len(remaining) != len(ann.get("detections", [])):
+                ann["detections"] = remaining
+                ann["labeled"] = bool(remaining)
+                with open(fpath, "w") as f:
+                    json.dump(ann, f, indent=2)
+
+        meta["class_to_id"] = class_to_id
+        meta["class_colors"] = class_colors
         self._write_meta(name, meta)
         return meta
 

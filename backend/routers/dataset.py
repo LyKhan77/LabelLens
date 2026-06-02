@@ -197,6 +197,32 @@ async def update_class_color(name: str, payload: dict = Body(...)):
     return meta
 
 
+@router.put("/datasets/{name}/classes/rename")
+async def rename_class(name: str, payload: dict = Body(...)):
+    try:
+        meta = dataset_service.rename_class(
+            name,
+            payload.get("old_label"),
+            payload.get("new_label"),
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return meta
+
+
+@router.delete("/datasets/{name}/classes/{label}")
+async def delete_class(name: str, label: str):
+    try:
+        meta = dataset_service.delete_class(name, label)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return meta
+
+
 @router.get("/datasets/{name}/images")
 async def list_images(name: str, page: int = 1, limit: int = 20):
     try:

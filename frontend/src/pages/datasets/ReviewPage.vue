@@ -4,6 +4,7 @@ import { useDatasetStore } from '../../shared/stores/dataset'
 import { useInferenceStore } from '../../shared/stores/inference'
 import type { DetectionAnnotation, DatasetOverlayDetection } from '../../shared/api/dataset'
 import EditableAnnotationOverlay from './EditableAnnotationOverlay.vue'
+import CanvasToolbar from './CanvasToolbar.vue'
 import { getSamStatus } from '../../shared/api/sam'
 
 const emit = defineEmits<{ back: [] }>()
@@ -33,6 +34,14 @@ const deletingDetectionIds = ref<Set<number>>(new Set())
 const promptDetectionIds = ref<Set<number>>(new Set())
 const showDetectionDeleteConfirm = ref(false)
 const pendingDeleteDetection = ref<DetectionAnnotation | null>(null)
+const editingClassLabel = ref<string | null>(null)
+const renameInputValue = ref('')
+const showClassDeleteConfirm = ref(false)
+const pendingDeleteClass = ref<string | null>(null)
+const deletingClass = ref(false)
+const renamingClass = ref(false)
+const activeTool = ref<'select' | 'bbox' | 'pan'>('select')
+const samEnabled = ref(true)
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
 const detections = computed(() => annotations.value?.detections ?? [])
@@ -71,6 +80,7 @@ const canSaveAnnotation = computed(() => Boolean(draftLabel.value.trim() && draf
 const selectedPromptDetections = computed(() => detections.value.filter((det) => promptDetectionIds.value.has(det.id)))
 const promptModelReady = computed(() => inferenceStore.modelLoaded && inferenceStore.inferenceMode === 'prompt')
 const canInferNext = computed(() => Boolean(selectedPromptDetections.value.length && canNavigateNext.value && store.selectedImage && !inferNextLoading.value))
+const canInferCurrent = computed(() => Boolean(selectedPromptDetections.value.length && store.selectedImage && !inferNextLoading.value))
 const visibleCandidates = computed(() => inferCandidates.value.filter((candidate) => !isDuplicateCandidate(candidate)))
 const duplicateCandidateCount = computed(() => inferCandidates.value.length - visibleCandidates.value.length)
 const candidateActionBusy = computed(() => acceptingAllCandidates.value || candidateBusyIds.value.size > 0)
@@ -91,6 +101,56 @@ async function updateClassColor(label: string, event: Event) {
   const color = (event.target as HTMLInputElement).value
   await store.setClassColor(label, color)
 }
+
+function startRenameClass(cls: string) {
+  editingClassLabel.value = cls
+  renameInputValue.value = cls
+}
+
+async function confirmRenameClass() {
+  const oldLabel = editingClassLabel.value
+  const newLabel = renameInputValue.value.trim()
+  if (!oldLabel || !newLabel || oldLabel === newLabel) {
+    editingClassLabel.value = null
+    return
+  }
+  renamingClass.value = true
+  try {
+    await store.renameClass(oldLabel, newLabel)
+  } finally {
+    renamingClass.value = false
+    editingClassLabel.value = null
+  }
+}
+
+function cancelRenameClass() {
+  editingClassLabel.value = null
+  renameInputValue.value = ''
+}
+
+function requestDeleteClass(cls: string) {
+  pendingDeleteClass.value = cls
+  showClassDeleteConfirm.value = true
+}
+
+async function confirmDeleteClass() {
+  if (!pendingDeleteClass.value) return
+  deletingClass.value = true
+  try {
+    await store.deleteClass(pendingDeleteClass.value)
+  } finally {
+    deletingClass.value = false
+    showClassDeleteConfirm.value = false
+    pendingDeleteClass.value = null
+  }
+}
+
+function closeClassDeleteDialog() {
+  showClassDeleteConfirm.value = false
+  pendingDeleteClass.value = null
+}
+
+const globalClassCount = computed(() => store.currentProjectData?.stats?.class_counts ?? {})
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
@@ -292,6 +352,37 @@ async function runInferNext() {
   }
 }
 
+async function runInferCurrent() {
+  if (!selectedPromptDetections.value.length || !store.selectedImage) return
+  if (!promptModelReady.value) {
+    await loadPromptModel()
+    if (!promptModelReady.value) return
+  }
+
+  const sourceImgId = store.selectedImage
+  const prompts = selectedPromptDetections.value.map((det) => ({
+    box: asBox(det.box),
+    label: det.label,
+  }))
+
+  inferNextLoading.value = true
+  inferNextError.value = ''
+  inferCandidates.value = []
+  try {
+    const result = await store.inferNextVisualPrompt(sourceImgId, sourceImgId, prompts, inferNextConfidence.value)
+    inferCandidates.value = (result?.candidates ?? []).map((candidate, idx) => ({
+      ...candidate,
+      candidateId: -1000 - idx,
+      assisted: true,
+      source: 'visual_prompt',
+    }))
+  } catch (e) {
+    inferNextError.value = e instanceof Error ? e.message : 'Infer Current failed'
+  } finally {
+    inferNextLoading.value = false
+  }
+}
+
 function rejectCandidate(candidateId: number) {
   inferCandidates.value = inferCandidates.value.filter((item) => item.candidateId !== candidateId)
   if (selectedCandidateId.value === candidateId) selectedCandidateId.value = null
@@ -372,7 +463,7 @@ async function saveAnnotation() {
     let maskData: Record<string, unknown> = {}
 
     // Auto-generate mask via SAM (backend lazy-loads on first call)
-    if (samStatus.value?.enabled !== false) {
+    if (samEnabled.value && samStatus.value?.enabled !== false) {
       try {
         const maskResult = await store.generateSamMask(store.selectedImage, draftBox.value)
         if (maskResult) {
@@ -478,9 +569,20 @@ function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') closeDetectionDeleteDialog()
     return
   }
+  if (showClassDeleteConfirm.value) {
+    if (e.key === 'Escape') closeClassDeleteDialog()
+    return
+  }
   if (e.key === 'Escape') closePanel()
   if (e.key === 'ArrowRight') navigateNext()
   if (e.key === 'ArrowLeft') navigatePrev()
+  // Toolbar shortcuts — skip when typing in inputs
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (e.key === 'v' || e.key === 'V') activeTool.value = 'select'
+  if (e.key === 'b' || e.key === 'B') activeTool.value = 'bbox'
+  if (e.key === 'h' || e.key === 'H') activeTool.value = 'pan'
+  if ((e.key === 'm' || e.key === 'M') && samStatus.value?.enabled !== false) samEnabled.value = !samEnabled.value
 }
 
 function isVisible(det: DetectionAnnotation): boolean {
@@ -610,6 +712,14 @@ onUnmounted(() => {
 
     <div class="dataset-review-body">
           <main class="dataset-review-stage">
+            <CanvasToolbar
+              v-if="imageSrc && annotations"
+              :active-tool="activeTool"
+              :sam-enabled="samEnabled"
+              :sam-available="samStatus?.enabled !== false"
+              @update:active-tool="activeTool = $event"
+              @update:sam-enabled="samEnabled = $event"
+            />
             <EditableAnnotationOverlay
               v-if="imageSrc && annotations"
               class="dataset-review-frame"
@@ -626,6 +736,7 @@ onUnmounted(() => {
               :draft-box="draftBox"
               :editor-open="editorMode !== 'idle'"
               :class-colors="classColors"
+              :active-tool="activeTool"
               @select="handleOverlaySelect"
               @draft-change="updateDraftBox"
               @create-draft="beginNewAnnotation"
@@ -702,14 +813,22 @@ onUnmounted(() => {
                 >
                   {{ inferenceStore.modelLoading ? 'Loading...' : 'Load Model' }}
                 </button>
-                <button
-                  v-else
-                  class="dataset-primary-button"
-                  :disabled="!canInferNext || inferNextLoading"
-                  @click="runInferNext"
-                >
-                  {{ inferNextLoading ? 'Running...' : 'Infer Next ▸' }}
-                </button>
+                <template v-else>
+                  <button
+                    class="dataset-primary-button"
+                    :disabled="!canInferCurrent || inferNextLoading"
+                    @click="runInferCurrent"
+                  >
+                    {{ inferNextLoading ? 'Running...' : 'Infer Current' }}
+                  </button>
+                  <button
+                    class="dataset-secondary-button"
+                    :disabled="!canInferNext || inferNextLoading"
+                    @click="runInferNext"
+                  >
+                    Next ▸
+                  </button>
+                </template>
                 <div v-if="inferNextError" style="position: absolute; top: 100%; left: 0; right: 0; text-align: center; margin-top: 4px; color: #b42318; font-size: 11px;">
                   {{ inferNextError }}
                 </div>
@@ -741,22 +860,46 @@ onUnmounted(() => {
               </div>
 
               <div v-if="classes.length" class="dataset-class-filters">
-                <button
+                <div
                   v-for="([cls, count]) in classes"
                   :key="cls"
+                  class="dataset-class-chip-row"
                   :class="{ 'opacity-35 line-through': isClassHidden(cls) }"
-                  @click="store.toggleClassVisibility(cls)"
                 >
-                  <input
-                    type="color"
-                    class="dataset-class-color-input"
-                    :value="classColor(cls)"
-                    :aria-label="`Set ${cls} color`"
-                    @click.stop
-                    @input.stop="updateClassColor(cls, $event)"
-                  />
-                  {{ cls }} ({{ count }})
-                </button>
+                  <button @click="store.toggleClassVisibility(cls)">
+                    <input
+                      type="color"
+                      class="dataset-class-color-input"
+                      :value="classColor(cls)"
+                      :aria-label="`Set ${cls} color`"
+                      @click.stop
+                      @input.stop="updateClassColor(cls, $event)"
+                    />
+                    <template v-if="editingClassLabel === cls">
+                      <input
+                        class="dataset-class-rename-input"
+                        v-model="renameInputValue"
+                        :disabled="renamingClass"
+                        @keydown.enter.stop="confirmRenameClass"
+                        @keydown.escape.stop="cancelRenameClass"
+                        @blur="confirmRenameClass"
+                        @click.stop
+                        @dblclick.stop
+                        ref="renameInputRefs"
+                      />
+                    </template>
+                    <template v-else>
+                      <span @dblclick.stop="startRenameClass(cls)">{{ cls }} ({{ count }})</span>
+                    </template>
+                  </button>
+                  <button
+                    class="dataset-class-delete-trigger"
+                    @click.stop="requestDeleteClass(cls)"
+                    aria-label="Delete class"
+                  >
+                    <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /></svg>
+                  </button>
+                </div>
               </div>
             </section>
 
@@ -919,6 +1062,31 @@ onUnmounted(() => {
           <button class="dataset-secondary-button" :disabled="isDeletingDetection(pendingDeleteDetection.id)" @click="closeDetectionDeleteDialog">Cancel</button>
           <button class="dataset-primary-button" :disabled="isDeletingDetection(pendingDeleteDetection.id)" @click="confirmDeleteDetection">
             {{ isDeletingDetection(pendingDeleteDetection.id) ? 'Deleting...' : 'Delete' }}
+          </button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="showClassDeleteConfirm && pendingDeleteClass" class="dataset-review-confirm">
+      <section class="dataset-delete-dialog">
+        <header class="dataset-modal-header">
+          <div>
+            <h3 class="dataset-modal-title">Delete Class</h3>
+            <p class="dataset-modal-copy">This action cannot be undone.</p>
+          </div>
+          <button class="dataset-modal-close" :disabled="deletingClass" @click="closeClassDeleteDialog" aria-label="Close delete class dialog">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </header>
+        <div class="dataset-modal-body dataset-form-stack">
+          <p class="text-[13px] text-ink-mute leading-relaxed">
+            Delete class <span class="font-medium text-ink">"{{ pendingDeleteClass }}"</span> and its <span class="font-medium text-ink">{{ globalClassCount[pendingDeleteClass] ?? 0 }}</span> detections across all images?
+          </p>
+        </div>
+        <footer class="dataset-modal-footer">
+          <button class="dataset-secondary-button" :disabled="deletingClass" @click="closeClassDeleteDialog">Cancel</button>
+          <button class="dataset-primary-button" :disabled="deletingClass" @click="confirmDeleteClass">
+            {{ deletingClass ? 'Deleting...' : 'Delete' }}
           </button>
         </footer>
       </section>

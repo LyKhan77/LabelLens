@@ -11,6 +11,7 @@ export interface DatasetProject {
     accepted: number
     rejected: number
     classes: string[]
+    class_counts: Record<string, number>
   }
 }
 
@@ -114,6 +115,16 @@ export async function deleteDataset(name: string): Promise<unknown> {
 
 export async function updateClassColor(name: string, label: string, color: string): Promise<DatasetProject> {
   const res = await api.patch(`/datasets/${name}/class-colors`, { label, color })
+  return res.data
+}
+
+export async function renameClass(name: string, oldLabel: string, newLabel: string): Promise<DatasetProject> {
+  const res = await api.put(`/datasets/${name}/classes/rename`, { old_label: oldLabel, new_label: newLabel })
+  return res.data
+}
+
+export async function deleteClass(name: string, label: string): Promise<DatasetProject> {
+  const res = await api.delete(`/datasets/${name}/classes/${encodeURIComponent(label)}`)
   return res.data
 }
 
