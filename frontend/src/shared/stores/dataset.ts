@@ -220,6 +220,28 @@ export const useDatasetStore = defineStore('dataset', () => {
     return result
   }
 
+  async function updatePose(imgId: string, poseId: number, payload: Partial<PosePayload>) {
+    if (!currentProject.value) return
+    const result = await api.updatePose(currentProject.value, imgId, poseId, payload)
+    if (selectedImage.value === imgId) {
+      await selectImage(imgId)
+    }
+    await fetchImages(imagesPage.value)
+    await fetchProjects()
+    return result
+  }
+
+  async function deletePose(imgId: string, poseId: number) {
+    if (!currentProject.value) return
+    const result = await api.deletePose(currentProject.value, imgId, poseId)
+    if (selectedImage.value === imgId) {
+      await selectImage(imgId)
+    }
+    await fetchImages(imagesPage.value)
+    await fetchProjects()
+    return result
+  }
+
   async function inferNextVisualPrompt(
     sourceImgId: string,
     targetImgId: string,
@@ -454,6 +476,8 @@ export const useDatasetStore = defineStore('dataset', () => {
     deleteDetection,
     setImageLabels,
     addPose,
+    updatePose,
+    deletePose,
     inferNextVisualPrompt,
     generateSamMask,
     saveToDataset,

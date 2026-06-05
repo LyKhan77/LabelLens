@@ -370,6 +370,25 @@ export async function deleteDetection(
   return res.data
 }
 
+export async function updatePose(
+  name: string,
+  imgId: string,
+  poseId: number,
+  payload: Partial<PosePayload>,
+): Promise<ImageAnnotation['annotations']> {
+  const res = await api.patch(`/datasets/${name}/images/${imgId}/poses/${poseId}`, payload)
+  return res.data
+}
+
+export async function deletePose(
+  name: string,
+  imgId: string,
+  poseId: number,
+): Promise<ImageAnnotation['annotations']> {
+  const res = await api.delete(`/datasets/${name}/images/${imgId}/poses/${poseId}`)
+  return res.data
+}
+
 export async function reviewImage(
   name: string,
   imgId: string,
