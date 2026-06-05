@@ -602,7 +602,7 @@ function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'h' || e.key === 'H') poseTool.value = 'pan'
     if (e.key === 'c' || e.key === 'C') poseTool.value = 'visibility'
   }
-  if ((e.key === 'm' || e.key === 'M') && samStatus.value?.enabled !== false) samEnabled.value = !samEnabled.value
+  if (!isPoseTask.value && (e.key === 'm' || e.key === 'M') && samStatus.value?.enabled !== false) samEnabled.value = !samEnabled.value
 }
 
 function isVisible(det: DetectionAnnotation): boolean {
@@ -989,7 +989,7 @@ onUnmounted(() => {
                 <div
                   v-for="pose in poses" :key="pose.id"
                   class="dataset-detection-row cursor-pointer"
-                  :class="{ 'is-active': editingPoseId === pose.id }"
+                  :class="{ 'is-selected': editingPoseId === pose.id }"
                   @click="editingPoseId = pose.id"
                 >
                   <div class="min-w-0">
