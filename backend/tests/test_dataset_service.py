@@ -132,6 +132,44 @@ class DatasetServiceTest(unittest.TestCase):
         listed = self.service.list_projects()[0]
         self.assertEqual(listed["class_colors"], meta["class_colors"])
 
+    def test_create_project_requires_task_type_and_stores_task_metadata(self):
+        meta = self.service.create_project("poses", task_type="pose", task_config={
+            "pose_template": {
+                "name": "Box Corners",
+                "keypoint_names": ["top_left", "top_right", "bottom_right", "bottom_left"],
+                "skeleton": [[0, 1], [1, 2], [2, 3], [3, 0]],
+                "flip_idx": [1, 0, 3, 2],
+                "kpt_shape": [4, 3],
+            },
+        })
+
+        self.assertEqual(meta["schema_version"], 2)
+        self.assertEqual(meta["task_type"], "pose")
+        self.assertEqual(meta["class_to_id"], {})
+        self.assertEqual(meta["class_colors"], {})
+        self.assertEqual(meta["task_config"]["pose_template"]["kpt_shape"], [4, 3])
+
+        listed = self.service.list_projects()[0]
+        self.assertEqual(listed["schema_version"], 2)
+        self.assertEqual(listed["task_type"], "pose")
+        self.assertEqual(listed["task_config"]["pose_template"]["name"], "Box Corners")
+
+    def test_create_project_rejects_invalid_task_type(self):
+        with self.assertRaises(ValueError):
+            self.service.create_project("bad", task_type="caption")
+
+    def test_create_pose_project_rejects_invalid_template(self):
+        with self.assertRaises(ValueError):
+            self.service.create_project("bad-pose", task_type="pose", task_config={
+                "pose_template": {
+                    "name": "Broken",
+                    "keypoint_names": ["a", "b"],
+                    "skeleton": [[0, 2]],
+                    "flip_idx": [0, 1],
+                    "kpt_shape": [2, 3],
+                },
+            })
+
     def test_new_classes_receive_persisted_colors_from_rapid_inference_and_manual_labels(self):
         self.service.create_project("demo")
         saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))

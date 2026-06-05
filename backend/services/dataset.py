@@ -12,6 +12,17 @@ import cv2
 import numpy as np
 
 DATASETS_DIR = "datasets"
+DATASET_SCHEMA_VERSION = 2
+DATASET_TASKS = {"detect", "segment", "classify_single", "classify_multi", "pose"}
+DEFAULT_POSE_TEMPLATES = {
+    "Box Corners": {
+        "name": "Box Corners",
+        "keypoint_names": ["top_left", "top_right", "bottom_right", "bottom_left"],
+        "skeleton": [[0, 1], [1, 2], [2, 3], [3, 0]],
+        "flip_idx": [1, 0, 3, 2],
+        "kpt_shape": [4, 3],
+    },
+}
 CLASS_COLOR_PALETTE = [
     "#3ECF8E",
     "#2563EB",
@@ -79,6 +90,49 @@ class DatasetService:
             raise ValueError("color must be a #RRGGBB hex value")
         return color.strip().upper()
 
+    def _default_task_config(self, task_type: str) -> dict:
+        if task_type == "segment":
+            return {"requires_masks": True}
+        if task_type == "classify_single":
+            return {"classification_mode": "single"}
+        if task_type == "classify_multi":
+            return {"classification_mode": "multi"}
+        if task_type == "pose":
+            return {"pose_template": DEFAULT_POSE_TEMPLATES["Box Corners"]}
+        return {}
+
+    def _validate_pose_template(self, template: dict) -> dict:
+        names = template.get("keypoint_names")
+        skeleton = template.get("skeleton", [])
+        flip_idx = template.get("flip_idx")
+        kpt_shape = template.get("kpt_shape")
+        if not isinstance(names, list) or not names or not all(isinstance(n, str) and n.strip() for n in names):
+            raise ValueError("pose_template.keypoint_names must be a non-empty string list")
+        if kpt_shape != [len(names), 3]:
+            raise ValueError("pose_template.kpt_shape must equal [len(keypoint_names), 3]")
+        if not isinstance(flip_idx, list) or sorted(flip_idx) != list(range(len(names))):
+            raise ValueError("pose_template.flip_idx must map every keypoint index")
+        for edge in skeleton:
+            if not isinstance(edge, list) or len(edge) != 2:
+                raise ValueError("pose_template.skeleton edges must be [from, to]")
+            if edge[0] < 0 or edge[1] < 0 or edge[0] >= len(names) or edge[1] >= len(names):
+                raise ValueError("pose_template.skeleton contains an invalid keypoint index")
+        return {
+            "name": str(template.get("name") or "Custom"),
+            "keypoint_names": [n.strip() for n in names],
+            "skeleton": skeleton,
+            "flip_idx": flip_idx,
+            "kpt_shape": kpt_shape,
+        }
+
+    def _normalize_task_config(self, task_type: str, task_config: dict | None) -> dict:
+        config = self._default_task_config(task_type)
+        if task_config:
+            config.update(task_config)
+        if task_type == "pose":
+            config["pose_template"] = self._validate_pose_template(config.get("pose_template") or {})
+        return config
+
     def _recalc_stats(self, name: str) -> dict:
         ann_dir = os.path.join(self._project_dir(name), "annotations")
         total_images = 0
@@ -128,13 +182,24 @@ class DatasetService:
             projects.append({
                 "name": name,
                 "created": meta.get("created"),
+                "schema_version": meta.get("schema_version", 1),
+                "task_type": meta.get("task_type", "detect"),
+                "task_config": meta.get("task_config", {}),
                 "class_to_id": meta.get("class_to_id", {}),
                 "class_colors": meta.get("class_colors", {}),
                 "stats": stats,
             })
         return projects
 
-    def create_project(self, name: str, classes: list[str] | None = None) -> dict:
+    def create_project(
+        self,
+        name: str,
+        classes: list[str] | None = None,
+        task_type: str = "detect",
+        task_config: dict | None = None,
+    ) -> dict:
+        if task_type not in DATASET_TASKS:
+            raise ValueError("task_type must be one of: classify_multi, classify_single, detect, pose, segment")
         pdir = self._project_dir(name)
         if os.path.exists(pdir):
             raise FileExistsError(f"Dataset '{name}' already exists")
@@ -146,9 +211,12 @@ class DatasetService:
         class_colors = {c: self._default_class_color(i) for c, i in class_to_id.items()}
 
         meta = {
+            "schema_version": DATASET_SCHEMA_VERSION,
             "name": name,
             "created": datetime.now().isoformat(),
             "next_id": 1,
+            "task_type": task_type,
+            "task_config": self._normalize_task_config(task_type, task_config),
             "class_to_id": class_to_id,
             "class_colors": class_colors,
         }

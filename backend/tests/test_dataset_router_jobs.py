@@ -6,7 +6,9 @@ from unittest.mock import patch
 
 import cv2
 import numpy as np
+from fastapi.testclient import TestClient
 
+from backend.main import app
 from backend.routers import dataset
 
 
@@ -18,6 +20,22 @@ class DatasetLabelJobStatusTest(unittest.TestCase):
         job = dataset._new_job("demo")
 
         self.assertEqual(job["items"], [])
+
+    def test_create_dataset_accepts_task_type_without_classes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("backend.services.dataset.DATASETS_DIR", tmp):
+                client = TestClient(app)
+
+                response = client.post("/api/datasets", data={
+                    "name": "classifier",
+                    "task_type": "classify_multi",
+                })
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["task_type"], "classify_multi")
+        self.assertEqual(payload["task_config"]["classification_mode"], "multi")
+        self.assertEqual(payload["class_to_id"], {})
 
     def test_infer_next_visual_prompt_returns_candidates_without_saving(self):
         with tempfile.TemporaryDirectory() as tmp:

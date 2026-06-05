@@ -163,13 +163,23 @@ async def list_datasets():
 @router.post("/datasets")
 async def create_dataset(
     name: str = Form(...),
+    task_type: str = Form("detect"),
+    task_config: str = Form("{}"),
     classes: str = Form("[]"),
 ):
     class_list = _parse_json_list(classes, "classes")
     try:
-        meta = dataset_service.create_project(name, class_list)
+        config = json.loads(task_config)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Invalid task_config JSON")
+    if not isinstance(config, dict):
+        raise HTTPException(400, "task_config must be a JSON object")
+    try:
+        meta = dataset_service.create_project(name, class_list, task_type, config)
     except FileExistsError as e:
         raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return meta
 
 
