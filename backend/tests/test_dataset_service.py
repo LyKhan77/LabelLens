@@ -280,6 +280,60 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertEqual(ann["poses"][0]["keypoints"][1]["visibility"], "occluded")
         self.assertEqual(self.service._read_meta("pose")["class_to_id"], {"box": 0})
 
+    def test_export_yolo_for_single_label_classification_writes_class_folders(self):
+        self.service.create_project("cls", task_type="classify_single")
+        saved = self.service.upload_raw("cls", jpg_bytes(), original_filename="sample.jpg")
+        self.service.set_image_labels("cls", saved["img_id"], [{"label": "ok"}])
+
+        zip_bytes = self.service.export_yolo("cls", split=1.0)
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            names = zf.namelist()
+            self.assertIn("train/ok/sample.jpg", names)
+            self.assertIn("labellens.json", names)
+
+    def test_export_yolo_for_multi_label_classification_writes_manifest(self):
+        self.service.create_project("multi", task_type="classify_multi")
+        saved = self.service.upload_raw("multi", jpg_bytes(), original_filename="sample.jpg")
+        self.service.set_image_labels("multi", saved["img_id"], [{"label": "red"}, {"label": "damaged"}])
+
+        zip_bytes = self.service.export_yolo("multi", split=1.0)
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            labels_csv = zf.read("labels.csv").decode()
+            self.assertIn("filename,labels", labels_csv)
+            self.assertIn("images/sample.jpg", labels_csv)
+            self.assertIn("red|damaged", labels_csv)
+            self.assertIn("labellens.json", zf.namelist())
+
+    def test_export_yolo_for_pose_writes_pose_labels_and_yaml(self):
+        self.service.create_project("pose", task_type="pose")
+        saved = self.service.upload_raw("pose", jpg_bytes(width=100, height=80), original_filename="pose.jpg")
+        self.service.add_pose(
+            "pose",
+            saved["img_id"],
+            {
+                "label": "box",
+                "box": [10, 10, 50, 50],
+                "keypoints": [
+                    {"name": "top_left", "x": 10, "y": 10, "visibility": "visible"},
+                    {"name": "top_right", "x": 50, "y": 10, "visibility": "occluded"},
+                    {"name": "bottom_right", "x": 50, "y": 50, "visibility": "visible"},
+                    {"name": "bottom_left", "x": 10, "y": 50, "visibility": "missing"},
+                ],
+            },
+        )
+
+        zip_bytes = self.service.export_yolo("pose", split=1.0)
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            yaml_text = zf.read("dataset.yaml").decode()
+            label_text = zf.read("labels/train/img_0001.txt").decode()
+            self.assertIn("kpt_shape: [4, 3]", yaml_text)
+            self.assertIn("flip_idx: [1, 0, 3, 2]", yaml_text)
+            self.assertIn("kpt_names:", yaml_text)
+            self.assertEqual(len(label_text.split()), 17)
+
     def test_update_detection_label_and_bbox_clamps_box_and_removes_stale_mask(self):
         self.service.create_project("demo")
         saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))

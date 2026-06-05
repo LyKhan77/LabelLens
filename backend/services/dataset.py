@@ -969,10 +969,178 @@ class DatasetService:
 
         return ann
 
-    def export_yolo(self, name: str, split: float = 0.8) -> str:
+    def _labellens_manifest(self, name: str) -> str:
         pdir = self._project_dir(name)
         ann_dir = os.path.join(pdir, "annotations")
         meta = self._read_meta(name)
+        annotations = []
+        for fname in sorted(os.listdir(ann_dir)):
+            if not fname.endswith(".json"):
+                continue
+            with open(os.path.join(ann_dir, fname)) as f:
+                ann = json.load(f)
+            annotations.append({"img_id": os.path.splitext(fname)[0], "annotations": ann})
+        return json.dumps({"dataset": meta, "annotations": annotations}, indent=2)
+
+    def _classification_entries(self, name: str) -> list[dict]:
+        pdir = self._project_dir(name)
+        ann_dir = os.path.join(pdir, "annotations")
+        entries = []
+        used_filenames: set[str] = set()
+        for fname in sorted(os.listdir(ann_dir)):
+            if not fname.endswith(".json"):
+                continue
+            with open(os.path.join(ann_dir, fname)) as f:
+                ann = json.load(f)
+            labels = [label for label in ann.get("labels", []) if label.get("accepted", True)]
+            if not labels:
+                continue
+            img_filename = ann["image"]
+            img_path = os.path.join(pdir, "images", img_filename)
+            if not os.path.isfile(img_path):
+                continue
+            entries.append({
+                "img_path": img_path,
+                "img_filename": self._unique_export_filename(
+                    ann.get("original_filename") or img_filename,
+                    used_filenames,
+                ),
+                "labels": [label["label"] for label in labels],
+            })
+        return entries
+
+    def _split_entries(self, entries: list[dict], split: float) -> tuple[list[dict], list[dict]]:
+        random.seed(42)
+        shuffled = list(entries)
+        random.shuffle(shuffled)
+        split_idx = int(len(shuffled) * split)
+        return shuffled[:split_idx], shuffled[split_idx:]
+
+    def _export_classification_single(self, name: str, split: float) -> bytes:
+        entries = self._classification_entries(name)
+        train_entries, val_entries = self._split_entries(entries, split)
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for subset, items in [("train", train_entries), ("val", val_entries)]:
+                for entry in items:
+                    label = entry["labels"][0]
+                    zf.write(entry["img_path"], f"{subset}/{label}/{entry['img_filename']}")
+            zf.writestr("labellens.json", self._labellens_manifest(name))
+        zip_buf.seek(0)
+        return zip_buf.getvalue()
+
+    def _export_classification_multi(self, name: str, _split: float) -> bytes:
+        entries = self._classification_entries(name)
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            csv_lines = ["filename,labels"]
+            for entry in entries:
+                path = f"images/{entry['img_filename']}"
+                zf.write(entry["img_path"], path)
+                csv_lines.append(f"{path},{'|'.join(entry['labels'])}")
+            zf.writestr("labels.csv", "\n".join(csv_lines) + "\n")
+            zf.writestr("labellens.json", self._labellens_manifest(name))
+        zip_buf.seek(0)
+        return zip_buf.getvalue()
+
+    def _pose_visibility_value(self, visibility: str) -> int:
+        if visibility == "missing":
+            return 0
+        if visibility == "occluded":
+            return 1
+        return 2
+
+    def _export_pose_yolo(self, name: str, split: float) -> bytes:
+        pdir = self._project_dir(name)
+        ann_dir = os.path.join(pdir, "annotations")
+        meta = self._read_meta(name)
+        class_to_id = meta.get("class_to_id", {})
+        template = meta.get("task_config", {}).get("pose_template", {})
+        entries = []
+        used_filenames: set[str] = set()
+        for fname in sorted(os.listdir(ann_dir)):
+            if not fname.endswith(".json"):
+                continue
+            with open(os.path.join(ann_dir, fname)) as f:
+                ann = json.load(f)
+            poses = [pose for pose in ann.get("poses", []) if pose.get("accepted", True)]
+            if not poses:
+                continue
+            img_filename = ann["image"]
+            img_path = os.path.join(pdir, "images", img_filename)
+            if not os.path.isfile(img_path):
+                continue
+            w, h = ann["width"], ann["height"]
+            lines = []
+            for pose in poses:
+                cls_id = class_to_id.get(pose["label"], -1)
+                if cls_id < 0:
+                    continue
+                x1, y1, x2, y2 = pose["box"]
+                parts = [
+                    str(cls_id),
+                    f"{((x1 + x2) / 2) / w:.6f}",
+                    f"{((y1 + y2) / 2) / h:.6f}",
+                    f"{(x2 - x1) / w:.6f}",
+                    f"{(y2 - y1) / h:.6f}",
+                ]
+                keypoint_map = {kp["name"]: kp for kp in pose.get("keypoints", [])}
+                for kp_name in template.get("keypoint_names", []):
+                    kp = keypoint_map[kp_name]
+                    parts.extend([
+                        f"{kp['x'] / w:.6f}",
+                        f"{kp['y'] / h:.6f}",
+                        str(self._pose_visibility_value(kp.get("visibility", "visible"))),
+                    ])
+                lines.append(" ".join(parts))
+            entries.append({
+                "img_id": os.path.splitext(fname)[0],
+                "img_path": img_path,
+                "img_filename": self._unique_export_filename(
+                    ann.get("original_filename") or img_filename,
+                    used_filenames,
+                ),
+                "label_text": "\n".join(lines),
+            })
+
+        train_entries, val_entries = self._split_entries(entries, split)
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for subset, items in [("train", train_entries), ("val", val_entries)]:
+                for entry in items:
+                    zf.write(entry["img_path"], f"images/{subset}/{entry['img_filename']}")
+                    zf.writestr(f"labels/{subset}/{entry['img_id']}.txt", entry["label_text"])
+            names_yaml = {v: k for k, v in class_to_id.items()}
+            yaml_lines = [
+                f"path: ./datasets/{name}",
+                "train: images/train",
+                "val: images/val",
+                f"kpt_shape: {template.get('kpt_shape')}",
+                f"flip_idx: {template.get('flip_idx')}",
+                "names:",
+            ]
+            for cid, cname in sorted(names_yaml.items()):
+                yaml_lines.append(f"  {cid}: {cname}")
+            yaml_lines.append("kpt_names:")
+            for idx, kp_name in enumerate(template.get("keypoint_names", [])):
+                yaml_lines.append(f"  {idx}: {kp_name}")
+            zf.writestr("dataset.yaml", "\n".join(yaml_lines) + "\n")
+            zf.writestr("labellens.json", self._labellens_manifest(name))
+        zip_buf.seek(0)
+        return zip_buf.getvalue()
+
+    def export_yolo(self, name: str, split: float = 0.8) -> str:
+        meta = self._read_meta(name)
+        task_type = meta.get("task_type", "detect")
+        if task_type == "classify_single":
+            return self._export_classification_single(name, split)
+        if task_type == "classify_multi":
+            return self._export_classification_multi(name, split)
+        if task_type == "pose":
+            return self._export_pose_yolo(name, split)
+
+        pdir = self._project_dir(name)
+        ann_dir = os.path.join(pdir, "annotations")
         class_to_id = meta.get("class_to_id", {})
 
         # Collect accepted images with annotations
