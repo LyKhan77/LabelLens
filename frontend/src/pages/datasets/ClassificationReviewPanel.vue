@@ -119,9 +119,6 @@ function save() {
     <p v-else class="cls-empty">No labels yet. Add the first label below.</p>
 
     <!-- Add label input -->
-    <div class="cls-divider">
-      <span>Add Label</span>
-    </div>
     <div class="cls-input-row">
       <input
         v-model="draftLabel"
@@ -131,7 +128,7 @@ function save() {
         @keydown.enter.prevent="addDraftLabel"
       />
       <button
-        class="cls-add-btn"
+        class="dataset-secondary-button"
         type="button"
         :disabled="!draftLabel.trim()"
         @click="addDraftLabel"
@@ -139,11 +136,12 @@ function save() {
         <svg viewBox="0 0 14 14" fill="none" width="14" height="14">
           <path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
         </svg>
+        Add
       </button>
     </div>
 
     <!-- Save -->
-    <button class="cls-save-btn" :disabled="!canSave" @click="save">
+    <button class="dataset-primary-button w-full" :disabled="!canSave" @click="save">
       <span v-if="saving" class="cls-save-spinner" />
       {{ saving ? 'Saving…' : 'Save Labels' }}
     </button>
@@ -154,8 +152,8 @@ function save() {
 .cls-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 0;
+  gap: 14px;
+  padding: 14px 0;
 }
 
 /* Header */
@@ -173,7 +171,7 @@ function save() {
 .cls-badge {
   font-size: 9px;
   font-weight: 600;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 999px;
   background: var(--color-surface);
   color: var(--color-ink-mute);
@@ -186,15 +184,15 @@ function save() {
 .cls-active-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  min-height: 22px;
+  gap: 6px;
+  min-height: 26px;
   align-items: center;
 }
 .cls-active-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
@@ -202,8 +200,8 @@ function save() {
   background: color-mix(in srgb, var(--chip-color) 12%, transparent);
 }
 .cls-active-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--chip-color);
   flex-shrink: 0;
@@ -218,8 +216,8 @@ function save() {
 .cls-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
-  max-height: 120px;
+  gap: 6px;
+  max-height: 140px;
   overflow-y: auto;
   padding: 2px 0;
 }
@@ -227,8 +225,8 @@ function save() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 26px;
-  padding: 0 8px 0 6px;
+  height: 28px;
+  padding: 0 10px 0 7px;
   border: 1.5px solid color-mix(in srgb, var(--chip-color) 35%, var(--color-hairline));
   border-radius: 999px;
   background: transparent;
@@ -275,51 +273,29 @@ function save() {
 .cls-empty {
   font-size: 11px;
   color: var(--color-ink-faint);
-  padding: 8px 0;
+  padding: 10px 0;
   line-height: 1.5;
-}
-
-/* Divider */
-.cls-divider {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-}
-.cls-divider::before,
-.cls-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--color-hairline);
-}
-.cls-divider span {
-  font-size: 10px;
-  color: var(--color-ink-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 500;
-  white-space: nowrap;
 }
 
 /* Input row */
 .cls-input-row {
   display: grid;
-  grid-template-columns: 1fr 34px;
-  gap: 6px;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
 }
 .cls-input {
   width: 100%;
   min-width: 0;
-  height: 30px;
-  padding: 0 8px;
+  height: 36px;
+  padding: 0 10px;
   border: 1px solid var(--color-hairline);
   border-radius: var(--radius-sm);
   background: var(--color-canvas-soft);
   color: var(--color-ink);
   font-size: 12px;
   outline: none;
-  transition: border-color 0.12s ease;
+  transition: border-color 0.15s ease;
 }
 .cls-input:focus {
   border-color: var(--color-surface-border);
@@ -327,56 +303,13 @@ function save() {
 .cls-input::placeholder {
   color: var(--color-ink-faint);
 }
-.cls-add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 30px;
-  border: 1px solid var(--color-hairline);
-  border-radius: var(--radius-sm);
-  background: var(--color-canvas-soft);
-  color: var(--color-ink);
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-.cls-add-btn:hover:not(:disabled) {
-  background: var(--color-surface);
-  border-color: var(--color-surface-border);
-}
-.cls-add-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
 
-/* Save */
-.cls-save-btn {
-  width: 100%;
-  height: 32px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-ink);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.12s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.cls-save-btn:hover:not(:disabled) {
-  opacity: 0.9;
-}
-.cls-save-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
+/* Save spinner */
 .cls-save-spinner {
   width: 12px;
   height: 12px;
-  border: 1.5px solid color-mix(in srgb, var(--color-ink) 30%, transparent);
-  border-top-color: var(--color-ink);
+  border: 1.5px solid color-mix(in srgb, var(--color-on-primary) 30%, transparent);
+  border-top-color: var(--color-on-primary);
   border-radius: 50%;
   animation: cls-spin 0.6s linear infinite;
 }
