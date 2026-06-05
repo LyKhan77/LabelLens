@@ -16,6 +16,34 @@ const emit = defineEmits<{
   save: [payload: { label: string; box: number[]; keypoints: PoseKeypointAnnotation[]; confidence?: number; accepted?: boolean }]
 }>()
 
+// Anatomical default layout, normalized 0..1 within the bbox (x right, y down).
+// Lets the template spawn as a recognizable skeleton instead of a generic blob.
+const KEYPOINT_LAYOUT: Record<string, [number, number]> = {
+  // box corners
+  top_left: [0, 0],
+  top_right: [1, 0],
+  bottom_right: [1, 1],
+  bottom_left: [0, 1],
+  // COCO person 17
+  nose: [0.5, 0.1],
+  left_eye: [0.43, 0.07],
+  right_eye: [0.57, 0.07],
+  left_ear: [0.37, 0.09],
+  right_ear: [0.63, 0.09],
+  left_shoulder: [0.35, 0.25],
+  right_shoulder: [0.65, 0.25],
+  left_elbow: [0.28, 0.43],
+  right_elbow: [0.72, 0.43],
+  left_wrist: [0.25, 0.6],
+  right_wrist: [0.75, 0.6],
+  left_hip: [0.42, 0.58],
+  right_hip: [0.58, 0.58],
+  left_knee: [0.4, 0.78],
+  right_knee: [0.6, 0.78],
+  left_ankle: [0.39, 0.97],
+  right_ankle: [0.61, 0.97],
+}
+
 const draftLabel = ref('pose')
 const draftBox = ref<number[] | null>(null)
 const draftKeypoints = ref<PoseKeypointAnnotation[]>([])
@@ -38,24 +66,21 @@ function createDraft() {
   const h = props.height || 1
   const box = [w * 0.25, h * 0.2, w * 0.75, h * 0.8]
   draftBox.value = box
+  const boxW = box[2] - box[0]
+  const boxH = box[3] - box[1]
   draftKeypoints.value = props.template.keypoint_names.map((name, index) => {
-    const cornerMap: Record<string, [number, number]> = {
-      top_left: [box[0], box[1]],
-      top_right: [box[2], box[1]],
-      bottom_right: [box[2], box[3]],
-      bottom_left: [box[0], box[3]],
+    const layout = KEYPOINT_LAYOUT[name]
+    if (layout) {
+      return { name, x: box[0] + layout[0] * boxW, y: box[1] + layout[1] * boxH, visibility: 'visible' }
     }
-    const corner = cornerMap[name]
-    if (corner) {
-      return { name, x: corner[0], y: corner[1], visibility: 'visible' }
-    }
+    // Unknown keypoint name: fall back to an even ring inside the bbox.
     const angle = (Math.PI * 2 * index) / Math.max(1, props.template.keypoint_names.length)
-    const cx = (box[0] + box[2]) / 2
-    const cy = (box[1] + box[3]) / 2
+    const cx = box[0] + boxW / 2
+    const cy = box[1] + boxH / 2
     return {
       name,
-      x: cx + Math.cos(angle) * (box[2] - box[0]) * 0.35,
-      y: cy + Math.sin(angle) * (box[3] - box[1]) * 0.35,
+      x: cx + Math.cos(angle) * boxW * 0.35,
+      y: cy + Math.sin(angle) * boxH * 0.35,
       visibility: 'visible',
     }
   })
