@@ -705,6 +705,56 @@ class DatasetService:
         self._write_annotation(name, img_id, ann)
         return ann
 
+    def update_pose(self, name: str, img_id: str, pose_id: int, payload: dict) -> dict | None:
+        ann = self._read_annotation(name, img_id)
+        if ann is None:
+            return None
+        meta = self._read_meta(name)
+        if meta.get("task_type") != "pose":
+            raise ValueError("pose annotations are only supported for pose datasets")
+
+        target = None
+        for pose in ann.get("poses", []):
+            if int(pose.get("id", -1)) == pose_id:
+                target = pose
+                break
+        if target is None:
+            return None
+
+        if "label" in payload and payload.get("label") is not None:
+            label = self._clean_label(payload.get("label"))
+            target["label"] = label
+            target["cls_id"] = self._ensure_class(name, label)
+
+        if "box" in payload and payload.get("box") is not None:
+            target["box"] = self._clean_box(payload.get("box"), ann["width"], ann["height"])
+
+        if "keypoints" in payload and payload.get("keypoints") is not None:
+            template = meta.get("task_config", {}).get("pose_template", {})
+            target["keypoints"] = self._clean_keypoints(
+                payload.get("keypoints"), template, ann["width"], ann["height"]
+            )
+
+        if "accepted" in payload:
+            target["accepted"] = bool(payload.get("accepted"))
+
+        ann["labeled"] = self._has_any_annotations(ann)
+        self._write_annotation(name, img_id, ann)
+        return ann
+
+    def delete_pose(self, name: str, img_id: str, pose_id: int) -> dict | None:
+        ann = self._read_annotation(name, img_id)
+        if ann is None:
+            return None
+        poses = ann.get("poses", [])
+        remaining = [pose for pose in poses if int(pose.get("id", -1)) != pose_id]
+        if len(remaining) == len(poses):
+            return None
+        ann["poses"] = remaining
+        ann["labeled"] = self._has_any_annotations(ann)
+        self._write_annotation(name, img_id, ann)
+        return ann
+
     def update_class_color(self, name: str, label: str, color: str) -> dict:
         pdir = self._project_dir(name)
         if not os.path.isdir(pdir):

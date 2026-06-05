@@ -292,6 +292,50 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertEqual(ann["poses"][0]["keypoints"][1]["visibility"], "occluded")
         self.assertEqual(self.service._read_meta("pose")["class_to_id"], {"box": 0})
 
+    def test_update_pose_changes_box_keypoints_and_label(self):
+        self.service.create_project("pose", task_type="pose")
+        saved = self.service.upload_raw("pose", jpg_bytes(width=100, height=80))
+        kps = [
+            {"name": "top_left", "x": 10, "y": 10, "visibility": "visible"},
+            {"name": "top_right", "x": 50, "y": 10, "visibility": "visible"},
+            {"name": "bottom_right", "x": 50, "y": 50, "visibility": "visible"},
+            {"name": "bottom_left", "x": 10, "y": 50, "visibility": "visible"},
+        ]
+        self.service.add_pose("pose", saved["img_id"], {"label": "box", "box": [10, 10, 50, 50], "keypoints": kps})
+        pose_id = self.service.get_image("pose", saved["img_id"])["annotations"]["poses"][0]["id"]
+
+        moved = [{**kp, "x": kp["x"] + 5} for kp in kps]
+        ann = self.service.update_pose(
+            "pose", saved["img_id"], pose_id,
+            {"label": "person", "box": [12, 12, 60, 60], "keypoints": moved},
+        )
+        pose = ann["poses"][0]
+        self.assertEqual(pose["label"], "person")
+        self.assertEqual(pose["box"], [12.0, 12.0, 60.0, 60.0])
+        self.assertEqual(pose["keypoints"][0]["x"], 15.0)
+
+    def test_update_pose_unknown_id_returns_none(self):
+        self.service.create_project("pose", task_type="pose")
+        saved = self.service.upload_raw("pose", jpg_bytes(width=100, height=80))
+        self.assertIsNone(self.service.update_pose("pose", saved["img_id"], 999, {"label": "x"}))
+
+    def test_delete_pose_removes_and_recomputes_labeled(self):
+        self.service.create_project("pose", task_type="pose")
+        saved = self.service.upload_raw("pose", jpg_bytes(width=100, height=80))
+        kps = [
+            {"name": "top_left", "x": 10, "y": 10, "visibility": "visible"},
+            {"name": "top_right", "x": 50, "y": 10, "visibility": "visible"},
+            {"name": "bottom_right", "x": 50, "y": 50, "visibility": "visible"},
+            {"name": "bottom_left", "x": 10, "y": 50, "visibility": "visible"},
+        ]
+        self.service.add_pose("pose", saved["img_id"], {"label": "box", "box": [10, 10, 50, 50], "keypoints": kps})
+        pose_id = self.service.get_image("pose", saved["img_id"])["annotations"]["poses"][0]["id"]
+
+        ann = self.service.delete_pose("pose", saved["img_id"], pose_id)
+        self.assertEqual(ann["poses"], [])
+        self.assertFalse(ann["labeled"])
+        self.assertIsNone(self.service.delete_pose("pose", saved["img_id"], pose_id))
+
     def test_export_yolo_for_single_label_classification_writes_class_folders(self):
         self.service.create_project("cls", task_type="classify_single")
         saved = self.service.upload_raw("cls", jpg_bytes(), original_filename="sample.jpg")
