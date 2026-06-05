@@ -2,9 +2,10 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import { useInferenceStore } from '../../shared/stores/inference'
-import type { DetectionAnnotation, DatasetOverlayDetection } from '../../shared/api/dataset'
+import type { ClassificationLabelAnnotation, DetectionAnnotation, DatasetOverlayDetection } from '../../shared/api/dataset'
 import EditableAnnotationOverlay from './EditableAnnotationOverlay.vue'
 import CanvasToolbar from './CanvasToolbar.vue'
+import ClassificationReviewPanel from './ClassificationReviewPanel.vue'
 import { getSamStatus } from '../../shared/api/sam'
 
 const emit = defineEmits<{ back: [] }>()
@@ -36,11 +37,22 @@ const showDetectionDeleteConfirm = ref(false)
 const pendingDeleteDetection = ref<DetectionAnnotation | null>(null)
 const activeTool = ref<'select' | 'bbox' | 'pan'>('select')
 const samEnabled = ref(true)
+const savingLabels = ref(false)
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
 const detections = computed(() => annotations.value?.detections ?? [])
-const acceptedCount = computed(() => detections.value.filter((d) => d.accepted).length)
-const rejectedCount = computed(() => detections.value.filter((d) => !d.accepted).length)
+const classificationLabels = computed<ClassificationLabelAnnotation[]>(() => annotations.value?.labels ?? [])
+const taskType = computed(() => store.currentProjectData?.task_type ?? annotations.value?.task_type ?? 'detect')
+const isClassificationTask = computed(() => taskType.value === 'classify_single' || taskType.value === 'classify_multi')
+const classificationMode = computed<'single' | 'multi'>(() => taskType.value === 'classify_multi' ? 'multi' : 'single')
+const acceptedCount = computed(() => {
+  if (isClassificationTask.value) return classificationLabels.value.filter((label) => label.accepted).length
+  return detections.value.filter((d) => d.accepted).length
+})
+const rejectedCount = computed(() => {
+  if (isClassificationTask.value) return classificationLabels.value.filter((label) => !label.accepted).length
+  return detections.value.filter((d) => !d.accepted).length
+})
 const classCount = computed(() => classes.value.length)
 const classColors = computed(() => store.currentProjectData?.class_colors ?? {})
 const selectedDetection = computed(() => detections.value.find((d) => d.id === selectedDetectionId.value) ?? null)
@@ -62,11 +74,16 @@ const frameStyle = computed(() => ({
 
 const classes = computed(() => {
   const cls = new Map<string, number>()
+  if (isClassificationTask.value) {
+    for (const label of classificationLabels.value) cls.set(label.label, (cls.get(label.label) ?? 0) + 1)
+    return Array.from(cls.entries())
+  }
   for (const d of detections.value) cls.set(d.label, (cls.get(d.label) ?? 0) + 1)
   return Array.from(cls.entries())
 })
 const availableLabels = computed(() => {
   const labels = new Set<string>(Object.keys(store.currentProjectData?.class_to_id ?? {}))
+  for (const label of classificationLabels.value) if (label.label) labels.add(label.label)
   for (const d of detections.value) if (d.label) labels.add(d.label)
   return Array.from(labels).sort((a, b) => a.localeCompare(b))
 })
@@ -94,6 +111,16 @@ function classColor(label: string): string {
 async function updateClassColor(label: string, event: Event) {
   const color = (event.target as HTMLInputElement).value
   await store.setClassColor(label, color)
+}
+
+async function saveClassificationLabels(labels: { label: string; confidence?: number; accepted?: boolean; source?: string }[]) {
+  if (!store.selectedImage) return
+  savingLabels.value = true
+  try {
+    await store.setImageLabels(store.selectedImage, labels)
+  } finally {
+    savingLabels.value = false
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -653,7 +680,7 @@ onUnmounted(() => {
     <div class="dataset-review-body">
           <main class="dataset-review-stage">
             <CanvasToolbar
-              v-if="imageSrc && annotations"
+              v-if="imageSrc && annotations && !isClassificationTask"
               :active-tool="activeTool"
               :sam-enabled="samEnabled"
               :sam-available="samStatus?.enabled !== false"
@@ -661,7 +688,7 @@ onUnmounted(() => {
               @update:sam-enabled="samEnabled = $event"
             />
             <EditableAnnotationOverlay
-              v-if="imageSrc && annotations"
+              v-if="imageSrc && annotations && !isClassificationTask"
               class="dataset-review-frame"
               :style="frameStyle"
               :image-src="imageSrc"
@@ -737,9 +764,16 @@ onUnmounted(() => {
                 </div>
               </template>
             </EditableAnnotationOverlay>
+            <div
+              v-else-if="imageSrc && annotations"
+              class="dataset-review-frame"
+              :style="frameStyle"
+            >
+              <img :src="imageSrc" :alt="store.currentAnnotations?.filename || ''" class="w-full h-full object-contain" />
+            </div>
 
             <Transition name="prompt-bar">
-              <div v-if="selectedPromptDetections.length > 0" class="dataset-prompt-action-bar">
+              <div v-if="!isClassificationTask && selectedPromptDetections.length > 0" class="dataset-prompt-action-bar">
                 <span>{{ selectedPromptDetections.length }} prompt{{ selectedPromptDetections.length > 1 ? 's' : '' }} selected</span>
                 <label class="dataset-prompt-conf-slider">
                   Conf {{ (inferNextConfidence * 100).toFixed(0) }}%
@@ -792,7 +826,16 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <section class="dataset-inspector-section">
+            <ClassificationReviewPanel
+              v-if="isClassificationTask"
+              :mode="classificationMode"
+              :labels="classificationLabels"
+              :known-labels="availableLabels"
+              :saving="savingLabels"
+              @save="saveClassificationLabels"
+            />
+
+            <section v-if="!isClassificationTask" class="dataset-inspector-section">
               <div class="dataset-layer-controls">
                 <button :class="{ 'is-active': store.overlayState.showBbox }" @click="store.toggleOverlay('showBbox')">BBoxes</button>
                 <button :class="{ 'is-active': store.overlayState.showLabels }" @click="store.toggleOverlay('showLabels')">Labels</button>
@@ -819,7 +862,7 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <section v-if="inferCandidates.length" class="dataset-candidate-panel">
+            <section v-if="!isClassificationTask && inferCandidates.length" class="dataset-candidate-panel">
               <header>
                 <div>
                   <strong>Candidates</strong>
@@ -862,7 +905,7 @@ onUnmounted(() => {
               <p v-else class="dataset-candidate-empty">All candidates overlap existing annotations.</p>
             </section>
 
-            <div class="dataset-detection-list">
+            <div v-if="!isClassificationTask" class="dataset-detection-list">
               <div
                 v-for="det in detections"
                 :key="det.id"

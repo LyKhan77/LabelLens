@@ -194,6 +194,20 @@ export const useDatasetStore = defineStore('dataset', () => {
     return result
   }
 
+  async function setImageLabels(
+    imgId: string,
+    labels: { label: string; confidence?: number; accepted?: boolean; source?: string }[],
+  ) {
+    if (!currentProject.value) return
+    const result = await api.setImageLabels(currentProject.value, imgId, labels)
+    if (selectedImage.value === imgId) {
+      await selectImage(imgId)
+    }
+    await fetchImages(imagesPage.value)
+    await fetchProjects()
+    return result
+  }
+
   async function inferNextVisualPrompt(
     sourceImgId: string,
     targetImgId: string,
@@ -426,6 +440,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     addDetection,
     updateDetection,
     deleteDetection,
+    setImageLabels,
     inferNextVisualPrompt,
     generateSamMask,
     saveToDataset,
