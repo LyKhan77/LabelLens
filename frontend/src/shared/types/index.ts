@@ -50,6 +50,22 @@ export type PromptMode = 'text' | 'visual' | 'free'
 export type InferenceMode = 'free' | 'prompt'
 export type ViewerState = 'empty' | 'loading' | 'result' | 'video' | 'rtsp'
 
+export type DatasetTaskType = 'detect' | 'segment' | 'classify_single' | 'classify_multi' | 'pose'
+
+export interface PoseTemplate {
+  name: string
+  keypoint_names: string[]
+  skeleton: [number, number][]
+  flip_idx: number[]
+  kpt_shape: [number, 3]
+}
+
+export interface DatasetTaskConfig {
+  classification_mode?: 'single' | 'multi'
+  requires_masks?: boolean
+  pose_template?: PoseTemplate
+}
+
 // GPU Detection
 export interface GpuInfo {
   index: number

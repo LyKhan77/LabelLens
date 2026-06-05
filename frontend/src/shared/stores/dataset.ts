@@ -7,6 +7,7 @@ import type {
   DetectionAnnotation,
   DetectionPayload,
 } from '../api/dataset'
+import type { DatasetTaskConfig, DatasetTaskType } from '../types'
 import * as api from '../api/dataset'
 
 const CLASS_COLOR_FALLBACKS = [
@@ -99,8 +100,12 @@ export const useDatasetStore = defineStore('dataset', () => {
     await fetchImages(imagesPage.value)
   }
 
-  async function createProject(name: string, classes: string[] = []) {
-    await api.createDataset(name, classes)
+  async function createProject(
+    name: string,
+    taskType: DatasetTaskType = 'detect',
+    taskConfig: DatasetTaskConfig = {},
+  ) {
+    await api.createDataset(name, taskType, taskConfig)
     await fetchProjects()
   }
 

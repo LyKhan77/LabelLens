@@ -1,8 +1,12 @@
 import { api } from './client'
+import type { DatasetTaskConfig, DatasetTaskType } from '../types'
 
 export interface DatasetProject {
   name: string
   created: string
+  schema_version: number
+  task_type: DatasetTaskType
+  task_config: DatasetTaskConfig
   class_to_id: Record<string, number>
   class_colors: Record<string, string>
   stats: {
@@ -100,10 +104,15 @@ export async function listDatasets(): Promise<DatasetProject[]> {
   return res.data
 }
 
-export async function createDataset(name: string, classes: string[] = []): Promise<unknown> {
+export async function createDataset(
+  name: string,
+  taskType: DatasetTaskType = 'detect',
+  taskConfig: DatasetTaskConfig = {},
+): Promise<unknown> {
   const form = new FormData()
   form.append('name', name)
-  form.append('classes', JSON.stringify(classes))
+  form.append('task_type', taskType)
+  form.append('task_config', JSON.stringify(taskConfig))
   const res = await api.post('/datasets', form)
   return res.data
 }

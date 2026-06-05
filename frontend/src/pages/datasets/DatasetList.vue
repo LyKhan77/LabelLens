@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
+import type { DatasetTaskConfig, DatasetTaskType, PoseTemplate } from '../../shared/types'
+import PoseTemplateEditor from './PoseTemplateEditor.vue'
 
 const store = useDatasetStore()
 
 const showCreate = ref(false)
 const newName = ref('')
-const newClasses = ref('')
+const newTaskType = ref<DatasetTaskType>('detect')
+const poseTemplate = ref<PoseTemplate>({
+  name: 'Box Corners',
+  keypoint_names: ['top_left', 'top_right', 'bottom_right', 'bottom_left'],
+  skeleton: [[0, 1], [1, 2], [2, 3], [3, 0]],
+  flip_idx: [1, 0, 3, 2],
+  kpt_shape: [4, 3],
+})
 const creating = ref(false)
 const deleting = ref<string | null>(null)
 const showDeleteConfirm = ref(false)
@@ -23,18 +32,34 @@ const totals = computed(() => store.projects.reduce(
   { images: 0, annotations: 0, accepted: 0, classes: 0 },
 ))
 
+const taskOptions: { value: DatasetTaskType; label: string; help: string }[] = [
+  { value: 'detect', label: 'Detection', help: 'Bounding boxes for object localization.' },
+  { value: 'segment', label: 'Segmentation', help: 'Bounding boxes plus object masks.' },
+  { value: 'classify_single', label: 'Classification · Single', help: 'One image-level label per image.' },
+  { value: 'classify_multi', label: 'Classification · Multi', help: 'Multiple image-level labels per image.' },
+  { value: 'pose', label: 'Pose', help: 'Multi-object bbox plus fixed keypoint skeletons.' },
+]
+
+function taskLabel(taskType: DatasetTaskType | string | undefined) {
+  return taskOptions.find((option) => option.value === taskType)?.label ?? 'Detection'
+}
+
+function buildTaskConfig(): DatasetTaskConfig {
+  if (newTaskType.value === 'segment') return { requires_masks: true }
+  if (newTaskType.value === 'classify_single') return { classification_mode: 'single' }
+  if (newTaskType.value === 'classify_multi') return { classification_mode: 'multi' }
+  if (newTaskType.value === 'pose') return { pose_template: poseTemplate.value }
+  return {}
+}
+
 async function createProject() {
   if (!newName.value.trim()) return
   creating.value = true
-  const classes = newClasses.value
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
   try {
-    await store.createProject(newName.value.trim(), classes)
+    await store.createProject(newName.value.trim(), newTaskType.value, buildTaskConfig())
     showCreate.value = false
     newName.value = ''
-    newClasses.value = ''
+    newTaskType.value = 'detect'
   } finally {
     creating.value = false
   }
@@ -120,12 +145,13 @@ async function confirmDelete() {
           </span>
           <span class="dataset-project-main">
             <strong>{{ p.name }}</strong>
-            <span>{{ p.stats.total_images }} images · {{ p.stats.total_annotations }} annotations</span>
+            <span>{{ taskLabel(p.task_type) }} · {{ p.stats.total_images }} images · {{ p.stats.total_annotations }} annotations</span>
           </span>
         </button>
 
         <div class="dataset-project-footer">
           <div class="dataset-project-tags">
+            <span>{{ taskLabel(p.task_type) }}</span>
             <span class="is-primary">{{ p.stats.accepted }} accepted</span>
             <span v-if="p.stats.rejected">{{ p.stats.rejected }} rejected</span>
             <span>{{ p.stats.classes.length }} classes</span>
@@ -182,9 +208,21 @@ async function confirmDelete() {
             </label>
 
             <label class="dataset-field-block">
-              <span class="dataset-field-label">Classes (optional)</span>
-              <input v-model="newClasses" placeholder="scratch, dent, crack" class="dataset-text-input" />
+              <span class="dataset-field-label">Task Type</span>
+              <select v-model="newTaskType" class="dataset-text-input">
+                <option v-for="option in taskOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+              <p class="text-[12px] text-ink-mute leading-relaxed">
+                {{ taskOptions.find((option) => option.value === newTaskType)?.help }}
+              </p>
             </label>
+
+            <PoseTemplateEditor
+              v-if="newTaskType === 'pose'"
+              v-model="poseTemplate"
+            />
           </div>
 
           <footer class="dataset-modal-footer">
