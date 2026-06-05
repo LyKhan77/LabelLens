@@ -9,7 +9,7 @@
 [![Models](https://img.shields.io/badge/models-YOLOE%20%2B%20SAM2.1-111827)](#model-files)
 [![Status](https://img.shields.io/badge/status-implemented%2C%20pending%20E2E%20validation-f59e0b)](#validation-status)
 
-LabelLens is a local-network computer vision workspace for YOLOE-powered object detection, dataset iteration, and YOLO fine-tuning orchestration. It separates GPU-heavy inference/training workloads in a FastAPI backend from a Vue 3 SPA, with REST APIs for batch workflows and WebSockets for live RTSP streams.
+LabelLens is a local-network computer vision workspace for YOLOE-powered object detection, task-aware dataset iteration, and YOLO fine-tuning orchestration. It separates GPU-heavy inference/training workloads in a FastAPI backend from a Vue 3 SPA, with REST APIs for batch workflows and WebSockets for live RTSP streams.
 
 The app is built for fast dataset loops: run prompt-free, text-prompt, or visual-prompt inference; review and correct labels; export YOLO/COCO datasets; then create immutable Train Tune dataset versions and launch training jobs.
 
@@ -18,7 +18,7 @@ The app is built for fast dataset loops: run prompt-free, text-prompt, or visual
 | Area | What it does |
 |------|--------------|
 | Inference Workspace | Free Inference with YOLOE LRPC vocabulary, text prompts, visual prompts via SAVPE, image/video/RTSP inputs, configurable overlays, and a compact detection log. |
-| Dataset Manager | Multi-project dataset workspace with overlay gallery, modal review, manual bbox editing, class colors, accept/reject review, Infer Next visual-prompt propagation, and YOLO/COCO export. |
+| Dataset Manager | Multi-project task-aware dataset workspace for detection, segmentation, single-label classification, multi-label classification, and pose datasets, with overlay gallery, modal review, class colors, and task-native exports. |
 | Auto-Labelling | Saves inference results into datasets from image, video, batch upload, or continuous RTSP viewer frames with optional timer control. |
 | SAM2.1 Auto-mask | Generates segmentation masks from manual bbox annotations when SAM is available; bbox saves remain non-fatal if SAM fails. |
 | Train Tune | Builds immutable detection/segmentation Dataset Versions, previews preprocessing/augmentation policy, recommends settings, runs training jobs, tracks metrics/artifacts, resumes checkpoints, and tests registered model versions. |
@@ -33,6 +33,8 @@ Backend unit tests currently cover dataset and Train Tune service/runtime behavi
 ```bash
 env/bin/python -m unittest discover backend/tests
 ```
+
+Current task-aware dataset support includes task selection at New Dataset, annotation-first labels, classification image labels, bbox-first pose skeleton annotation, Rapid Inference task gating, and native exports for classification and pose. Train Tune support for the new classification/pose tasks is still being expanded.
 
 ## Architecture
 

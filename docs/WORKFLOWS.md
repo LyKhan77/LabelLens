@@ -50,28 +50,30 @@ This document describes operator workflows from the user interface.
 ## Dataset Manager Review
 
 1. Open `/datasets`.
-2. Create or open a dataset project.
+2. Create or open a dataset project. New datasets choose a task type: Detection, Segmentation, Classification Single, Classification Multi, or Pose.
 3. Upload images or sample video/RTSP frames.
 4. Use the paginated gallery to inspect thumbnails with overlays.
 5. Use Select All Files for the current page/filter when bulk deletion is needed.
 6. Open an image in modal review.
 7. Zoom/pan for pixel-level inspection.
-8. Accept/reject detections.
-9. Add, edit, or delete manual bboxes.
-10. Adjust per-class colors when needed.
-11. Export accepted labels as YOLO TXT or COCO JSON.
+8. Review annotations with the task-specific editor.
+9. Detection/Segmentation: accept/reject detections and add, edit, or delete manual bboxes.
+10. Classification: assign one image label or multiple image labels depending on dataset task.
+11. Pose: create a bbox-first pose instance, then drag fixed-template keypoints and set visibility.
+12. Adjust per-class colors when needed.
+13. Export accepted labels in the native task format.
 
 ## Rapid Inference
 
 1. Open Dataset Manager.
 2. Click Rapid Inference.
-3. Upload images or a video.
-4. Choose Free, Text, or Visual prompt mode.
-5. Load the required model.
+3. Choose current unlabeled dataset images or upload new images/video/folder.
+4. Detection/Segmentation: choose Free, Text, or Visual prompt mode.
+5. Classification/Pose: use a compatible trained model version when that model-selection phase is available.
 6. Start inference.
 7. Watch frame-by-frame progress.
-8. Review detections in the modal reviewer.
-9. Accept, reject, correct, or delete annotations.
+8. Review annotations in the task-specific modal reviewer.
+9. Accept, reject, correct, or delete annotations as supported by the dataset task.
 
 ## Infer Next Visual Assist
 

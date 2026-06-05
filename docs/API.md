@@ -64,7 +64,7 @@ Backend sends JSON frame payloads or `{ "error": "..." }`.
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/datasets` | List dataset projects |
-| POST | `/api/datasets` | Create dataset project from form `name`, `classes` JSON list |
+| POST | `/api/datasets` | Create dataset project from form `name`, `task_type`, optional `task_config` JSON object |
 | DELETE | `/api/datasets/{name}` | Delete dataset project |
 | PATCH | `/api/datasets/{name}/class-colors` | Persist class color override |
 | GET | `/api/datasets/{name}/images` | Paginated image list; query `page`, `limit` |
@@ -78,7 +78,7 @@ Backend sends JSON frame payloads or `{ "error": "..." }`.
 | GET | `/api/datasets/{name}/label-jobs/{job_id}` | Poll rapid inference job state |
 | POST | `/api/datasets/{name}/batch` | Batch upload and infer images |
 | POST | `/api/datasets/{name}/save-stream` | Sample video/RTSP frames, infer, and save detections |
-| POST | `/api/datasets/{name}/export` | Export accepted labels as `yolo` or `coco` zip |
+| POST | `/api/datasets/{name}/export` | Export accepted labels as `yolo` or `coco` zip. `yolo` dispatches to native task export for detection, classification, and pose. |
 
 ## Dataset Review and Annotation
 
@@ -87,6 +87,8 @@ Backend sends JSON frame payloads or `{ "error": "..." }`.
 | POST | `/api/datasets/{name}/images/{source_img_id}/infer-next` | Run visual-prompt candidates from source image to target image |
 | POST | `/api/datasets/{name}/images/{img_id}/sam-mask` | Generate SAM2.1 mask from bbox prompt |
 | POST | `/api/datasets/{name}/images/{img_id}/detections` | Add manual detection |
+| POST | `/api/datasets/{name}/images/{img_id}/labels` | Set image-level labels for single-label or multi-label classification datasets |
+| POST | `/api/datasets/{name}/images/{img_id}/poses` | Add bbox-first pose instance with fixed-template keypoints |
 | PATCH | `/api/datasets/{name}/images/{img_id}/detections/{det_id}` | Update detection fields |
 | DELETE | `/api/datasets/{name}/images/{img_id}/detections/{det_id}` | Delete detection |
 | PATCH | `/api/datasets/{name}/images/{img_id}/review` | Save accept/reject review state |
