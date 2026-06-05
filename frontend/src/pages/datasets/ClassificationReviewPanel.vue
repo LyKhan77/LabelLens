@@ -83,19 +83,22 @@ function save() {
     </div>
 
     <!-- Active label indicator -->
-    <div class="cls-active-row">
+    <div class="cls-active-block">
+      <span class="cls-active-label">Active Label</span>
       <template v-if="activeLabels.length">
-        <span
-          v-for="al in activeLabels"
-          :key="al"
-          class="cls-active-chip"
-          :style="{ '--chip-color': colorFor(al) }"
-        >
-          <span class="cls-active-dot" />
-          {{ al }}
-        </span>
+        <div class="cls-active-values">
+          <span
+            v-for="al in activeLabels"
+            :key="al"
+            class="cls-active-chip"
+            :style="{ '--chip-color': colorFor(al) }"
+          >
+            <span class="cls-active-dot" />
+            {{ al }}
+          </span>
+        </div>
       </template>
-      <span v-else class="cls-active-none">No active label</span>
+      <span v-else class="cls-active-none">No active label selected</span>
     </div>
 
     <!-- Label chips -->
@@ -153,7 +156,7 @@ function save() {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 14px 0;
+  padding: 14px 12px;
 }
 
 /* Header */
@@ -180,31 +183,47 @@ function save() {
   letter-spacing: 0.05em;
 }
 
-/* Active label indicator */
-.cls-active-row {
+/* Active label block */
+.cls-active-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-canvas-soft);
+  border: 1px solid var(--color-hairline);
+}
+.cls-active-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-ink-faint);
+}
+.cls-active-values {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  min-height: 26px;
-  align-items: center;
 }
 .cls-active-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
   font-weight: 600;
   color: var(--chip-color);
-  background: color-mix(in srgb, var(--chip-color) 12%, transparent);
+  background: color-mix(in srgb, var(--chip-color) 14%, var(--color-canvas));
+  border: 1px solid color-mix(in srgb, var(--chip-color) 25%, transparent);
 }
 .cls-active-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--chip-color);
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--chip-color) 25%, transparent);
 }
 .cls-active-none {
   font-size: 11px;
