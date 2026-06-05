@@ -864,6 +864,7 @@ onUnmounted(() => {
               :mode="classificationMode"
               :labels="classificationLabels"
               :known-labels="availableLabels"
+              :class-colors="classColors"
               :saving="savingLabels"
               @save="saveClassificationLabels"
             />
