@@ -6,6 +6,7 @@ import type {
   ImageAnnotation,
   DetectionAnnotation,
   DetectionPayload,
+  PosePayload,
 } from '../api/dataset'
 import type { DatasetTaskConfig, DatasetTaskType } from '../types'
 import * as api from '../api/dataset'
@@ -200,6 +201,17 @@ export const useDatasetStore = defineStore('dataset', () => {
   ) {
     if (!currentProject.value) return
     const result = await api.setImageLabels(currentProject.value, imgId, labels)
+    if (selectedImage.value === imgId) {
+      await selectImage(imgId)
+    }
+    await fetchImages(imagesPage.value)
+    await fetchProjects()
+    return result
+  }
+
+  async function addPose(imgId: string, payload: PosePayload) {
+    if (!currentProject.value) return
+    const result = await api.addPose(currentProject.value, imgId, payload)
     if (selectedImage.value === imgId) {
       await selectImage(imgId)
     }
@@ -441,6 +453,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     updateDetection,
     deleteDetection,
     setImageLabels,
+    addPose,
     inferNextVisualPrompt,
     generateSamMask,
     saveToDataset,

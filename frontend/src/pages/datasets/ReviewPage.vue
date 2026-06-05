@@ -2,10 +2,12 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import { useInferenceStore } from '../../shared/stores/inference'
-import type { ClassificationLabelAnnotation, DetectionAnnotation, DatasetOverlayDetection } from '../../shared/api/dataset'
+import type { ClassificationLabelAnnotation, DetectionAnnotation, DatasetOverlayDetection, PoseAnnotation, PosePayload } from '../../shared/api/dataset'
+import type { PoseTemplate } from '../../shared/types'
 import EditableAnnotationOverlay from './EditableAnnotationOverlay.vue'
 import CanvasToolbar from './CanvasToolbar.vue'
 import ClassificationReviewPanel from './ClassificationReviewPanel.vue'
+import PoseAnnotationOverlay from './PoseAnnotationOverlay.vue'
 import { getSamStatus } from '../../shared/api/sam'
 
 const emit = defineEmits<{ back: [] }>()
@@ -38,12 +40,15 @@ const pendingDeleteDetection = ref<DetectionAnnotation | null>(null)
 const activeTool = ref<'select' | 'bbox' | 'pan'>('select')
 const samEnabled = ref(true)
 const savingLabels = ref(false)
+const savingPose = ref(false)
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
 const detections = computed(() => annotations.value?.detections ?? [])
 const classificationLabels = computed<ClassificationLabelAnnotation[]>(() => annotations.value?.labels ?? [])
+const poses = computed<PoseAnnotation[]>(() => annotations.value?.poses ?? [])
 const taskType = computed(() => store.currentProjectData?.task_type ?? annotations.value?.task_type ?? 'detect')
 const isClassificationTask = computed(() => taskType.value === 'classify_single' || taskType.value === 'classify_multi')
+const isPoseTask = computed(() => taskType.value === 'pose')
 const classificationMode = computed<'single' | 'multi'>(() => taskType.value === 'classify_multi' ? 'multi' : 'single')
 const acceptedCount = computed(() => {
   if (isClassificationTask.value) return classificationLabels.value.filter((label) => label.accepted).length
@@ -71,6 +76,13 @@ const globalImageIndex = computed(() => {
 const frameStyle = computed(() => ({
   aspectRatio: `${annotations.value?.width ?? 16} / ${annotations.value?.height ?? 9}`,
 }))
+const poseTemplate = computed<PoseTemplate>(() => store.currentProjectData?.task_config?.pose_template ?? {
+  name: 'Box Corners',
+  keypoint_names: ['top_left', 'top_right', 'bottom_right', 'bottom_left'],
+  skeleton: [[0, 1], [1, 2], [2, 3], [3, 0]],
+  flip_idx: [1, 0, 3, 2],
+  kpt_shape: [4, 3],
+})
 
 const classes = computed(() => {
   const cls = new Map<string, number>()
@@ -120,6 +132,16 @@ async function saveClassificationLabels(labels: { label: string; confidence?: nu
     await store.setImageLabels(store.selectedImage, labels)
   } finally {
     savingLabels.value = false
+  }
+}
+
+async function savePose(payload: PosePayload) {
+  if (!store.selectedImage) return
+  savingPose.value = true
+  try {
+    await store.addPose(store.selectedImage, payload)
+  } finally {
+    savingPose.value = false
   }
 }
 
@@ -680,7 +702,7 @@ onUnmounted(() => {
     <div class="dataset-review-body">
           <main class="dataset-review-stage">
             <CanvasToolbar
-              v-if="imageSrc && annotations && !isClassificationTask"
+              v-if="imageSrc && annotations && !isClassificationTask && !isPoseTask"
               :active-tool="activeTool"
               :sam-enabled="samEnabled"
               :sam-available="samStatus?.enabled !== false"
@@ -688,7 +710,7 @@ onUnmounted(() => {
               @update:sam-enabled="samEnabled = $event"
             />
             <EditableAnnotationOverlay
-              v-if="imageSrc && annotations && !isClassificationTask"
+              v-if="imageSrc && annotations && !isClassificationTask && !isPoseTask"
               class="dataset-review-frame"
               :style="frameStyle"
               :image-src="imageSrc"
@@ -764,6 +786,17 @@ onUnmounted(() => {
                 </div>
               </template>
             </EditableAnnotationOverlay>
+            <PoseAnnotationOverlay
+              v-else-if="imageSrc && annotations && isPoseTask"
+              :style="frameStyle"
+              :image-src="imageSrc"
+              :width="annotations.width"
+              :height="annotations.height"
+              :poses="poses"
+              :template="poseTemplate"
+              :saving="savingPose"
+              @save="savePose"
+            />
             <div
               v-else-if="imageSrc && annotations"
               class="dataset-review-frame"
@@ -773,7 +806,7 @@ onUnmounted(() => {
             </div>
 
             <Transition name="prompt-bar">
-              <div v-if="!isClassificationTask && selectedPromptDetections.length > 0" class="dataset-prompt-action-bar">
+              <div v-if="!isClassificationTask && !isPoseTask && selectedPromptDetections.length > 0" class="dataset-prompt-action-bar">
                 <span>{{ selectedPromptDetections.length }} prompt{{ selectedPromptDetections.length > 1 ? 's' : '' }} selected</span>
                 <label class="dataset-prompt-conf-slider">
                   Conf {{ (inferNextConfidence * 100).toFixed(0) }}%
@@ -835,7 +868,7 @@ onUnmounted(() => {
               @save="saveClassificationLabels"
             />
 
-            <section v-if="!isClassificationTask" class="dataset-inspector-section">
+            <section v-if="!isClassificationTask && !isPoseTask" class="dataset-inspector-section">
               <div class="dataset-layer-controls">
                 <button :class="{ 'is-active': store.overlayState.showBbox }" @click="store.toggleOverlay('showBbox')">BBoxes</button>
                 <button :class="{ 'is-active': store.overlayState.showLabels }" @click="store.toggleOverlay('showLabels')">Labels</button>
@@ -862,7 +895,7 @@ onUnmounted(() => {
               </div>
             </section>
 
-            <section v-if="!isClassificationTask && inferCandidates.length" class="dataset-candidate-panel">
+            <section v-if="!isClassificationTask && !isPoseTask && inferCandidates.length" class="dataset-candidate-panel">
               <header>
                 <div>
                   <strong>Candidates</strong>
@@ -905,7 +938,25 @@ onUnmounted(() => {
               <p v-else class="dataset-candidate-empty">All candidates overlap existing annotations.</p>
             </section>
 
-            <div v-if="!isClassificationTask" class="dataset-detection-list">
+            <section v-if="isPoseTask" class="dataset-inspector-section">
+              <div class="dataset-field-row">
+                <span class="dataset-field-label">Pose Instances</span>
+                <span class="dataset-field-value">{{ poses.length }}</span>
+              </div>
+              <div class="dataset-detection-list">
+                <div v-for="pose in poses" :key="pose.id" class="dataset-detection-row">
+                  <div class="min-w-0">
+                    <p class="text-[12px] font-medium truncate">{{ pose.label }}</p>
+                    <p class="text-[10px] text-ink-faint font-mono truncate">{{ pose.keypoints.length }} keypoints · [{{ pose.box.map((v) => Math.round(v)).join(', ') }}]</p>
+                  </div>
+                </div>
+                <div v-if="!poses.length" class="p-8 text-center text-[12px] text-ink-faint">
+                  No pose instances for this image.
+                </div>
+              </div>
+            </section>
+
+            <div v-if="!isClassificationTask && !isPoseTask" class="dataset-detection-list">
               <div
                 v-for="det in detections"
                 :key="det.id"
