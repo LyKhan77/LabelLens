@@ -721,6 +721,42 @@ class DatasetService:
         self._write_meta(name, meta)
         return meta
 
+    def _annotation_label_collections(self, ann: dict) -> list[list[dict]]:
+        return [
+            ann.setdefault("detections", []),
+            ann.setdefault("labels", []),
+            ann.setdefault("poses", []),
+        ]
+
+    def _has_any_annotations(self, ann: dict) -> bool:
+        for collection in self._annotation_label_collections(ann):
+            if collection:
+                return True
+        return False
+
+    def _update_annotation_label(self, ann: dict, old_label: str, new_label: str, cls_id: int | None = None) -> bool:
+        changed = False
+        for collection in self._annotation_label_collections(ann):
+            for item in collection:
+                if item.get("label") == old_label:
+                    item["label"] = new_label
+                    if cls_id is not None:
+                        item["cls_id"] = cls_id
+                    changed = True
+        return changed
+
+    def _remove_annotation_label(self, ann: dict, label: str) -> bool:
+        changed = False
+        for key in ("detections", "labels", "poses"):
+            existing = ann.get(key, [])
+            remaining = [item for item in existing if item.get("label") != label]
+            if len(remaining) != len(existing):
+                ann[key] = remaining
+                changed = True
+        if changed:
+            ann["labeled"] = self._has_any_annotations(ann)
+        return changed
+
     def rename_class(self, name: str, old_label: str, new_label: str) -> dict:
         """Rename a class across all annotations. Merges if new_label already exists."""
         pdir = self._project_dir(name)
@@ -749,12 +785,7 @@ class DatasetService:
                 fpath = os.path.join(ann_dir, fname)
                 with open(fpath) as f:
                     ann = json.load(f)
-                changed = False
-                for det in ann.get("detections", []):
-                    if det.get("label") == old_label:
-                        det["label"] = new_label
-                        det["cls_id"] = new_cls_id
-                        changed = True
+                changed = self._update_annotation_label(ann, old_label, new_label, new_cls_id)
                 if changed:
                     with open(fpath, "w") as f:
                         json.dump(ann, f, indent=2)
@@ -773,11 +804,7 @@ class DatasetService:
                 fpath = os.path.join(ann_dir, fname)
                 with open(fpath) as f:
                     ann = json.load(f)
-                changed = False
-                for det in ann.get("detections", []):
-                    if det.get("label") == old_label:
-                        det["label"] = new_label
-                        changed = True
+                changed = self._update_annotation_label(ann, old_label, new_label, old_id)
                 if changed:
                     with open(fpath, "w") as f:
                         json.dump(ann, f, indent=2)
@@ -810,10 +837,7 @@ class DatasetService:
             fpath = os.path.join(ann_dir, fname)
             with open(fpath) as f:
                 ann = json.load(f)
-            remaining = [d for d in ann.get("detections", []) if d.get("label") != label]
-            if len(remaining) != len(ann.get("detections", [])):
-                ann["detections"] = remaining
-                ann["labeled"] = bool(remaining)
+            if self._remove_annotation_label(ann, label):
                 with open(fpath, "w") as f:
                     json.dump(ann, f, indent=2)
 

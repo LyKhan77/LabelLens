@@ -441,6 +441,57 @@ class DatasetServiceTest(unittest.TestCase):
             label_names = [n for n in zf.namelist() if n.endswith(".txt")]
         self.assertEqual(label_names, [])
 
+    def test_delete_class_removes_classification_labels(self):
+        self.service.create_project("cls", task_type="classify_multi")
+        saved = self.service.upload_raw("cls", jpg_bytes(width=64, height=48))
+        self.service.set_image_labels(
+            "cls",
+            saved["img_id"],
+            [{"label": "long-range"}, {"label": "close-range"}],
+        )
+
+        meta = self.service.delete_class("cls", "long-range")
+        image = self.service.get_image("cls", saved["img_id"])
+
+        self.assertEqual(meta["class_to_id"], {"close-range": 1})
+        self.assertEqual([label["label"] for label in image["annotations"]["labels"]], ["close-range"])
+        self.assertTrue(image["annotations"]["labeled"])
+
+    def test_delete_class_removes_pose_instances(self):
+        self.service.create_project("pose", task_type="pose")
+        saved = self.service.upload_raw("pose", jpg_bytes(width=100, height=80))
+        self.service.add_pose(
+            "pose",
+            saved["img_id"],
+            {
+                "label": "person",
+                "box": [10, 10, 50, 50],
+                "keypoints": [
+                    {"name": "top_left", "x": 10, "y": 10, "visibility": "visible"},
+                    {"name": "top_right", "x": 50, "y": 10, "visibility": "visible"},
+                    {"name": "bottom_right", "x": 50, "y": 50, "visibility": "visible"},
+                    {"name": "bottom_left", "x": 10, "y": 50, "visibility": "visible"},
+                ],
+            },
+        )
+
+        meta = self.service.delete_class("pose", "person")
+        image = self.service.get_image("pose", saved["img_id"])
+
+        self.assertEqual(meta["class_to_id"], {})
+        self.assertEqual(image["annotations"]["poses"], [])
+        self.assertFalse(image["annotations"]["labeled"])
+
+    def test_rename_class_updates_classification_labels_and_pose_instances(self):
+        self.service.create_project("cls", task_type="classify_single")
+        cls_saved = self.service.upload_raw("cls", jpg_bytes(width=64, height=48))
+        self.service.set_image_labels("cls", cls_saved["img_id"], [{"label": "old"}])
+
+        self.service.rename_class("cls", "old", "new")
+        cls_image = self.service.get_image("cls", cls_saved["img_id"])
+
+        self.assertEqual(cls_image["annotations"]["labels"][0]["label"], "new")
+
     def test_rejected_detection_is_excluded_from_export(self):
         self.service.create_project("demo", ["car", "truck"])
         saved = self.service.save_image(
