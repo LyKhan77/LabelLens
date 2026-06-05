@@ -12,6 +12,7 @@ const datasetStore = useDatasetStore()
 const inferenceStore = useInferenceStore()
 
 const phase = ref<'upload' | 'configure' | 'progress' | 'done'>('upload')
+const sourceMode = ref<'current' | 'upload'>('current')
 const files = ref<File[]>([])
 const sampleFps = ref(1)
 const isDragging = ref(false)
@@ -29,6 +30,15 @@ const loadingModel = ref(false)
 
 const job = ref<DatasetLabelJobStatus | null>(null)
 const classColors = computed(() => datasetStore.currentProjectData?.class_colors ?? {})
+const taskType = computed(() => datasetStore.currentProjectData?.task_type ?? 'detect')
+const isGroundingTask = computed(() => taskType.value === 'detect' || taskType.value === 'segment')
+const taskLabel = computed(() => {
+  if (taskType.value === 'segment') return 'Segmentation'
+  if (taskType.value === 'classify_single') return 'Classification · Single'
+  if (taskType.value === 'classify_multi') return 'Classification · Multi'
+  if (taskType.value === 'pose') return 'Pose'
+  return 'Detection'
+})
 const highlightedItemIndex = ref(0)
 const jobComplete = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -78,9 +88,10 @@ const videoFiles = computed(() => files.value.filter((f) => f.type.startsWith('v
 const hasMixedMedia = computed(() => imageFiles.value.length > 0 && videoFiles.value.length > 0)
 const labels = computed(() => labelsText.value.split(',').map((s) => s.trim()).filter(Boolean))
 const requiredModel = computed(() => promptType.value === 'free' ? 'free' : 'prompt')
-const modelReady = computed(() => inferenceStore.modelLoaded && inferenceStore.inferenceMode === requiredModel.value)
-const canUpload = computed(() => files.value.length > 0 && !hasMixedMedia.value)
+const modelReady = computed(() => isGroundingTask.value && inferenceStore.modelLoaded && inferenceStore.inferenceMode === requiredModel.value)
+const canUpload = computed(() => sourceMode.value === 'current' || (files.value.length > 0 && !hasMixedMedia.value))
 const canStart = computed(() => {
+  if (!isGroundingTask.value) return false
   if (!modelReady.value) return false
   if (promptType.value === 'text' && labels.value.length === 0) return false
   if (promptType.value === 'visual' && (!referImage.value || visualAnnotations.value.length === 0)) return false
@@ -156,6 +167,11 @@ function handleReference(file: File) {
 
 async function startUpload() {
   error.value = ''
+  if (sourceMode.value === 'current') {
+    phase.value = 'configure'
+    uploadMessage.value = 'Using current unlabeled dataset images'
+    return
+  }
   if (!canUpload.value) {
     error.value = 'Upload either images or videos, not mixed media.'
     return
@@ -302,7 +318,19 @@ onUnmounted(() => {
 
         <div class="dataset-modal-body dataset-upload-body">
           <template v-if="phase === 'upload'">
+            <div class="dataset-mode-tabs">
+              <button :class="{ 'is-active': sourceMode === 'current' }" @click="sourceMode = 'current'">
+                <strong>Current Dataset</strong>
+                <small>Use unlabeled images already in this dataset</small>
+              </button>
+              <button :class="{ 'is-active': sourceMode === 'upload' }" @click="sourceMode = 'upload'">
+                <strong>Upload New</strong>
+                <small>Add images, videos, or folders first</small>
+              </button>
+            </div>
+
             <div
+              v-if="sourceMode === 'upload'"
               class="dataset-dropzone"
               :class="{ 'is-active': isDragging }"
               @dragover.prevent="isDragging = true"
@@ -322,7 +350,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div v-if="files.length" class="dataset-upload-files">
+            <div v-if="sourceMode === 'upload' && files.length" class="dataset-upload-files">
               <div class="dataset-upload-files-header">
                 <span>{{ files.length }} selected</span>
                 <small v-if="hasMixedMedia">Mixed image and video batches are not supported.</small>
@@ -336,7 +364,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div v-if="videoFiles.length" class="dataset-panel-block">
+            <div v-if="sourceMode === 'upload' && videoFiles.length" class="dataset-panel-block">
               <div class="dataset-field-row">
                 <span class="dataset-field-label">Frame Sampling</span>
                 <span class="dataset-field-value">{{ sampleFps }} fps</span>
@@ -346,6 +374,14 @@ onUnmounted(() => {
           </template>
 
           <template v-else-if="phase === 'configure'">
+            <div class="dataset-panel-block">
+              <div class="dataset-field-row">
+                <span class="dataset-field-label">Dataset Task</span>
+                <span class="dataset-field-value">{{ taskLabel }}</span>
+              </div>
+            </div>
+
+            <template v-if="isGroundingTask">
             <div class="dataset-mode-tabs">
               <button :class="{ 'is-active': promptType === 'free' }" @click="promptType = 'free'">
                 <strong>Free</strong>
@@ -411,6 +447,17 @@ onUnmounted(() => {
               <button class="dataset-secondary-button" :class="{ 'is-ready': modelReady }" :disabled="loadingModel" @click="loadSelectedModel">
                 {{ modelReady ? 'Model Ready' : loadingModel ? 'Loading...' : 'Load Model' }}
               </button>
+            </div>
+            </template>
+
+            <div v-else class="dataset-panel-block">
+              <div class="dataset-field-row">
+                <span class="dataset-field-label">Required Method</span>
+                <span class="dataset-field-value">Compatible trained model</span>
+              </div>
+              <p class="text-[12px] text-ink-mute leading-relaxed">
+                {{ taskLabel }} Rapid Inference will run from a compatible Train Tune model version. Model selection is enabled in the next implementation phase; YOLOE grounding is only valid for Detection and Segmentation datasets.
+              </p>
             </div>
           </template>
 
@@ -481,8 +528,8 @@ onUnmounted(() => {
             {{ phase === 'upload' || phase === 'done' ? 'Close' : 'Back' }}
           </button>
           <div class="dataset-footer-actions">
-            <button v-if="phase === 'upload'" class="dataset-primary-button" :disabled="uploading || !files.length" @click="startUpload">
-              {{ uploading ? 'Uploading...' : 'Upload' }}
+            <button v-if="phase === 'upload'" class="dataset-primary-button" :disabled="uploading || !canUpload" @click="startUpload">
+              {{ sourceMode === 'current' ? 'Continue' : uploading ? 'Uploading...' : 'Upload' }}
             </button>
             <button v-else-if="phase === 'configure'" class="dataset-primary-button" :disabled="!canStart" @click="startLabeling">
               Start Inference
