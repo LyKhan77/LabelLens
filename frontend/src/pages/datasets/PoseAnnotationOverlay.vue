@@ -189,7 +189,6 @@ function stopDrag() {
 }
 
 function onWheel(event: WheelEvent) {
-  if (props.activeTool !== 'pan') return
   event.preventDefault()
   const rect = (event.currentTarget as SVGSVGElement).getBoundingClientRect()
   const svgX = ((event.clientX - rect.left) / rect.width) * props.width
