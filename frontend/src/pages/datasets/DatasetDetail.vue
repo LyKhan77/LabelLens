@@ -470,7 +470,7 @@ function closeClassDeleteDialog() {
             </span>
 
             <span class="dataset-count-badge">
-              {{ img.accepted + img.rejected }} bbox
+              {{ img.accepted + img.rejected }} annotated
             </span>
           </div>
 

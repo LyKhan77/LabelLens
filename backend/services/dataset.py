@@ -483,12 +483,15 @@ class DatasetService:
                 with open(ann_path) as f:
                     ann = json.load(f)
                 dets = ann.get("detections", [])
+                label_anns = ann.get("labels", [])
+                pose_anns = ann.get("poses", [])
                 detections_preview = [self._preview_detection(det) for det in dets]
-                if not ann.get("labeled", True) and len(dets) == 0:
+                annotation_items = [*dets, *label_anns, *pose_anns]
+                if not ann.get("labeled", True) and len(annotation_items) == 0:
                     status = "unlabeled"
                 else:
-                    for det in dets:
-                        if det.get("accepted", True):
+                    for item in annotation_items:
+                        if item.get("accepted", True):
                             accepted_count += 1
                         else:
                             rejected_count += 1

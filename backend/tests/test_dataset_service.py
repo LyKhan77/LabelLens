@@ -241,6 +241,18 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertTrue(ann["labeled"])
         self.assertEqual(self.service._read_meta("cls")["class_to_id"], {"ok": 0})
 
+    def test_list_images_counts_classification_labels_as_annotations(self):
+        self.service.create_project("cls", task_type="classify_single")
+        saved = self.service.upload_raw("cls", jpg_bytes())
+        self.service.set_image_labels("cls", saved["img_id"], [{"label": "ok", "confidence": 1.0}])
+
+        result = self.service.list_images("cls")
+
+        image = result["images"][0]
+        self.assertEqual(image["status"], "accepted")
+        self.assertEqual(image["accepted"], 1)
+        self.assertEqual(image["rejected"], 0)
+
     def test_classify_single_rejects_multiple_labels(self):
         self.service.create_project("cls", task_type="classify_single")
         saved = self.service.upload_raw("cls", jpg_bytes())
