@@ -8,6 +8,7 @@ import EditableAnnotationOverlay from './EditableAnnotationOverlay.vue'
 import CanvasToolbar from './CanvasToolbar.vue'
 import ClassificationReviewPanel from './ClassificationReviewPanel.vue'
 import PoseAnnotationOverlay from './PoseAnnotationOverlay.vue'
+import PoseToolbar, { type PoseTool } from './PoseToolbar.vue'
 import { getSamStatus } from '../../shared/api/sam'
 
 const emit = defineEmits<{ back: [] }>()
@@ -38,6 +39,8 @@ const promptDetectionIds = ref<Set<number>>(new Set())
 const showDetectionDeleteConfirm = ref(false)
 const pendingDeleteDetection = ref<DetectionAnnotation | null>(null)
 const activeTool = ref<'select' | 'bbox' | 'pan'>('select')
+const poseTool = ref<PoseTool>('move')
+const editingPoseId = ref<number | null>(null)
 const samEnabled = ref(true)
 const savingLabels = ref(false)
 const savingPose = ref(false)
@@ -140,6 +143,28 @@ async function savePose(payload: PosePayload) {
   savingPose.value = true
   try {
     await store.addPose(store.selectedImage, payload)
+  } finally {
+    savingPose.value = false
+  }
+}
+
+async function updatePose(payload: PosePayload & { id: number }) {
+  if (!store.selectedImage) return
+  savingPose.value = true
+  try {
+    await store.updatePose(store.selectedImage, payload.id, payload)
+    editingPoseId.value = null
+  } finally {
+    savingPose.value = false
+  }
+}
+
+async function removePose(payload: { id: number }) {
+  if (!store.selectedImage) return
+  savingPose.value = true
+  try {
+    await store.deletePose(store.selectedImage, payload.id)
+    editingPoseId.value = null
   } finally {
     savingPose.value = false
   }
@@ -571,6 +596,12 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'v' || e.key === 'V') activeTool.value = 'select'
   if (e.key === 'b' || e.key === 'B') activeTool.value = 'bbox'
   if (e.key === 'h' || e.key === 'H') activeTool.value = 'pan'
+  if (isPoseTask.value) {
+    if (e.key === 'm' || e.key === 'M') poseTool.value = 'move'
+    if (e.key === 'b' || e.key === 'B') poseTool.value = 'bbox'
+    if (e.key === 'h' || e.key === 'H') poseTool.value = 'pan'
+    if (e.key === 'c' || e.key === 'C') poseTool.value = 'visibility'
+  }
   if ((e.key === 'm' || e.key === 'M') && samStatus.value?.enabled !== false) samEnabled.value = !samEnabled.value
 }
 
@@ -709,6 +740,11 @@ onUnmounted(() => {
               @update:active-tool="activeTool = $event"
               @update:sam-enabled="samEnabled = $event"
             />
+            <PoseToolbar
+              v-if="imageSrc && annotations && isPoseTask"
+              :active-tool="poseTool"
+              @update:active-tool="poseTool = $event"
+            />
             <EditableAnnotationOverlay
               v-if="imageSrc && annotations && !isClassificationTask && !isPoseTask"
               class="dataset-review-frame"
@@ -794,8 +830,13 @@ onUnmounted(() => {
               :height="annotations.height"
               :poses="poses"
               :template="poseTemplate"
+              :active-tool="poseTool"
+              :editing-pose-id="editingPoseId"
               :saving="savingPose"
               @save="savePose"
+              @update="updatePose"
+              @delete="removePose"
+              @update:editing-pose-id="editingPoseId = $event"
             />
             <div
               v-else-if="imageSrc && annotations"
@@ -945,7 +986,12 @@ onUnmounted(() => {
                 <span class="dataset-field-value">{{ poses.length }}</span>
               </div>
               <div class="dataset-detection-list">
-                <div v-for="pose in poses" :key="pose.id" class="dataset-detection-row">
+                <div
+                  v-for="pose in poses" :key="pose.id"
+                  class="dataset-detection-row cursor-pointer"
+                  :class="{ 'is-active': editingPoseId === pose.id }"
+                  @click="editingPoseId = pose.id"
+                >
                   <div class="min-w-0">
                     <p class="text-[12px] font-medium truncate">{{ pose.label }}</p>
                     <p class="text-[10px] text-ink-faint font-mono truncate">{{ pose.keypoints.length }} keypoints · [{{ pose.box.map((v) => Math.round(v)).join(', ') }}]</p>
