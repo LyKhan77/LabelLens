@@ -230,6 +230,56 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertEqual(det["source"], "visual_prompt")
         self.assertEqual(det["confidence"], 0.82)
 
+    def test_classify_single_accepts_one_image_label(self):
+        self.service.create_project("cls", task_type="classify_single")
+        saved = self.service.upload_raw("cls", jpg_bytes())
+
+        ann = self.service.set_image_labels("cls", saved["img_id"], [{"label": "ok", "confidence": 1.0}])
+
+        self.assertEqual(len(ann["labels"]), 1)
+        self.assertEqual(ann["labels"][0]["label"], "ok")
+        self.assertTrue(ann["labeled"])
+        self.assertEqual(self.service._read_meta("cls")["class_to_id"], {"ok": 0})
+
+    def test_classify_single_rejects_multiple_labels(self):
+        self.service.create_project("cls", task_type="classify_single")
+        saved = self.service.upload_raw("cls", jpg_bytes())
+
+        with self.assertRaises(ValueError):
+            self.service.set_image_labels("cls", saved["img_id"], [{"label": "ok"}, {"label": "bad"}])
+
+    def test_classify_multi_accepts_multiple_image_labels(self):
+        self.service.create_project("multi", task_type="classify_multi")
+        saved = self.service.upload_raw("multi", jpg_bytes())
+
+        ann = self.service.set_image_labels("multi", saved["img_id"], [{"label": "red"}, {"label": "damaged"}])
+
+        self.assertEqual([label["label"] for label in ann["labels"]], ["red", "damaged"])
+        self.assertEqual(self.service._read_meta("multi")["class_to_id"], {"red": 0, "damaged": 1})
+
+    def test_pose_annotation_persists_bbox_keypoints_and_visibility(self):
+        self.service.create_project("pose", task_type="pose")
+        saved = self.service.upload_raw("pose", jpg_bytes(width=100, height=80))
+
+        ann = self.service.add_pose(
+            "pose",
+            saved["img_id"],
+            {
+                "label": "box",
+                "box": [10, 10, 50, 50],
+                "keypoints": [
+                    {"name": "top_left", "x": 10, "y": 10, "visibility": "visible"},
+                    {"name": "top_right", "x": 50, "y": 10, "visibility": "occluded"},
+                    {"name": "bottom_right", "x": 50, "y": 50, "visibility": "visible"},
+                    {"name": "bottom_left", "x": 10, "y": 50, "visibility": "missing"},
+                ],
+            },
+        )
+
+        self.assertEqual(ann["poses"][0]["box"], [10.0, 10.0, 50.0, 50.0])
+        self.assertEqual(ann["poses"][0]["keypoints"][1]["visibility"], "occluded")
+        self.assertEqual(self.service._read_meta("pose")["class_to_id"], {"box": 0})
+
     def test_update_detection_label_and_bbox_clamps_box_and_removes_stale_mask(self):
         self.service.create_project("demo")
         saved = self.service.upload_raw("demo", jpg_bytes(width=64, height=48))

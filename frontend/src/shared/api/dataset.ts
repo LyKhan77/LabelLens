@@ -81,7 +81,10 @@ export interface ImageAnnotation {
     height: number
     source: string
     created: string
+    task_type?: string
     detections: DetectionAnnotation[]
+    labels?: ClassificationLabelAnnotation[]
+    poses?: PoseAnnotation[]
   } | null
 }
 
@@ -97,6 +100,40 @@ export interface DetectionAnnotation {
   source?: string
   mask?: number[][]
   mask_rle?: { x: number; y: number; width: number; height: number; counts: number[] }
+}
+
+export interface ClassificationLabelAnnotation {
+  id: number
+  label: string
+  confidence: number
+  cls_id: number
+  accepted: boolean
+  source?: string
+}
+
+export interface PoseKeypointAnnotation {
+  name: string
+  x: number
+  y: number
+  visibility: 'visible' | 'occluded' | 'missing'
+}
+
+export interface PoseAnnotation {
+  id: number
+  label: string
+  box: number[]
+  confidence: number
+  cls_id: number
+  accepted: boolean
+  keypoints: PoseKeypointAnnotation[]
+}
+
+export interface PosePayload {
+  label: string
+  box: number[]
+  keypoints: PoseKeypointAnnotation[]
+  confidence?: number
+  accepted?: boolean
 }
 
 export async function listDatasets(): Promise<DatasetProject[]> {
@@ -293,6 +330,24 @@ export async function addDetection(
   payload: Required<Pick<DetectionPayload, 'label' | 'box'>> & Omit<DetectionPayload, 'label' | 'box'>,
 ): Promise<ImageAnnotation['annotations']> {
   const res = await api.post(`/datasets/${name}/images/${imgId}/detections`, payload)
+  return res.data
+}
+
+export async function setImageLabels(
+  name: string,
+  imgId: string,
+  labels: { label: string; confidence?: number; accepted?: boolean; source?: string }[],
+): Promise<ImageAnnotation['annotations']> {
+  const res = await api.post(`/datasets/${name}/images/${imgId}/labels`, { labels })
+  return res.data
+}
+
+export async function addPose(
+  name: string,
+  imgId: string,
+  payload: PosePayload,
+): Promise<ImageAnnotation['annotations']> {
+  const res = await api.post(`/datasets/${name}/images/${imgId}/poses`, payload)
   return res.data
 }
 

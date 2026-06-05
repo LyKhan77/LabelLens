@@ -157,6 +157,24 @@ class DatasetService:
                     accepted += 1
                 else:
                     rejected += 1
+            for label_ann in ann.get("labels", []):
+                total_annotations += 1
+                label = label_ann["label"]
+                classes.add(label)
+                class_counts[label] = class_counts.get(label, 0) + 1
+                if label_ann.get("accepted", True):
+                    accepted += 1
+                else:
+                    rejected += 1
+            for pose in ann.get("poses", []):
+                total_annotations += 1
+                label = pose["label"]
+                classes.add(label)
+                class_counts[label] = class_counts.get(label, 0) + 1
+                if pose.get("accepted", True):
+                    accepted += 1
+                else:
+                    rejected += 1
 
         return {
             "total_images": total_images,
@@ -310,6 +328,7 @@ class DatasetService:
             "height": h,
             "source": source,
             "created": datetime.now().isoformat(),
+            "task_type": meta.get("task_type", "detect"),
             "labeled": True,
             "detections": annotated_dets,
         }
@@ -365,6 +384,7 @@ class DatasetService:
             "height": h,
             "source": source,
             "created": datetime.now().isoformat(),
+            "task_type": meta.get("task_type", "detect"),
             "labeled": False,
             "detections": [],
         }
@@ -558,6 +578,129 @@ class DatasetService:
         self._ensure_class_colors(meta)
         self._write_meta(name, meta)
         return class_to_id[label]
+
+    def _annotation_path(self, name: str, img_id: str) -> str:
+        return os.path.join(self._project_dir(name), "annotations", f"{img_id}.json")
+
+    def _read_annotation(self, name: str, img_id: str) -> dict | None:
+        ann_path = self._annotation_path(name, img_id)
+        if not os.path.isfile(ann_path):
+            return None
+        with open(ann_path) as f:
+            return json.load(f)
+
+    def _write_annotation(self, name: str, img_id: str, ann: dict):
+        with open(self._annotation_path(name, img_id), "w") as f:
+            json.dump(ann, f, indent=2)
+
+    def _project_task_type(self, name: str) -> str:
+        return self._read_meta(name).get("task_type", "detect")
+
+    def set_image_labels(self, name: str, img_id: str, labels: list[dict]) -> dict | None:
+        ann = self._read_annotation(name, img_id)
+        if ann is None:
+            return None
+        task_type = self._project_task_type(name)
+        if task_type not in {"classify_single", "classify_multi"}:
+            raise ValueError("image labels are only supported for classification datasets")
+        if not isinstance(labels, list) or not labels:
+            raise ValueError("labels must be a non-empty list")
+        if task_type == "classify_single" and len(labels) > 1:
+            raise ValueError("single-label classification accepts one label per image")
+
+        annotated_labels = []
+        for idx, item in enumerate(labels):
+            label = self._clean_label(item.get("label"))
+            cls_id = self._ensure_class(name, label)
+            confidence = item.get("confidence", 1.0)
+            try:
+                confidence = float(confidence)
+            except (TypeError, ValueError):
+                confidence = 1.0
+            if not math.isfinite(confidence):
+                confidence = 1.0
+            annotated_labels.append({
+                "id": idx,
+                "label": label,
+                "confidence": confidence,
+                "cls_id": cls_id,
+                "accepted": bool(item.get("accepted", True)),
+                "source": item.get("source", "manual"),
+            })
+
+        ann["task_type"] = task_type
+        ann["labels"] = annotated_labels
+        ann["labeled"] = any(label.get("accepted", True) for label in annotated_labels)
+        self._write_annotation(name, img_id, ann)
+        return ann
+
+    def _clean_keypoints(self, keypoints, template: dict, width: int, height: int) -> list[dict]:
+        if not isinstance(keypoints, list):
+            raise ValueError("keypoints must be a list")
+        names = template.get("keypoint_names", [])
+        if len(keypoints) != len(names):
+            raise ValueError("keypoints must match the dataset pose template")
+        cleaned = []
+        by_name = {kp.get("name"): kp for kp in keypoints if isinstance(kp, dict)}
+        allowed_visibility = {"visible", "occluded", "missing"}
+        for name in names:
+            raw = by_name.get(name)
+            if raw is None:
+                raise ValueError(f"missing keypoint '{name}'")
+            visibility = raw.get("visibility", "visible")
+            if visibility not in allowed_visibility:
+                raise ValueError("keypoint visibility must be visible, occluded, or missing")
+            try:
+                x = float(raw.get("x", 0))
+                y = float(raw.get("y", 0))
+            except (TypeError, ValueError):
+                raise ValueError("keypoint coordinates must be finite numbers")
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError("keypoint coordinates must be finite numbers")
+            cleaned.append({
+                "name": name,
+                "x": min(max(x, 0.0), float(width)),
+                "y": min(max(y, 0.0), float(height)),
+                "visibility": visibility,
+            })
+        return cleaned
+
+    def add_pose(self, name: str, img_id: str, payload: dict) -> dict | None:
+        ann = self._read_annotation(name, img_id)
+        if ann is None:
+            return None
+        meta = self._read_meta(name)
+        if meta.get("task_type") != "pose":
+            raise ValueError("pose annotations are only supported for pose datasets")
+
+        label = self._clean_label(payload.get("label"))
+        box = self._clean_box(payload.get("box"), ann["width"], ann["height"])
+        cls_id = self._ensure_class(name, label)
+        template = meta.get("task_config", {}).get("pose_template", {})
+        keypoints = self._clean_keypoints(payload.get("keypoints"), template, ann["width"], ann["height"])
+        poses = ann.setdefault("poses", [])
+        next_id = max((int(pose.get("id", -1)) for pose in poses), default=-1) + 1
+        confidence = payload.get("confidence", 1.0)
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            confidence = 1.0
+        if not math.isfinite(confidence):
+            confidence = 1.0
+
+        poses.append({
+            "id": next_id,
+            "label": label,
+            "box": box,
+            "confidence": confidence,
+            "cls_id": cls_id,
+            "accepted": bool(payload.get("accepted", True)),
+            "keypoints": keypoints,
+        })
+        ann["task_type"] = "pose"
+        ann["labeled"] = True
+        self._write_annotation(name, img_id, ann)
+        return ann
 
     def update_class_color(self, name: str, label: str, color: str) -> dict:
         pdir = self._project_dir(name)

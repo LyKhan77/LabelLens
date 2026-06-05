@@ -608,6 +608,28 @@ async def add_detection(name: str, img_id: str, payload: dict = Body(...)):
     return result
 
 
+@router.post("/datasets/{name}/images/{img_id}/labels")
+async def set_image_labels(name: str, img_id: str, payload: dict = Body(...)):
+    try:
+        result = dataset_service.set_image_labels(name, img_id, payload.get("labels", []))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if result is None:
+        raise HTTPException(404, "Image not found")
+    return result
+
+
+@router.post("/datasets/{name}/images/{img_id}/poses")
+async def add_pose(name: str, img_id: str, payload: dict = Body(...)):
+    try:
+        result = dataset_service.add_pose(name, img_id, payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if result is None:
+        raise HTTPException(404, "Image not found")
+    return result
+
+
 @router.patch("/datasets/{name}/images/{img_id}/detections/{det_id}")
 async def update_detection(name: str, img_id: str, det_id: int, payload: dict = Body(...)):
     try:
