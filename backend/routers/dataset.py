@@ -630,6 +630,25 @@ async def add_pose(name: str, img_id: str, payload: dict = Body(...)):
     return result
 
 
+@router.patch("/datasets/{name}/images/{img_id}/poses/{pose_id}")
+async def update_pose(name: str, img_id: str, pose_id: int, payload: dict = Body(...)):
+    try:
+        result = dataset_service.update_pose(name, img_id, pose_id, payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if result is None:
+        raise HTTPException(404, "Pose not found")
+    return result
+
+
+@router.delete("/datasets/{name}/images/{img_id}/poses/{pose_id}")
+async def delete_pose(name: str, img_id: str, pose_id: int):
+    result = dataset_service.delete_pose(name, img_id, pose_id)
+    if result is None:
+        raise HTTPException(404, "Pose not found")
+    return result
+
+
 @router.patch("/datasets/{name}/images/{img_id}/detections/{det_id}")
 async def update_detection(name: str, img_id: str, det_id: int, payload: dict = Body(...)):
     try:
