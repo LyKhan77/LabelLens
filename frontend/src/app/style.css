@@ -1144,11 +1144,21 @@
     background: var(--color-canvas);
     display: flex;
     flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .dataset-inspector-section {
     padding: 10px;
     border-bottom: 1px solid var(--color-hairline);
+  }
+
+  .dataset-pose-editor-sidebar {
+    display: flex;
+    flex-direction: column;
+    height: min(560px, calc(100vh - 156px));
+    max-height: calc(100vh - 156px);
+    overflow: hidden;
   }
 
   .dataset-inspector-summary {

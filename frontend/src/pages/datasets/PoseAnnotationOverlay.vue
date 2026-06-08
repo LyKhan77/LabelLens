@@ -470,7 +470,7 @@ watch(() => [props.width, props.height, props.imageSrc], () => {
     </div>
 
     <Teleport defer to="#pose-editor-sidebar">
-      <section class="dataset-inspector-section flex min-h-[260px] max-h-[calc(100vh-230px)] flex-col overflow-hidden">
+      <section class="dataset-inspector-section dataset-pose-editor-sidebar">
         <div class="dataset-field-row mb-2 shrink-0">
           <span class="dataset-field-label">Pose</span>
           <span class="dataset-field-value">{{ template.name }}</span>
