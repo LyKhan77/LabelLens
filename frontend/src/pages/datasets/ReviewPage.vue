@@ -980,6 +980,8 @@ onUnmounted(() => {
               <p v-else class="dataset-candidate-empty">All candidates overlap existing annotations.</p>
             </section>
 
+            <div v-if="isPoseTask" id="pose-editor-sidebar"></div>
+
             <section v-if="isPoseTask" class="dataset-inspector-section">
               <div class="dataset-field-row">
                 <span class="dataset-field-label">Pose Instances</span>

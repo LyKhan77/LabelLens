@@ -102,11 +102,6 @@ const skeletonW = computed(() => 2.5 * unit.value)
 const handleHalf = computed(() => 6 * unit.value)
 const labelFont = computed(() => 12 * unit.value)
 const visibilityOptions: PoseKeypointAnnotation['visibility'][] = ['visible', 'occluded', 'missing']
-const visibilityShortLabel: Record<PoseKeypointAnnotation['visibility'], string> = {
-  visible: 'V',
-  occluded: 'O',
-  missing: 'M',
-}
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(Math.max(v, lo), hi)
@@ -474,54 +469,49 @@ watch(() => [props.width, props.height, props.imageSrc], () => {
       <button type="button" aria-label="Reset zoom" @click="resetZoom">Reset</button>
     </div>
 
-    <aside class="absolute right-3 top-3 z-10 flex max-h-[calc(100%-24px)] w-[230px] flex-col overflow-hidden rounded-(--radius-md) border border-hairline bg-canvas/95 p-2 shadow-lg">
-      <div class="dataset-field-row mb-1.5">
-        <span class="dataset-field-label">Pose</span>
-        <span class="dataset-field-value">{{ template.name }}</span>
-      </div>
-      <button v-if="!editing" class="dataset-primary-button w-full" type="button" @click="createDraft">
-        New Pose
-      </button>
-      <div v-else-if="editor" class="flex min-h-0 flex-1 flex-col">
-        <input v-model="editor.label" class="dataset-text-input mb-1.5 !h-8 !text-[12px]" placeholder="Label" />
-        <div class="min-h-0 flex-1 overflow-y-auto pr-1">
-          <div
-            v-for="kp in editor.keypoints" :key="kp.name"
-            class="grid grid-cols-[minmax(0,1fr)_78px] items-center gap-1 rounded px-1 py-0.5 text-[10px]"
-            :class="{ 'bg-hairline/40': selectedKeypoint === kp.name || hoverKeypoint === kp.name }"
-            @mouseenter="hoverKeypoint = kp.name"
-            @mouseleave="hoverKeypoint = null"
-            @click="selectedKeypoint = kp.name"
-          >
-            <span class="truncate text-ink cursor-pointer" :title="kp.name">{{ kp.name }}</span>
-            <div class="grid grid-cols-3 gap-0.5">
-              <button
-                v-for="visibility in visibilityOptions"
-                :key="visibility"
-                type="button"
-                class="h-5 rounded border text-[9px] font-semibold leading-none transition-colors"
-                :class="kp.visibility === visibility ? 'border-primary bg-primary text-white' : 'border-hairline bg-canvas-soft text-ink-mute hover:text-ink'"
-                :aria-label="`Set ${kp.name} ${visibility}`"
-                :title="visibility"
-                @click.stop="setVisibility(kp.name, visibility)"
+    <Teleport defer to="#pose-editor-sidebar">
+      <section class="dataset-inspector-section flex min-h-[260px] max-h-[calc(100vh-230px)] flex-col overflow-hidden">
+        <div class="dataset-field-row mb-2 shrink-0">
+          <span class="dataset-field-label">Pose</span>
+          <span class="dataset-field-value">{{ template.name }}</span>
+        </div>
+        <button v-if="!editing" class="dataset-primary-button w-full shrink-0" type="button" @click="createDraft">
+          New Pose
+        </button>
+        <div v-else-if="editor" class="flex min-h-0 flex-1 flex-col">
+          <input v-model="editor.label" class="dataset-text-input mb-2 !h-8 !text-[12px] shrink-0" placeholder="Label" />
+          <div class="min-h-0 flex-1 overflow-y-auto pr-1 space-y-1">
+            <div
+              v-for="kp in editor.keypoints" :key="kp.name"
+              class="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-2 rounded px-1 py-0.5 text-[11px]"
+              :class="{ 'bg-hairline/40': selectedKeypoint === kp.name || hoverKeypoint === kp.name }"
+              @mouseenter="hoverKeypoint = kp.name"
+              @mouseleave="hoverKeypoint = null"
+              @click="selectedKeypoint = kp.name"
+            >
+              <span class="truncate text-ink cursor-pointer" :title="kp.name">{{ kp.name }}</span>
+              <select
+                :value="kp.visibility"
+                class="dataset-text-input !h-7 !px-2 !py-0 !text-[11px]"
+                @change="setVisibility(kp.name, ($event.target as HTMLSelectElement).value as PoseKeypointAnnotation['visibility'])"
               >
-                {{ visibilityShortLabel[visibility] }}
-              </button>
+                <option v-for="visibility in visibilityOptions" :key="visibility" :value="visibility">{{ visibility }}</option>
+              </select>
             </div>
           </div>
+          <div class="mt-2 grid shrink-0 grid-cols-[1fr_auto_auto] gap-1.5 border-t border-hairline pt-2">
+            <button class="dataset-primary-button flex-1" type="button" :disabled="saving" @click="saveEditor">
+              {{ saving ? 'Saving...' : editor.sourceId === null ? 'Save' : 'Update' }}
+            </button>
+            <button v-if="editor.sourceId !== null" class="dataset-secondary-button" type="button" :disabled="saving" @click="deleteEditor">
+              Delete
+            </button>
+            <button class="dataset-secondary-button" type="button" :disabled="saving" @click="closeEditor">
+              Cancel
+            </button>
+          </div>
         </div>
-        <div class="mt-2 grid shrink-0 grid-cols-[1fr_auto_auto] gap-1.5 border-t border-hairline pt-2">
-          <button class="dataset-primary-button flex-1" type="button" :disabled="saving" @click="saveEditor">
-            {{ saving ? 'Saving...' : editor.sourceId === null ? 'Save' : 'Update' }}
-          </button>
-          <button v-if="editor.sourceId !== null" class="dataset-secondary-button" type="button" :disabled="saving" @click="deleteEditor">
-            Delete
-          </button>
-          <button class="dataset-secondary-button" type="button" :disabled="saving" @click="closeEditor">
-            Cancel
-          </button>
-        </div>
-      </div>
-    </aside>
+      </section>
+    </Teleport>
   </div>
 </template>
