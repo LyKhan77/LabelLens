@@ -34,7 +34,7 @@ Backend unit tests currently cover dataset and Train Tune service/runtime behavi
 env/bin/python -m unittest discover backend/tests
 ```
 
-Current task-aware dataset support includes task selection at New Dataset, annotation-first labels, classification image labels, an Ultralytics-style Pose editor (Move/BBox/Pan-Zoom/Visibility toolbar, anatomically-templated draggable keypoint skeletons, proportional keypoint scaling during bbox resize, bbox-clamped drag with cursor-anchored zoom/pan, click-to-cycle visibility, scrollable sidebar dropdown keypoint visibility controls, enriched Pose Instance rows with V/O/M counts and bbox summaries, and edit/update/delete of saved pose instances), Rapid Inference task gating, native exports for classification and pose, and Train Tune snapshot/training support for pose plus single-label classification.
+Current task-aware dataset support includes task selection at New Dataset, annotation-first labels, classification image labels, an Ultralytics-style Pose editor (Move/BBox/Pan-Zoom/Visibility toolbar, anatomically-templated draggable keypoint skeletons, proportional keypoint scaling during bbox resize, bbox-clamped drag with cursor-anchored zoom/pan, click-to-cycle visibility, scrollable sidebar dropdown keypoint visibility controls, enriched Pose Instance rows with V/O/M counts and bbox summaries, and edit/update/delete of saved pose instances), task-matched Rapid Inference using YOLOE grounding for detection/segmentation and Ultralytics task models for pose/single-label classification, native exports for classification and pose, and Train Tune snapshot/training support for pose plus single-label classification.
 
 ## Architecture
 

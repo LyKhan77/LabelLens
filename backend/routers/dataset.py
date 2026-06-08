@@ -60,6 +60,92 @@ def _run_inference(frame, prompt_type: str, labels: list[str], confidence: float
     raise ValueError(f"Unknown prompt_type: {prompt_type}")
 
 
+def _safe_model_path(model_path: str) -> str:
+    cleaned = str(model_path or "").strip()
+    if not cleaned:
+        raise ValueError("model_path is required for task model inference")
+    if ".." in cleaned.split(os.sep):
+        raise ValueError("model_path must not contain parent directory traversal")
+    return cleaned
+
+
+def _tensor_list(value):
+    if value is None:
+        return []
+    if hasattr(value, "cpu"):
+        value = value.cpu()
+    if hasattr(value, "numpy"):
+        value = value.numpy()
+    return value.tolist() if hasattr(value, "tolist") else list(value)
+
+
+def _task_model_predict(image, task_type: str, model_path: str, confidence: float, pose_template: dict | None = None) -> dict:
+    try:
+        from ultralytics import YOLO
+    except ImportError as exc:  # pragma: no cover - dependency is optional in tests
+        raise ValueError("Ultralytics is required for task model inference") from exc
+
+    model = YOLO(_safe_model_path(model_path))
+    model_task = getattr(model, "task", "unknown")
+    expected = "classify" if task_type == "classify_single" else task_type
+    if model_task != expected:
+        raise ValueError(f"{task_type} Rapid Inference requires a {expected} model; got {model_task}")
+
+    result = model.predict(image, conf=confidence, verbose=False)[0]
+    names = getattr(result, "names", {}) or {}
+
+    if task_type == "classify_single":
+        probs = getattr(result, "probs", None)
+        if probs is None:
+            return {"labels": []}
+        top1 = int(probs.top1)
+        top1_conf = float(probs.top1conf.item() if hasattr(probs.top1conf, "item") else probs.top1conf)
+        if top1_conf < confidence:
+            return {"labels": []}
+        return {"labels": [{"label": names.get(top1, str(top1)), "confidence": top1_conf, "source": "task_model"}]}
+
+    if task_type == "pose":
+        boxes = getattr(result, "boxes", None)
+        keypoints = getattr(result, "keypoints", None)
+        if boxes is None or keypoints is None:
+            return {"poses": []}
+        xyxy = _tensor_list(boxes.xyxy)
+        confs = _tensor_list(boxes.conf)
+        classes = [int(value) for value in _tensor_list(boxes.cls)]
+        keypoint_xy = _tensor_list(keypoints.xy)
+        keypoint_conf = _tensor_list(getattr(keypoints, "conf", None))
+        template_names = (pose_template or {}).get("keypoint_names") or []
+        expected_kpts = len(template_names)
+        poses = []
+        for index, box in enumerate(xyxy):
+            box_conf = float(confs[index]) if index < len(confs) else 1.0
+            if box_conf < confidence:
+                continue
+            points = keypoint_xy[index] if index < len(keypoint_xy) else []
+            if expected_kpts and len(points) != expected_kpts:
+                raise ValueError(f"Pose model outputs {len(points)} keypoints but dataset template requires {expected_kpts}")
+            point_confs = keypoint_conf[index] if index < len(keypoint_conf) else []
+            keypoint_payload = []
+            for kp_index, point in enumerate(points):
+                kp_conf = float(point_confs[kp_index]) if kp_index < len(point_confs) else 1.0
+                keypoint_payload.append({
+                    "name": template_names[kp_index] if kp_index < len(template_names) else f"kpt_{kp_index}",
+                    "x": float(point[0]),
+                    "y": float(point[1]),
+                    "visibility": "visible" if kp_conf >= confidence else "occluded",
+                })
+            cls_id = classes[index] if index < len(classes) else 0
+            poses.append({
+                "label": names.get(cls_id, str(cls_id)),
+                "box": [float(value) for value in box],
+                "confidence": box_conf,
+                "keypoints": keypoint_payload,
+            })
+        return {"poses": poses}
+
+    raise ValueError(f"Task model inference is not supported for {task_type}")
+
+
 def _prepare_visual_prompt(refer_image_bytes: bytes | None, bboxes: list, vcls: list):
     if refer_image_bytes is None:
         raise ValueError("refer_image required for visual prompt")
@@ -78,6 +164,7 @@ def _run_label_job(
     refer_image_bytes: bytes | None,
     bboxes: list,
     vcls: list,
+    model_path: str | None = None,
 ):
     job = label_jobs[job_id]
     if not label_job_lock.acquire(blocking=False):
@@ -86,8 +173,15 @@ def _run_label_job(
         return
 
     try:
-        if model_service.model is None:
+        meta = dataset_service._read_meta(name)
+        task_type = meta.get("task_type", "detect")
+        is_grounding_task = task_type in {"detect", "segment"}
+        if is_grounding_task and model_service.model is None:
             raise ValueError("No model loaded. Load a model first.")
+        if not is_grounding_task and task_type not in {"pose", "classify_single"}:
+            raise ValueError(f"Rapid Inference is not supported for {task_type}")
+        if not is_grounding_task and prompt_type != "task_model":
+            raise ValueError(f"{task_type} Rapid Inference requires task_model mode")
         if prompt_type == "text" and not labels:
             raise ValueError("At least one label required for text prompt")
         if prompt_type == "visual":
@@ -130,18 +224,48 @@ def _run_label_job(
                 continue
 
             try:
-                det_result = _run_inference(image, prompt_type, labels, confidence)
-                detections = det_result.get("detections", [])
-                labeled = dataset_service.label_image(name, img_id, detections)
+                if is_grounding_task:
+                    det_result = _run_inference(image, prompt_type, labels, confidence)
+                    predictions = det_result.get("detections", [])
+                    labeled = dataset_service.label_image(name, img_id, predictions)
+                    count = labeled["detections_count"] if labeled else 0
+                elif task_type == "classify_single":
+                    result = _task_model_predict(image, task_type, model_path or "", confidence)
+                    predictions = result.get("labels", [])
+                    labeled = dataset_service.set_image_labels(name, img_id, predictions) if predictions else None
+                    count = len(predictions)
+                    predictions = [
+                        {
+                            "label": item["label"],
+                            "confidence": item.get("confidence", 0),
+                            "box": [0, 0, annotations.get("width", 0), annotations.get("height", 0)] if annotations else [],
+                        }
+                        for item in predictions
+                    ]
+                elif task_type == "pose":
+                    result = _task_model_predict(
+                        image,
+                        task_type,
+                        model_path or "",
+                        confidence,
+                        (meta.get("task_config") or {}).get("pose_template"),
+                    )
+                    predictions = result.get("poses", [])
+                    for pose in predictions:
+                        dataset_service.add_pose(name, img_id, pose)
+                    labeled = {"detections_count": len(predictions)} if predictions else None
+                    count = len(predictions)
+                else:
+                    raise ValueError(f"Rapid Inference is not supported for {task_type}")
                 if labeled:
-                    item["detections_count"] = labeled["detections_count"]
-                    item["detections"] = detections
+                    item["detections_count"] = count
+                    item["detections"] = predictions
                     item["state"] = "done"
-                    job["detections_count"] += labeled["detections_count"]
+                    job["detections_count"] += count
                     job["results"].append(labeled)
                 else:
                     item["state"] = "failed"
-                    item["error"] = "Image annotation not found"
+                    item["error"] = "No compatible predictions above confidence"
             except Exception as exc:
                 item["state"] = "failed"
                 item["error"] = str(exc)
@@ -496,14 +620,19 @@ async def create_label_job(
     refer_image: UploadFile | None = File(None),
     bboxes: str = Form("[]"),
     vcls: str = Form("[]"),
+    model_path: str = Form(""),
 ):
-    if model_service.model is None:
-        raise HTTPException(400, "No model loaded. Load a model first.")
-
     try:
-        dataset_service._read_meta(name)
+        meta = dataset_service._read_meta(name)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+    task_type = meta.get("task_type", "detect")
+    if task_type in {"detect", "segment"} and model_service.model is None:
+        raise HTTPException(400, "No model loaded. Load a model first.")
+    if task_type not in {"detect", "segment", "pose", "classify_single"}:
+        raise HTTPException(400, f"Rapid Inference is not supported for {task_type}")
+    if task_type not in {"detect", "segment"} and prompt_type != "task_model":
+        raise HTTPException(400, f"{task_type} Rapid Inference requires task_model mode")
 
     label_list = _parse_json_list(labels, "labels")
     bbox_list = _parse_json_list(bboxes, "bboxes")
@@ -521,6 +650,7 @@ async def create_label_job(
         refer_bytes,
         bbox_list,
         vcls_list,
+        model_path,
     )
     return job
 

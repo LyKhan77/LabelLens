@@ -333,6 +333,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     referImage?: File
     bboxes?: [number, number, number, number][]
     vcls?: string[]
+    modelPath?: string
   }) {
     if (!currentProject.value) return
     return api.createLabelJob(currentProject.value, params)

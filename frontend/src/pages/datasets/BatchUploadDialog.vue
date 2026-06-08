@@ -23,6 +23,7 @@ const error = ref('')
 const promptType = ref<'free' | 'text' | 'visual'>('free')
 const labelsText = ref('')
 const confidence = ref(0.5)
+const modelPath = ref('')
 const referImage = ref<File | null>(null)
 const referPreview = ref('')
 const visualAnnotations = ref<BBoxAnnotation[]>([])
@@ -87,11 +88,19 @@ const imageFiles = computed(() => files.value.filter((f) => f.type.startsWith('i
 const videoFiles = computed(() => files.value.filter((f) => f.type.startsWith('video/')))
 const hasMixedMedia = computed(() => imageFiles.value.length > 0 && videoFiles.value.length > 0)
 const labels = computed(() => labelsText.value.split(',').map((s) => s.trim()).filter(Boolean))
-const requiredModel = computed(() => promptType.value === 'free' ? 'free' : 'prompt')
-const modelReady = computed(() => isGroundingTask.value && inferenceStore.modelLoaded && inferenceStore.inferenceMode === requiredModel.value)
+const defaultTaskModelPath = computed(() => {
+  if (taskType.value === 'pose') return 'yolo26n-pose.pt'
+  if (taskType.value === 'classify_single') return 'yolo26n-cls.pt'
+  return ''
+})
+const activeTaskModelPath = computed(() => modelPath.value.trim() || defaultTaskModelPath.value)
+const requiredGroundingModel = computed<'free' | 'prompt'>(() => promptType.value === 'free' ? 'free' : 'prompt')
+const requiredModel = computed(() => isGroundingTask.value ? requiredGroundingModel.value : activeTaskModelPath.value)
+const taskModelSupported = computed(() => taskType.value === 'pose' || taskType.value === 'classify_single')
+const modelReady = computed(() => isGroundingTask.value && inferenceStore.modelLoaded && inferenceStore.inferenceMode === requiredGroundingModel.value)
 const canUpload = computed(() => sourceMode.value === 'current' || (files.value.length > 0 && !hasMixedMedia.value))
 const canStart = computed(() => {
-  if (!isGroundingTask.value) return false
+  if (!isGroundingTask.value) return taskModelSupported.value && activeTaskModelPath.value.length > 0
   if (!modelReady.value) return false
   if (promptType.value === 'text' && labels.value.length === 0) return false
   if (promptType.value === 'visual' && (!referImage.value || visualAnnotations.value.length === 0)) return false
@@ -199,10 +208,11 @@ async function startUpload() {
 }
 
 async function loadSelectedModel() {
+  if (!isGroundingTask.value) return
   loadingModel.value = true
   error.value = ''
   try {
-    await inferenceStore.selectMode(requiredModel.value)
+    await inferenceStore.selectMode(requiredGroundingModel.value)
   } finally {
     loadingModel.value = false
   }
@@ -266,12 +276,13 @@ async function startLabeling() {
   phase.value = 'progress'
   try {
     const created = await datasetStore.createLabelJob({
-      promptType: promptType.value,
+      promptType: isGroundingTask.value ? promptType.value : 'task_model',
       labels: labels.value,
       confidence: confidence.value,
       referImage: referImage.value ?? undefined,
       bboxes: visualAnnotations.value.map((a) => a.bbox),
       vcls: visualAnnotations.value.map((a) => a.label),
+      modelPath: isGroundingTask.value ? undefined : activeTaskModelPath.value,
     })
     if (!created) return
     job.value = created
@@ -311,7 +322,7 @@ onUnmounted(() => {
 
         <nav class="dataset-upload-steps" aria-label="Rapid inference workflow">
           <span :class="['dataset-upload-step', { 'is-active': phase === 'upload', 'is-done': phase !== 'upload' }]">1 Upload</span>
-          <span :class="['dataset-upload-step', { 'is-active': phase === 'configure', 'is-done': phase === 'progress' || phase === 'done' }]">2 Grounding</span>
+          <span :class="['dataset-upload-step', { 'is-active': phase === 'configure', 'is-done': phase === 'progress' || phase === 'done' }]">2 Method</span>
           <span :class="['dataset-upload-step', { 'is-active': phase === 'progress', 'is-done': phase === 'done' }]">3 Inference</span>
           <span :class="['dataset-upload-step', { 'is-active': phase === 'done' }]">4 Review</span>
         </nav>
@@ -453,10 +464,14 @@ onUnmounted(() => {
             <div v-else class="dataset-panel-block">
               <div class="dataset-field-row">
                 <span class="dataset-field-label">Required Method</span>
-                <span class="dataset-field-value">Compatible trained model</span>
+                <span class="dataset-field-value">Task model</span>
               </div>
+              <label v-if="taskModelSupported" class="dataset-field-block">
+                <span class="dataset-field-label">Model Path</span>
+                <input v-model="modelPath" class="dataset-text-input" :placeholder="defaultTaskModelPath" />
+              </label>
               <p class="text-[12px] text-ink-mute leading-relaxed">
-                {{ taskLabel }} Rapid Inference will run from a compatible Train Tune model version. Model selection is enabled in the next implementation phase; YOLOE grounding is only valid for Detection and Segmentation datasets.
+                {{ taskModelSupported ? `${taskLabel} Rapid Inference uses a task-compatible Ultralytics model. Pretrained models work only when their class list or keypoint template matches this dataset.` : 'Multi-label classification needs a dedicated multi-label model pipeline and is not supported by standard YOLO classification inference.' }}
               </p>
             </div>
           </template>

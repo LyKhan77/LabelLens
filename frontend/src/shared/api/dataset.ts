@@ -260,6 +260,7 @@ export async function createLabelJob(
     referImage?: File
     bboxes?: [number, number, number, number][]
     vcls?: string[]
+    modelPath?: string
   },
 ): Promise<DatasetLabelJobStatus> {
   const form = new FormData()
@@ -269,6 +270,7 @@ export async function createLabelJob(
   if (params.referImage) form.append('refer_image', params.referImage)
   form.append('bboxes', JSON.stringify(params.bboxes ?? []))
   form.append('vcls', JSON.stringify(params.vcls ?? []))
+  if (params.modelPath) form.append('model_path', params.modelPath)
   const res = await api.post(`/datasets/${name}/label-jobs`, form)
   return res.data
 }
