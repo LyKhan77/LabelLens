@@ -9,6 +9,7 @@ import shutil
 import threading
 import uuid
 import zipfile
+import ast
 from datetime import datetime
 from pathlib import Path
 
@@ -24,7 +25,7 @@ from backend.services.dataset import DATASETS_DIR, DatasetService, dataset_servi
 
 TRAIN_TUNE_DIR = os.path.join(DATASETS_DIR, '_train_tune')
 TRAIN_TUNE_WORKSPACE_DIR = os.path.abspath(os.getenv('TRAIN_TUNE_WORKSPACE_DIR', 'traintune-workspace'))
-TRAINING_TASKS = {'detect', 'segment'}
+TRAINING_TASKS = {'detect', 'segment', 'pose', 'classify_single'}
 TRAINING_FAMILIES = {'yolo11', 'yolo26'}
 TRAINING_SIZES = {'n', 's', 'm', 'l'}
 TRAINING_MODES = {'standard', 'high_speed'}
@@ -43,6 +44,10 @@ class MissingSegmentationMasksError(ValueError):
     def __init__(self, missing: list[dict]):
         self.missing = missing
         super().__init__('Segmentation training requires masks for every accepted annotation')
+
+
+def ultralytics_task(task_type: str) -> str:
+    return 'classify' if task_type == 'classify_single' else task_type
 
 
 class TrainingService:
@@ -155,7 +160,7 @@ class TrainingService:
     def _task_type(self, config: dict | None) -> str:
         task_type = (config or {}).get('task_type') or 'detect'
         if task_type not in TRAINING_TASKS:
-            raise ValueError("task_type must be 'detect' or 'segment'")
+            raise ValueError("task_type must be one of: classify_single, detect, pose, segment")
         return task_type
 
     def _format_yolo_float(self, value: float) -> str:
@@ -203,9 +208,45 @@ class TrainingService:
             lines.append(f'{cls_id} {coords}')
         return '\n'.join(lines)
 
-    def _build_yolo_lines(self, detections: list[dict], class_to_id: dict[str, int], width: int, height: int, task_type: str) -> str:
+    def _pose_visibility_value(self, visibility: str) -> int:
+        if visibility == 'missing':
+            return 0
+        if visibility == 'occluded':
+            return 1
+        return 2
+
+    def _build_yolo_pose_lines(self, poses: list[dict], class_to_id: dict[str, int], width: int, height: int, pose_template: dict | None = None) -> str:
+        keypoint_names = (pose_template or {}).get('keypoint_names') or []
+        lines = []
+        for pose in poses:
+            cls_id = class_to_id.get(pose['label'], -1)
+            if cls_id < 0:
+                continue
+            x1, y1, x2, y2 = pose['box']
+            parts = [
+                str(cls_id),
+                self._format_yolo_float(((x1 + x2) / 2) / width),
+                self._format_yolo_float(((y1 + y2) / 2) / height),
+                self._format_yolo_float((x2 - x1) / width),
+                self._format_yolo_float((y2 - y1) / height),
+            ]
+            keypoints = pose.get('keypoints') or []
+            keypoint_map = {kp.get('name'): kp for kp in keypoints if isinstance(kp, dict)}
+            ordered = [keypoint_map[name] for name in keypoint_names if name in keypoint_map] if keypoint_names else keypoints
+            for kp in ordered:
+                parts.extend([
+                    self._format_yolo_float(min(max(float(kp.get('x', 0.0)), 0.0), float(width)) / width),
+                    self._format_yolo_float(min(max(float(kp.get('y', 0.0)), 0.0), float(height)) / height),
+                    str(self._pose_visibility_value(kp.get('visibility', 'visible'))),
+                ])
+            lines.append(' '.join(parts))
+        return '\n'.join(lines)
+
+    def _build_yolo_lines(self, detections: list[dict], class_to_id: dict[str, int], width: int, height: int, task_type: str, pose_template: dict | None = None) -> str:
         if task_type == 'segment':
             return self._build_yolo_segment_lines(detections, class_to_id, width, height)
+        if task_type == 'pose':
+            return self._build_yolo_pose_lines(detections, class_to_id, width, height, pose_template)
         return self._build_yolo_detect_lines(detections, class_to_id, width, height)
 
     def _missing_segment_masks(self, entries: list[dict]) -> list[dict]:
@@ -236,17 +277,30 @@ class TrainingService:
                 return candidate
             index += 1
 
-    def _write_dataset_yaml(self, dataset_path: str, class_to_id: dict[str, int]):
+    def _write_dataset_yaml(self, dataset_path: str, class_to_id: dict[str, int], task_type: str = 'detect', pose_template: dict | None = None):
+        if task_type == 'classify_single':
+            return
         names = {v: k for k, v in class_to_id.items()}
         lines = [
             f'path: {dataset_path}',
             'train: images/train',
             'val: images/val',
             'test: images/test',
-            'names:',
         ]
+        if task_type == 'pose' and pose_template:
+            lines.extend([
+                f"kpt_shape: {pose_template.get('kpt_shape')}",
+                f"flip_idx: {pose_template.get('flip_idx')}",
+            ])
+        lines.extend([
+            'names:',
+        ])
         for cid, cname in sorted(names.items()):
             lines.append(f'  {cid}: {cname}')
+        if task_type == 'pose' and pose_template:
+            lines.append('kpt_names:')
+            for index, name in enumerate(pose_template.get('keypoint_names') or []):
+                lines.append(f'  {index}: {name}')
         Path(dataset_path, 'dataset.yaml').write_text('\n'.join(lines) + '\n')
 
     def _normalize_preprocessing_config(self, config: dict) -> dict:
@@ -283,6 +337,15 @@ class TrainingService:
             }
             if det.get('mask'):
                 next_det['mask'] = [[float(point[0]) * scale_x + pad_x, float(point[1]) * scale_y + pad_y] for point in det['mask']]
+            if det.get('keypoints'):
+                next_det['keypoints'] = [
+                    {
+                        **point,
+                        'x': float(point.get('x', 0.0)) * scale_x + pad_x,
+                        'y': float(point.get('y', 0.0)) * scale_y + pad_y,
+                    }
+                    for point in det['keypoints']
+                ]
             transformed.append(next_det)
         return transformed
 
@@ -402,7 +465,20 @@ class TrainingService:
                     continue
                 sanitized.append({**det, 'box': box, 'mask': mask_points})
             elif box:
-                sanitized.append({**det, 'box': box})
+                next_det = {**det, 'box': box}
+                if task_type == 'pose':
+                    keypoints = []
+                    for point in det.get('keypoints') or []:
+                        try:
+                            x = min(max(float(point.get('x', 0.0)), 0.0), float(width))
+                            y = min(max(float(point.get('y', 0.0)), 0.0), float(height))
+                        except (TypeError, ValueError):
+                            continue
+                        keypoints.append({**point, 'x': x, 'y': y})
+                    if not keypoints:
+                        continue
+                    next_det['keypoints'] = keypoints
+                sanitized.append(next_det)
         return sanitized
 
     def _pascal_to_detections(self, bboxes: list, labels: list[str], originals: list[dict], width: int, height: int, task_type: str, masks: list | None = None) -> list[dict]:
@@ -503,6 +579,8 @@ class TrainingService:
                 det['box'] = [width - x2, y1, width - x1, y2]
                 if det.get('mask'):
                     det['mask'] = [[width - float(point[0]), float(point[1])] for point in det['mask']]
+                if det.get('keypoints'):
+                    det['keypoints'] = [{**point, 'x': width - float(point.get('x', 0.0))} for point in det['keypoints']]
         if float(offline.get('flipud') or 0.0) > 0:
             augmented = cv2.flip(augmented, 0)
             for det in output:
@@ -510,6 +588,8 @@ class TrainingService:
                 det['box'] = [x1, height - y2, x2, height - y1]
                 if det.get('mask'):
                     det['mask'] = [[float(point[0]), height - float(point[1])] for point in det['mask']]
+                if det.get('keypoints'):
+                    det['keypoints'] = [{**point, 'y': height - float(point.get('y', 0.0))} for point in det['keypoints']]
         noise = float(offline.get('noise') or 0.0)
         if noise > 0:
             sigma = max(1.0, noise * 24.0)
@@ -526,6 +606,8 @@ class TrainingService:
         offline = augmentation_config.get('offline') or {}
         if not any(float(value or 0) > 0 for value in offline.values()):
             return image, detections
+        if task_type == 'pose':
+            return self._manual_augment(image, detections, offline, task_type)
         transform = self._build_albumentations_transform(offline, force=force)
         if transform is None:
             return self._manual_augment(image, detections, offline, task_type)
@@ -550,7 +632,7 @@ class TrainingService:
         )
         return next_image, next_detections
 
-    def _write_image_and_label(self, dataset_path: str, subset: str, filename: str, image: np.ndarray, detections: list[dict], class_to_id: dict[str, int], task_type: str) -> bool:
+    def _write_image_and_label(self, dataset_path: str, subset: str, filename: str, image: np.ndarray, detections: list[dict], class_to_id: dict[str, int], task_type: str, pose_template: dict | None = None) -> bool:
         height, width = image.shape[:2]
         detections = self._sanitize_detections(detections, width, height, task_type)
         if not detections:
@@ -561,12 +643,64 @@ class TrainingService:
         os.makedirs(os.path.dirname(image_path), exist_ok=True)
         os.makedirs(os.path.dirname(label_path), exist_ok=True)
         cv2.imwrite(image_path, image)
-        Path(label_path).write_text(self._build_yolo_lines(detections, class_to_id, width, height, task_type) + '\n')
+        Path(label_path).write_text(self._build_yolo_lines(detections, class_to_id, width, height, task_type, pose_template) + '\n')
         return True
 
-    def _write_snapshot_files(self, dataset_path: str, split_map: dict[str, list[dict]], class_to_id: dict[str, int], task_type: str, config: dict) -> dict:
+    def _write_classification_image(self, dataset_path: str, subset: str, filename: str, image: np.ndarray, label: str) -> bool:
+        class_dir = os.path.join(dataset_path, subset, self._slugify(label, 'class'))
+        os.makedirs(class_dir, exist_ok=True)
+        return bool(cv2.imwrite(os.path.join(class_dir, filename), image))
+
+    def _write_classification_snapshot_files(self, dataset_path: str, split_map: dict[str, list[dict]], config: dict) -> dict:
         preprocessing_config = self._normalize_preprocessing_config(config)
         augmentation_config = self._normalize_augmentation_config(config)
+        split_counts = {subset: 0 for subset in ('train', 'val', 'test')}
+        train_original = len(split_map.get('train', []))
+        train_generated = 0
+        for subset in ('train', 'val', 'test'):
+            os.makedirs(os.path.join(dataset_path, subset), exist_ok=True)
+            for entry in split_map[subset]:
+                image = self._read_entry_image(entry)
+                if preprocessing_config.get('resize_mode') != 'keep':
+                    target = int(preprocessing_config.get('target_size') or 640)
+                    image = cv2.resize(image, (target, target), interpolation=cv2.INTER_AREA)
+                if self._write_classification_image(dataset_path, subset, entry['export_filename'], image, entry['label']):
+                    split_counts[subset] += 1
+        multiplier = int(augmentation_config.get('multiplier') or 1)
+        offline = augmentation_config.get('offline') or {}
+        has_offline_steps = any(float(value or 0) > 0 for value in offline.values())
+        if multiplier > 1 and train_original > 0 and has_offline_steps:
+            for copy_index in range(1, multiplier):
+                for entry in split_map.get('train', []):
+                    image = self._read_entry_image(entry)
+                    if preprocessing_config.get('resize_mode') != 'keep':
+                        target = int(preprocessing_config.get('target_size') or 640)
+                        image = cv2.resize(image, (target, target), interpolation=cv2.INTER_AREA)
+                    aug_image, _ = self._manual_augment(image, [], offline, 'detect')
+                    stem, ext = os.path.splitext(entry['export_filename'])
+                    filename = self._unique_name(f'{stem}-aug-{copy_index}{ext or ".jpg"}', set())
+                    if self._write_classification_image(dataset_path, 'train', filename, aug_image, entry['label']):
+                        split_counts['train'] += 1
+                        train_generated += 1
+        primary = next((subset for subset in ('train', 'val', 'test') if split_counts[subset] > 0), 'train')
+        split_counts.update({
+            'primary': primary,
+            'train_original': train_original,
+            'train_generated': train_generated,
+            'final_total': split_counts['train'] + split_counts['val'] + split_counts['test'],
+        })
+        return {
+            'split_counts': split_counts,
+            'preprocessing_config': preprocessing_config,
+            'augmentation_config': augmentation_config,
+        }
+
+    def _write_snapshot_files(self, dataset_path: str, split_map: dict[str, list[dict]], class_to_id: dict[str, int], task_type: str, config: dict) -> dict:
+        if task_type == 'classify_single':
+            return self._write_classification_snapshot_files(dataset_path, split_map, config)
+        preprocessing_config = self._normalize_preprocessing_config(config)
+        augmentation_config = self._normalize_augmentation_config(config)
+        pose_template = (config.get('task_config') or {}).get('pose_template') or config.get('pose_template')
         split_counts = {subset: 0 for subset in ('train', 'val', 'test')}
         train_original = len(split_map.get('train', []))
         train_generated = 0
@@ -577,7 +711,7 @@ class TrainingService:
                 image = self._read_entry_image(entry)
                 detections = self._sanitize_detections(entry['detections'], image.shape[1], image.shape[0], task_type)
                 image, detections = self._preprocess_entry_image(image, detections, preprocessing_config, task_type)
-                if self._write_image_and_label(dataset_path, subset, entry['export_filename'], image, detections, class_to_id, task_type):
+                if self._write_image_and_label(dataset_path, subset, entry['export_filename'], image, detections, class_to_id, task_type, pose_template):
                     split_counts[subset] += 1
         multiplier = int(augmentation_config.get('multiplier') or 1)
         has_offline_steps = any(float(value or 0) > 0 for value in (augmentation_config.get('offline') or {}).values())
@@ -590,7 +724,7 @@ class TrainingService:
                     aug_image, aug_detections = self._augment_entry(image, detections, augmentation_config, task_type, force=True)
                     stem, ext = os.path.splitext(entry['export_filename'])
                     filename = self._unique_name(f'{stem}-aug-{copy_index}{ext or ".jpg"}', set())
-                    if self._write_image_and_label(dataset_path, 'train', filename, aug_image, aug_detections, class_to_id, task_type):
+                    if self._write_image_and_label(dataset_path, 'train', filename, aug_image, aug_detections, class_to_id, task_type, pose_template):
                         split_counts['train'] += 1
                         train_generated += 1
         primary = next((subset for subset in ('train', 'val', 'test') if split_counts[subset] > 0), 'train')
@@ -612,6 +746,16 @@ class TrainingService:
             item = {'label': det.get('label', ''), 'box': [round(float(value), 2) for value in det.get('box', [])]}
             if det.get('mask'):
                 item['mask'] = [[round(float(point[0]), 2), round(float(point[1]), 2)] for point in det['mask']]
+            if det.get('keypoints'):
+                item['keypoints'] = [
+                    {
+                        'name': point.get('name'),
+                        'x': round(float(point.get('x', 0.0)), 2),
+                        'y': round(float(point.get('y', 0.0)), 2),
+                        'visibility': point.get('visibility', 'visible'),
+                    }
+                    for point in det['keypoints']
+                ]
             annotations.append(item)
         return annotations
 
@@ -627,6 +771,10 @@ class TrainingService:
                 pts = np.array(det['mask'], dtype=np.int32)
                 if len(pts) >= 3:
                     cv2.polylines(rendered, [pts], True, (37, 99, 235), 2)
+            for point in det.get('keypoints') or []:
+                if point.get('visibility') == 'missing':
+                    continue
+                cv2.circle(rendered, (int(round(point.get('x', 0))), int(round(point.get('y', 0)))), 3, (245, 158, 11), -1)
         ok, buffer = cv2.imencode('.jpg', rendered, [cv2.IMWRITE_JPEG_QUALITY, 86])
         if not ok:
             raise ValueError('Unable to encode preview image')
@@ -678,6 +826,10 @@ class TrainingService:
         img_dir = os.path.join(pdir, 'images')
         if not os.path.isdir(ann_dir):
             raise FileNotFoundError(f"Dataset '{dataset_name}' not found")
+        meta = self.dataset_service._read_meta(dataset_name)
+        project_task = meta.get('task_type', 'detect')
+        if project_task != task_type and not (project_task == 'detect' and task_type == 'segment'):
+            raise ValueError(f"Dataset task_type '{project_task}' does not match Train Tune task_type '{task_type}'")
 
         entries = []
         used_filenames: set[str] = set()
@@ -685,14 +837,43 @@ class TrainingService:
         all_annotation_files = [f for f in sorted(os.listdir(ann_dir)) if f.endswith('.json')]
         for fname in all_annotation_files:
             ann = self._read_json(os.path.join(ann_dir, fname), {})
-            detections = [d for d in ann.get('detections', []) if d.get('accepted', True)]
-            if not detections:
-                continue
             image_name = ann.get('image')
             image_path = os.path.join(img_dir, image_name)
             if not os.path.isfile(image_path):
                 continue
             export_filename = self._unique_name(ann.get('original_filename') or image_name, used_filenames)
+            if task_type == 'classify_single':
+                labels = [label for label in ann.get('labels', []) if label.get('accepted', True) and label.get('label')]
+                if len(labels) != 1:
+                    continue
+                class_names.add(labels[0]['label'])
+                entries.append({
+                    'img_id': os.path.splitext(fname)[0],
+                    'image_path': image_path,
+                    'export_filename': export_filename,
+                    'width': int(ann['width']),
+                    'height': int(ann['height']),
+                    'label': labels[0]['label'],
+                    'detections': [{'label': labels[0]['label'], 'box': [0, 0, int(ann['width']), int(ann['height'])]}],
+                })
+                continue
+            if task_type == 'pose':
+                poses = [p for p in ann.get('poses', []) if p.get('accepted', True)]
+                valid_poses = [p for p in poses if p.get('label') and len(p.get('box', [])) == 4 and p.get('keypoints')]
+                if not valid_poses:
+                    continue
+                for pose in valid_poses:
+                    class_names.add(pose['label'])
+                entries.append({
+                    'img_id': os.path.splitext(fname)[0],
+                    'image_path': image_path,
+                    'export_filename': export_filename,
+                    'width': int(ann['width']),
+                    'height': int(ann['height']),
+                    'detections': valid_poses,
+                })
+                continue
+            detections = [d for d in ann.get('detections', []) if d.get('accepted', True)]
             valid_dets = [d for d in detections if d.get('label') and len(d.get('box', [])) == 4]
             if not valid_dets:
                 continue
@@ -723,8 +904,12 @@ class TrainingService:
         version_id = uuid.uuid4().hex
         version_dir = self._version_dir(version_id)
         dataset_path = os.path.join(version_dir, 'dataset')
+        task_config = self.dataset_service._read_meta(dataset_name).get('task_config', {})
+        if task_config:
+            config = {**config, 'task_config': task_config}
         snapshot = self._write_snapshot_files(dataset_path, split_map, class_to_id, task_type, config)
-        self._write_dataset_yaml(dataset_path, class_to_id)
+        self._write_dataset_yaml(dataset_path, class_to_id, task_type, task_config.get('pose_template'))
+        dataset_data_path = dataset_path if task_type == 'classify_single' else os.path.join(dataset_path, 'dataset.yaml')
 
         summary = self._version_summary(entries, source_count, classes)
         summary.update({
@@ -742,11 +927,12 @@ class TrainingService:
             'class_to_id': class_to_id,
             'classes': classes,
             'task_type': task_type,
+            'task_config': task_config,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
             'preprocessing_config': snapshot['preprocessing_config'],
             'augmentation_config': snapshot['augmentation_config'],
             'storage_path': version_dir,
-            'dataset_yaml': os.path.join(dataset_path, 'dataset.yaml'),
+            'dataset_yaml': dataset_data_path,
             'split_counts': snapshot['split_counts'],
             'summary': summary,
         }
@@ -772,8 +958,22 @@ class TrainingService:
                 names[int(key)] = value
         return names
 
-    def _validate_label_text(self, raw: str, task_type: str, image_name: str, classes: list[str]) -> int:
+    def _parse_dataset_yaml_list(self, raw: str, key: str) -> list | None:
+        for line in raw.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith(f'{key}:'):
+                continue
+            value = stripped.split(':', 1)[1].strip()
+            try:
+                parsed = ast.literal_eval(value)
+            except (SyntaxError, ValueError):
+                return None
+            return parsed if isinstance(parsed, list) else None
+        return None
+
+    def _validate_label_text(self, raw: str, task_type: str, image_name: str, classes: list[str], pose_template: dict | None = None) -> int:
         count = 0
+        pose_kpts = int(((pose_template or {}).get('kpt_shape') or [0])[0] or 0)
         for line in raw.splitlines():
             stripped = line.strip()
             if not stripped:
@@ -789,6 +989,10 @@ class TrainingService:
             if task_type == 'segment':
                 if len(parts) < 7 or len(values) % 2 != 0:
                     raise ValueError(f'Segmentation labels for {image_name} must use polygon format')
+            elif task_type == 'pose':
+                expected_values = 4 + pose_kpts * 3 if pose_kpts else None
+                if len(values) < 7 or (len(values) - 4) % 3 != 0 or (expected_values and len(values) != expected_values):
+                    raise ValueError(f'Pose labels for {image_name} must use bbox plus keypoint format')
             elif len(parts) != 5:
                 raise ValueError(f'Detection labels for {image_name} must use bbox format')
             count += 1
@@ -796,8 +1000,9 @@ class TrainingService:
             raise ValueError(f'Label for {image_name} has no annotations')
         return count
 
-    def _detections_from_yolo_label(self, raw: str, task_type: str, image_name: str, classes: list[str], width: int, height: int) -> list[dict]:
+    def _detections_from_yolo_label(self, raw: str, task_type: str, image_name: str, classes: list[str], width: int, height: int, pose_template: dict | None = None) -> list[dict]:
         detections = []
+        keypoint_names = (pose_template or {}).get('keypoint_names') or []
         for line in raw.splitlines():
             stripped = line.strip()
             if not stripped:
@@ -813,6 +1018,29 @@ class TrainingService:
                 box = self._derive_box_from_mask(mask, width, height)
                 if box:
                     detections.append({'label': label, 'box': box, 'mask': mask})
+            elif task_type == 'pose':
+                if len(values) < 7 or (len(values) - 4) % 3 != 0:
+                    raise ValueError(f'Pose labels for {image_name} must use bbox plus keypoint format')
+                x_center, y_center, bw, bh = values[:4]
+                box = [
+                    (x_center - bw / 2) * width,
+                    (y_center - bh / 2) * height,
+                    (x_center + bw / 2) * width,
+                    (y_center + bh / 2) * height,
+                ]
+                box = self._clamp_box(box, width, height)
+                if not box:
+                    continue
+                keypoints = []
+                for index in range(4, len(values), 3):
+                    kp_index = (index - 4) // 3
+                    keypoints.append({
+                        'name': keypoint_names[kp_index] if kp_index < len(keypoint_names) else f'kpt_{kp_index}',
+                        'x': values[index] * width,
+                        'y': values[index + 1] * height,
+                        'visibility': 'missing' if int(values[index + 2]) == 0 else 'occluded' if int(values[index + 2]) == 1 else 'visible',
+                    })
+                detections.append({'label': label, 'box': box, 'keypoints': keypoints})
             else:
                 if len(values) != 4:
                     raise ValueError(f'Detection labels for {image_name} must use bbox format')
@@ -830,10 +1058,49 @@ class TrainingService:
             raise ValueError(f'Label for {image_name} has no annotations')
         return detections
 
+    def _classification_zip_entries(self, zf: zipfile.ZipFile, names: list[str]) -> tuple[list[dict], list[str], dict[str, int]]:
+        entries = []
+        used_filenames: set[str] = set()
+        classes = sorted({
+            parts[1]
+            for name in names
+            for parts in [name.split('/')]
+            if len(parts) >= 3 and parts[0] in {'train', 'val', 'test'} and not name.endswith('/')
+        })
+        if not classes:
+            raise ValueError('Classification export zip must use train/val/test class folders')
+        class_to_id = {name: idx for idx, name in enumerate(classes)}
+        for name in names:
+            parts = name.split('/')
+            if len(parts) < 3 or parts[0] not in {'train', 'val', 'test'} or name.endswith('/'):
+                continue
+            image_bytes = zf.read(name)
+            image = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError(f'Invalid image in export zip: {name}')
+            height, width = image.shape[:2]
+            label = parts[1]
+            export_filename = self._unique_name(os.path.basename(name), used_filenames)
+            entries.append({
+                'subset': parts[0],
+                'image_name': name,
+                'export_filename': export_filename,
+                'image_bytes': image_bytes,
+                'width': width,
+                'height': height,
+                'label': label,
+                'detections': [{'label': label, 'box': [0, 0, width, height]}],
+            })
+        if not entries:
+            raise ValueError('Classification export zip contains no images')
+        return entries, classes, class_to_id
+
     def _zip_dataset_entries(self, zip_bytes: bytes, task_type: str) -> tuple[list[dict], list[str], dict[str, int]]:
         used_filenames: set[str] = set()
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             names = zf.namelist()
+            if task_type == 'classify_single':
+                return self._classification_zip_entries(zf, names)
             yaml_name = next((name for name in names if name.endswith('dataset.yaml')), None)
             if yaml_name is None:
                 raise ValueError('dataset.yaml not found in export zip')
@@ -843,6 +1110,17 @@ class TrainingService:
                 raise ValueError('dataset.yaml names are required')
             classes = [class_names_map[idx] for idx in sorted(class_names_map)]
             class_to_id = {name: idx for idx, name in enumerate(classes)}
+            pose_template = None
+            if task_type == 'pose':
+                kpt_shape = self._parse_dataset_yaml_list(yaml_raw, 'kpt_shape')
+                flip_idx = self._parse_dataset_yaml_list(yaml_raw, 'flip_idx')
+                if not kpt_shape:
+                    raise ValueError('Pose dataset.yaml must define kpt_shape')
+                pose_template = {
+                    'kpt_shape': kpt_shape,
+                    'flip_idx': flip_idx or list(range(int(kpt_shape[0]))),
+                    'keypoint_names': [f'kpt_{index}' for index in range(int(kpt_shape[0]))],
+                }
             entries = []
             for subset in ('train', 'val', 'test'):
                 prefix = f'images/{subset}/'
@@ -857,8 +1135,8 @@ class TrainingService:
                         raise ValueError(f'Invalid image in export zip: {image_name}')
                     height, width = image.shape[:2]
                     label_raw = zf.read(label_name).decode()
-                    self._validate_label_text(label_raw, task_type, image_name, classes)
-                    detections = self._detections_from_yolo_label(label_raw, task_type, image_name, classes, width, height)
+                    self._validate_label_text(label_raw, task_type, image_name, classes, pose_template)
+                    detections = self._detections_from_yolo_label(label_raw, task_type, image_name, classes, width, height, pose_template)
                     export_filename = self._unique_name(os.path.basename(image_name), used_filenames)
                     entries.append({
                         'subset': subset,
@@ -869,6 +1147,7 @@ class TrainingService:
                         'width': width,
                         'height': height,
                         'detections': detections,
+                        'task_config': {'pose_template': pose_template} if pose_template else {},
                     })
         if not entries:
             raise ValueError('Export zip contains no labeled images')
@@ -889,8 +1168,12 @@ class TrainingService:
         version_id = uuid.uuid4().hex
         version_dir = self._version_dir(version_id)
         dataset_path = os.path.join(version_dir, 'dataset')
+        task_config = next((entry.get('task_config') for entry in entries if entry.get('task_config')), {})
+        if task_config:
+            config = {**config, 'task_config': task_config}
         snapshot = self._write_snapshot_files(dataset_path, split_map, class_to_id, task_type, config)
-        self._write_dataset_yaml(dataset_path, class_to_id)
+        self._write_dataset_yaml(dataset_path, class_to_id, task_type, task_config.get('pose_template'))
+        dataset_data_path = dataset_path if task_type == 'classify_single' else os.path.join(dataset_path, 'dataset.yaml')
 
         summary = self._version_summary(entries, len(entries), classes)
         summary.update({
@@ -908,11 +1191,12 @@ class TrainingService:
             'class_to_id': class_to_id,
             'classes': classes,
             'task_type': task_type,
+            'task_config': task_config,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
             'preprocessing_config': snapshot['preprocessing_config'],
             'augmentation_config': snapshot['augmentation_config'],
             'storage_path': version_dir,
-            'dataset_yaml': os.path.join(dataset_path, 'dataset.yaml'),
+            'dataset_yaml': dataset_data_path,
             'split_counts': snapshot['split_counts'],
             'summary': summary,
         }

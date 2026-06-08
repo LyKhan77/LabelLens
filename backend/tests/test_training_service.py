@@ -387,6 +387,78 @@ class TrainingServiceTest(unittest.TestCase):
                 {"version_name": "bad", "task_type": "segment", "split_mode": "existing"},
             )
 
+    def test_create_classification_dataset_version_from_live_dataset_writes_class_folders(self):
+        self.dataset_service.create_project("cls-demo", ["pass", "fail"], task_type="classify_single")
+        uploaded = self.dataset_service.upload_raw("cls-demo", jpg_bytes(), original_filename="panel-ok.jpg")
+        self.dataset_service.set_image_labels("cls-demo", uploaded["img_id"], [{"label": "pass", "confidence": 1.0}])
+
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "cls-demo",
+            {
+                "version_name": "cls-demo-v1",
+                "task_type": "classify_single",
+                "split_config": {"train": 100, "val": 0, "test": 0},
+                "preprocessing_config": {"resize_mode": "keep"},
+                "augmentation_config": {"profile": "baseline"},
+            },
+        )
+
+        self.assertEqual(version["task_type"], "classify_single")
+        self.assertEqual(version["dataset_yaml"], os.path.join(version["storage_path"], "dataset"))
+        self.assertTrue(os.path.isfile(os.path.join(version["storage_path"], "dataset", "train", "pass", "panel-ok.jpg")))
+        self.assertFalse(os.path.exists(os.path.join(version["storage_path"], "dataset", "dataset.yaml")))
+
+    def test_create_pose_dataset_version_from_live_dataset_writes_keypoint_labels(self):
+        self.dataset_service.create_project(
+            "pose-demo",
+            ["part"],
+            task_type="pose",
+            task_config={
+                "pose_template": {
+                    "name": "Two Point",
+                    "keypoint_names": ["left", "right"],
+                    "skeleton": [[0, 1]],
+                    "flip_idx": [1, 0],
+                    "kpt_shape": [2, 3],
+                }
+            },
+        )
+        uploaded = self.dataset_service.upload_raw("pose-demo", jpg_bytes(width=40, height=30), original_filename="pose.jpg")
+        self.dataset_service.add_pose(
+            "pose-demo",
+            uploaded["img_id"],
+            {
+                "label": "part",
+                "box": [4, 6, 24, 21],
+                "keypoints": [
+                    {"name": "left", "x": 8, "y": 9, "visibility": "visible"},
+                    {"name": "right", "x": 20, "y": 18, "visibility": "occluded"},
+                ],
+            },
+        )
+
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "pose-demo",
+            {
+                "version_name": "pose-demo-v1",
+                "task_type": "pose",
+                "split_config": {"train": 100, "val": 0, "test": 0},
+                "preprocessing_config": {"resize_mode": "keep"},
+                "augmentation_config": {"profile": "baseline"},
+            },
+        )
+
+        self.assertEqual(version["task_type"], "pose")
+        yaml_text = Path(os.path.join(version["storage_path"], "dataset", "dataset.yaml")).read_text()
+        self.assertIn("kpt_shape: [2, 3]", yaml_text)
+        self.assertIn("flip_idx: [1, 0]", yaml_text)
+        label_path = os.path.join(version["storage_path"], "dataset", "labels", "train", "pose.txt")
+        row = Path(label_path).read_text().strip().split()
+        self.assertEqual(row[0], "0")
+        self.assertEqual(len(row), 11)
+        self.assertEqual([round(float(value), 6) for value in row[1:5]], [0.35, 0.45, 0.5, 0.5])
+        self.assertEqual(row[-1], "1")
+
     def test_delete_dataset_version_removes_unused_snapshot(self):
         version = self._create_demo_version()
 

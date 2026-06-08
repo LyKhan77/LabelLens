@@ -14,6 +14,10 @@ def emit(event: dict):
     print(json.dumps(event), flush=True)
 
 
+def ultralytics_task(task_type: str) -> str:
+    return 'classify' if task_type == 'classify_single' else task_type
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--job-json', required=True)
@@ -246,9 +250,10 @@ def actual_train(job: dict, version: dict):
             checkpoint = job.get('resume_from_checkpoint') if job.get('resume') else job['base_checkpoint']
             model = YOLO(checkpoint)
             expected_task = job.get('task_type', 'detect')
+            expected_model_task = ultralytics_task(expected_task)
             model_task = getattr(model, 'task', 'unknown')
-            if model_task != expected_task:
-                raise ValueError(f'Train Tune {expected_task} runs require a {expected_task} checkpoint; got {model_task} checkpoint.')
+            if model_task != expected_model_task:
+                raise ValueError(f'Train Tune {expected_task} runs require a {expected_model_task} checkpoint; got {model_task} checkpoint.')
             train_args = {
                 'data': version['dataset_yaml'],
                 'epochs': int(job.get('epochs', 50)),

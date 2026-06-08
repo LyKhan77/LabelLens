@@ -1,6 +1,6 @@
 import { api } from './client'
 
-export type TrainingTaskType = 'detect' | 'segment'
+export type TrainingTaskType = 'detect' | 'segment' | 'pose' | 'classify_single'
 
 export interface DatasetVersion {
   id: string
@@ -33,7 +33,7 @@ export interface DatasetVersion {
 
 export interface TrainingPolicyPreviewSampleStage {
   image: string
-  annotations: Array<{ label: string; box: number[]; mask?: number[][] }>
+  annotations: Array<{ label: string; box: number[]; mask?: number[][]; keypoints?: Array<{ name?: string; x: number; y: number; visibility?: string }> }>
 }
 
 export interface TrainingPolicyPreviewSample {

@@ -86,7 +86,7 @@ function reactiveState() {
     augMixup: 0,
     augCopyPaste: 0,
     augErasing: 0,
-    taskType: 'detect' as 'detect' | 'segment',
+    taskType: 'detect' as 'detect' | 'segment' | 'pose' | 'classify_single',
     family: 'yolo11' as 'yolo11' | 'yolo26',
     size: 'n' as 'n' | 's' | 'm' | 'l',
     baseCheckpoint: 'yolo11n.pt',
@@ -175,13 +175,30 @@ const builderSteps = [
 ]
 type MetricTrendKey = typeof metricTrends[number]['key']
 
-function taskLabel(taskType: 'detect' | 'segment' | string | undefined) {
-  return taskType === 'segment' ? 'Segmentation' : 'Detection'
+function taskLabel(taskType: 'detect' | 'segment' | 'pose' | 'classify_single' | string | undefined) {
+  if (taskType === 'segment') return 'Segmentation'
+  if (taskType === 'pose') return 'Pose'
+  if (taskType === 'classify_single') return 'Classification'
+  return 'Detection'
 }
 
-function defaultCheckpoint(family: 'yolo11' | 'yolo26', size: 'n' | 's' | 'm' | 'l', taskType: 'detect' | 'segment') {
-  const suffix = taskType === 'segment' ? '-seg' : ''
+function defaultCheckpoint(family: 'yolo11' | 'yolo26', size: 'n' | 's' | 'm' | 'l', taskType: 'detect' | 'segment' | 'pose' | 'classify_single') {
+  const suffix = taskType === 'segment' ? '-seg' : taskType === 'pose' ? '-pose' : taskType === 'classify_single' ? '-cls' : ''
   return family === 'yolo11' ? `yolo11${size}${suffix}.pt` : `yolo26${size}${suffix}.pt`
+}
+
+function checkpointPlaceholder() {
+  if (form.taskType === 'segment') return 'yolo26n-seg.pt'
+  if (form.taskType === 'pose') return 'yolo26n-pose.pt'
+  if (form.taskType === 'classify_single') return 'yolo26n-cls.pt'
+  return 'yolo26n.pt'
+}
+
+function taskSnapshotNote() {
+  if (form.taskType === 'segment') return 'Segmentation snapshots require every accepted object to have a mask from Dataset Workspace/SAM2.1. Segment models output both bbox and mask.'
+  if (form.taskType === 'pose') return 'Pose snapshots require accepted pose instances with complete keypoints. Pose models output bbox plus keypoints.'
+  if (form.taskType === 'classify_single') return 'Classification snapshots require one accepted image-level label per image and train from class-folder splits.'
+  return 'Detection snapshots train bbox-only labels. Segmentation masks are ignored unless the Segmentation task is selected.'
 }
 
 function syncCheckpoint() {
@@ -997,10 +1014,10 @@ async function resumeJob(jobId: string) {
                     <p class="text-[13px] text-ink-mute leading-[1.45]">Pick the YOLO task, family, checkpoint, and GPU mode used to schedule this training run.</p>
                   </div>
                   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-(--spacing-md)">
-                    <label class="train-field"><span class="train-label-with-info">Task <span class="train-param-help" tabindex="0" aria-label="Training task." data-tip="Detection trains bbox-only labels. Segmentation trains masks and still outputs boxes.">?</span></span><select v-model="form.taskType"><option value="detect">Detection · BBox</option><option value="segment">Segmentation · BBox + Mask</option></select></label>
+                    <label class="train-field"><span class="train-label-with-info">Task <span class="train-param-help" tabindex="0" aria-label="Training task." data-tip="Detection trains boxes, Segmentation trains masks, Pose trains keypoints, Classification trains one image-level class.">?</span></span><select v-model="form.taskType"><option value="detect">Detection · BBox</option><option value="segment">Segmentation · BBox + Mask</option><option value="pose">Pose · BBox + Keypoints</option><option value="classify_single">Classification · Single Label</option></select></label>
                     <label class="train-field"><span class="train-label-with-info">Family <span class="train-param-help" tabindex="0" aria-label="YOLO architecture family." data-tip="Selects the YOLO family used as the base architecture.">?</span></span><select v-model="form.family"><option value="yolo11">YOLO11</option><option value="yolo26">YOLO26</option></select></label>
                     <label class="train-field"><span class="train-label-with-info">Size <span class="train-param-help" tabindex="0" aria-label="Model size tier." data-tip="Larger sizes can improve accuracy but use more VRAM and train slower.">?</span></span><select v-model="form.size"><option value="n">n</option><option value="s">s</option><option value="m">m</option><option value="l">l</option></select></label>
-                    <label class="train-field train-field-span"><span class="train-label-with-info">Base Checkpoint <span class="train-param-help" tabindex="0" aria-label="Starting model weights." data-tip="Must match the selected task: detection checkpoints for bbox training, -seg checkpoints for segmentation.">?</span></span><input v-model="form.baseCheckpoint" :placeholder="form.taskType === 'segment' ? 'yolo26n-seg.pt' : 'yolo26n.pt'" /></label>
+                    <label class="train-field train-field-span"><span class="train-label-with-info">Base Checkpoint <span class="train-param-help" tabindex="0" aria-label="Starting model weights." data-tip="Must match the selected task: plain, -seg, -pose, or -cls checkpoint.">?</span></span><input v-model="form.baseCheckpoint" :placeholder="checkpointPlaceholder()" /></label>
                     <label class="train-field"><span class="train-label-with-info">Job Name <span class="train-param-help" tabindex="0" aria-label="Human-readable run name." data-tip="Name used to identify this run and its output artifact folder.">?</span></span><input v-model="form.jobName" placeholder="bolt-detector" /></label>
                     <div class="train-field train-field-span">
                       <span class="train-label-with-info">Training Mode <span class="train-param-help" tabindex="0" aria-label="GPU scheduling mode." data-tip="Standard uses one GPU; High-Speed uses all selected GPUs and waits until inference is idle.">?</span></span>
@@ -1031,7 +1048,7 @@ async function resumeJob(jobId: string) {
                     <label class="train-field"><span class="train-label-with-info">Batch <span class="train-param-help" tabindex="0" aria-label="Images per training step." data-tip="Auto lets Ultralytics choose a batch size based on available GPU memory.">?</span></span><select v-model.number="form.batch"><option :value="-1">Auto</option><option :value="4">4</option><option :value="8">8</option><option :value="16">16</option><option :value="32">32</option></select></label>
                     <label class="train-field"><span class="train-label-with-info">Workers <span class="train-param-help" tabindex="0" aria-label="Data loader worker count." data-tip="Parallel workers used to load and prepare training images.">?</span></span><input v-model.number="form.workers" type="number" min="1" /></label>
                   </div>
-                  <p class="train-version-note">{{ form.taskType === 'segment' ? 'Segmentation snapshots require every accepted object to have a mask from Dataset Workspace/SAM2.1. Segment models output both bbox and mask.' : 'Detection snapshots train bbox-only labels. Segmentation masks are ignored unless the Segmentation task is selected.' }}</p>
+                  <p class="train-version-note">{{ taskSnapshotNote() }}</p>
                 </section>
 
                 <section v-else-if="builderStep === 4" class="space-y-(--spacing-md)">
@@ -1074,7 +1091,7 @@ async function resumeJob(jobId: string) {
                   <p v-if="form.trainingMode === 'high_speed'" class="train-warning">High-Speed Mode uses {{ form.trainingDevices.length }} GPU(s). The job only starts when inference is idle, and new inference requests remain blocked until the run finishes.</p>
                   <div v-if="form.localError || trainingStore.error" class="space-y-(--spacing-sm)">
                     <p class="train-error">{{ form.localError || trainingStore.error }}</p>
-                    <button v-if="form.taskType === 'segment' && form.selectedDataset" class="dataset-secondary-button" @click="navigate('/datasets')">Open Dataset Workspace</button>
+                    <button v-if="['segment', 'pose', 'classify_single'].includes(form.taskType) && form.selectedDataset" class="dataset-secondary-button" @click="navigate('/datasets')">Open Dataset Workspace</button>
                   </div>
                 </section>
               </div>
@@ -1335,7 +1352,7 @@ async function resumeJob(jobId: string) {
               <div class="border border-hairline rounded-(--radius-lg) bg-canvas px-(--spacing-xxl) py-(--spacing-xxl)">
                 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-(--spacing-md)">
                   <div class="train-stat"><span>Model Name</span><strong>{{ trainingStore.selectedModel.model_name }}</strong><small>{{ trainingStore.selectedModel.version_name }}</small></div>
-                  <div class="train-stat"><span>Task</span><strong>{{ taskLabel(trainingStore.selectedModel.task_type) }}</strong><small>{{ trainingStore.selectedModel.task_type === 'segment' ? 'BBox + mask output' : 'BBox output' }}</small></div>
+                  <div class="train-stat"><span>Task</span><strong>{{ taskLabel(trainingStore.selectedModel.task_type) }}</strong><small>{{ trainingStore.selectedModel.task_type === 'segment' ? 'BBox + mask output' : trainingStore.selectedModel.task_type === 'pose' ? 'BBox + keypoint output' : trainingStore.selectedModel.task_type === 'classify_single' ? 'Single-label class output' : 'BBox output' }}</small></div>
                   <div class="train-stat"><span>Family</span><strong>{{ trainingStore.selectedModel.family }}</strong><small>size {{ trainingStore.selectedModel.size }}</small></div>
                   <div class="train-stat"><span>Classes</span><strong>{{ trainingStore.selectedModel.class_names.length }}</strong><small>{{ trainingStore.selectedModel.class_names.join(', ') }}</small></div>
                   <div class="train-stat"><span>Best Artifact</span><strong>{{ trainingStore.selectedModel.best_model_path }}</strong><small>registered output</small></div>

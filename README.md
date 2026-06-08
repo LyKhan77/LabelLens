@@ -21,12 +21,12 @@ The app is built for fast dataset loops: run prompt-free, text-prompt, or visual
 | Dataset Manager | Multi-project task-aware dataset workspace for detection, segmentation, single-label classification, multi-label classification, and pose datasets, with overlay gallery, modal review, class colors, and task-native exports. |
 | Auto-Labelling | Saves inference results into datasets from image, video, batch upload, or continuous RTSP viewer frames with optional timer control. |
 | SAM2.1 Auto-mask | Generates segmentation masks from manual bbox annotations when SAM is available; bbox saves remain non-fatal if SAM fails. |
-| Train Tune | Builds immutable detection/segmentation Dataset Versions, previews preprocessing/augmentation policy, recommends settings, runs training jobs, tracks metrics/artifacts, resumes checkpoints, and tests registered model versions. |
+| Train Tune | Builds immutable detection, segmentation, pose, and single-label classification Dataset Versions, previews preprocessing/augmentation policy, recommends settings, runs training jobs, tracks metrics/artifacts, resumes checkpoints, and tests registered model versions. |
 | GPU Policy | Defaults LabelLens to physical GPUs `1,2`, leaving physical GPU `0` reserved for vLLM. Train Tune Standard uses GPU `1`; High-Speed uses GPUs `1,2` with AMP off. |
 
 ## Validation Status
 
-Implementation is present across backend and frontend. Remaining work is end-to-end validation with real media, model outputs, RTSP feeds, SAM2.1 GPU execution, and real Train Tune detection/segmentation checkpoint runs.
+Implementation is present across backend and frontend. Remaining work is end-to-end validation with real media, model outputs, RTSP feeds, SAM2.1 GPU execution, and real Train Tune detection/segmentation/pose/classification checkpoint runs.
 
 Backend unit tests currently cover dataset and Train Tune service/runtime behavior:
 
@@ -34,7 +34,7 @@ Backend unit tests currently cover dataset and Train Tune service/runtime behavi
 env/bin/python -m unittest discover backend/tests
 ```
 
-Current task-aware dataset support includes task selection at New Dataset, annotation-first labels, classification image labels, an Ultralytics-style Pose editor (Move/BBox/Pan-Zoom/Visibility toolbar, anatomically-templated draggable keypoint skeletons, proportional keypoint scaling during bbox resize, bbox-clamped drag with cursor-anchored zoom/pan, click-to-cycle visibility, scrollable sidebar dropdown keypoint visibility controls, enriched Pose Instance rows with V/O/M counts and bbox summaries, and edit/update/delete of saved pose instances), Rapid Inference task gating, and native exports for classification and pose. Train Tune support for the new classification/pose tasks is still being expanded.
+Current task-aware dataset support includes task selection at New Dataset, annotation-first labels, classification image labels, an Ultralytics-style Pose editor (Move/BBox/Pan-Zoom/Visibility toolbar, anatomically-templated draggable keypoint skeletons, proportional keypoint scaling during bbox resize, bbox-clamped drag with cursor-anchored zoom/pan, click-to-cycle visibility, scrollable sidebar dropdown keypoint visibility controls, enriched Pose Instance rows with V/O/M counts and bbox summaries, and edit/update/delete of saved pose instances), Rapid Inference task gating, native exports for classification and pose, and Train Tune snapshot/training support for pose plus single-label classification.
 
 ## Architecture
 
@@ -209,7 +209,7 @@ npm run dev -- --host 0.0.0.0 --port 8282
 
 1. Open `/train-tune`.
 2. Select a live dataset or import an export ZIP.
-3. Choose Detection or Segmentation.
+3. Choose Detection, Segmentation, Pose, or single-label Classification.
 4. Configure preprocessing policy: Keep, Letterbox, or Stretch.
 5. Choose Basic online augmentation or Advanced materialized augmentation.
 6. Generate policy preview samples.
@@ -309,7 +309,7 @@ Suggested manual validation checklist:
 - Save auto-label results into a dataset.
 - Review, edit, accept/reject, and export labels in Dataset Manager.
 - Generate SAM2.1 masks from manual bboxes.
-- Create Train Tune detection and segmentation Dataset Versions.
+- Create Train Tune detection, segmentation, pose, and single-label classification Dataset Versions.
 - Run Standard and High-Speed Train Tune jobs with real checkpoints.
 - Open result and Test Model pages for completed model versions.
 
