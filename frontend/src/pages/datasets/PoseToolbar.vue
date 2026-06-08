@@ -5,7 +5,10 @@ const props = withDefaults(defineProps<{ activeTool?: PoseTool }>(), {
   activeTool: 'move',
 })
 
-const emit = defineEmits<{ 'update:activeTool': [tool: PoseTool] }>()
+const emit = defineEmits<{
+  'update:activeTool': [tool: PoseTool]
+  'infer-assist': []
+}>()
 
 const tools: { id: PoseTool; label: string; shortcut: string; icon: string }[] = [
   { id: 'move', label: 'Move', shortcut: 'M', icon: 'move' },
@@ -43,6 +46,17 @@ const tools: { id: PoseTool; label: string; shortcut: string; icon: string }[] =
       <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
         <circle cx="12" cy="12" r="3" />
+      </svg>
+    </button>
+
+    <div class="dataset-canvas-toolbar-divider" />
+
+    <button
+      title="Infer Assist (AI pose detection)"
+      @click="emit('infer-assist')"
+    >
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z" />
       </svg>
     </button>
   </div>

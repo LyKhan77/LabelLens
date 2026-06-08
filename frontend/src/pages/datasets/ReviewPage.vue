@@ -53,7 +53,7 @@ const poseInferConfidence = ref(0.25)
 type PoseCandidate = PosePayload & { _idx: number }
 const poseCandidates = ref<PoseCandidate[]>([])
 const poseCandidateBusyIds = ref<Set<number>>(new Set())
-const poseAcceptingAll = ref(false)
+const showPoseInferModal = ref(false)
 
 const annotations = computed(() => store.currentAnnotations?.annotations)
 const detections = computed(() => annotations.value?.detections ?? [])
@@ -502,7 +502,6 @@ async function acceptAllCandidatesAndContinue() {
 
 // ── Pose Infer ──────────────────────────────────────────────────
 const canPoseInfer = computed(() => Boolean(poseModelPath.value.trim() && store.selectedImage && !poseInferLoading.value))
-const canPoseInferNext = computed(() => canPoseInfer.value && canNavigateNext.value)
 
 async function runPoseInferCurrent() {
   if (!store.selectedImage || !poseModelPath.value.trim()) return
@@ -519,33 +518,12 @@ async function runPoseInferCurrent() {
   }
 }
 
-async function runPoseInferNext() {
-  if (!store.selectedImage || !poseModelPath.value.trim()) return
-  poseInferLoading.value = true
-  poseInferError.value = ''
-  poseCandidates.value = []
-  try {
-    const targetImgId = await nextImageId()
-    if (!targetImgId) {
-      poseInferError.value = 'No next image available.'
-      return
-    }
-    const result = await store.inferPoseImage(targetImgId, poseModelPath.value, poseInferConfidence.value)
-    await store.selectImage(targetImgId)
-    poseCandidates.value = (result?.candidates ?? []).map((c, i) => ({ ...c, _idx: i }))
-  } catch (e) {
-    poseInferError.value = e instanceof Error ? e.message : 'Pose inference failed'
-  } finally {
-    poseInferLoading.value = false
-  }
-}
-
 function rejectPoseCandidate(idx: number) {
   poseCandidates.value = poseCandidates.value.filter((c) => c._idx !== idx)
 }
 
 function isPoseCandidateBusy(idx: number): boolean {
-  return poseCandidateBusyIds.value.has(idx) || poseAcceptingAll.value
+  return poseCandidateBusyIds.value.has(idx)
 }
 
 async function acceptPoseCandidate(candidate: PoseCandidate) {
@@ -568,11 +546,10 @@ async function acceptPoseCandidate(candidate: PoseCandidate) {
   }
 }
 
-async function acceptAllPoseCandidatesAndContinue() {
-  if (!store.selectedImage || poseAcceptingAll.value || !poseCandidates.value.length || !canNavigateNext.value) return
+async function acceptAllPoseCandidates() {
+  if (!store.selectedImage || poseCandidateBusyIds.value.size > 0 || !poseCandidates.value.length) return
   const imgId = store.selectedImage
   const candidates = [...poseCandidates.value]
-  poseAcceptingAll.value = true
   poseCandidateBusyIds.value = new Set(candidates.map((c) => c._idx))
   poseInferError.value = ''
   try {
@@ -586,11 +563,9 @@ async function acceptAllPoseCandidatesAndContinue() {
       })
     }
     poseCandidates.value = []
-    await runPoseInferNext()
   } catch (e) {
     poseInferError.value = e instanceof Error ? e.message : 'Pose save failed'
   } finally {
-    poseAcceptingAll.value = false
     poseCandidateBusyIds.value = new Set()
   }
 }
@@ -869,6 +844,7 @@ onUnmounted(() => {
               v-if="imageSrc && annotations && isPoseTask"
               :active-tool="poseTool"
               @update:active-tool="poseTool = $event"
+              @infer-assist="showPoseInferModal = !showPoseInferModal"
             />
             <EditableAnnotationOverlay
               v-if="imageSrc && annotations && !isClassificationTask && !isPoseTask"
@@ -958,6 +934,7 @@ onUnmounted(() => {
               :active-tool="poseTool"
               :editing-pose-id="editingPoseId"
               :saving="savingPose"
+              :candidates="poseCandidates"
               @save="savePose"
               @update="updatePose"
               @delete="removePose"
@@ -1008,16 +985,16 @@ onUnmounted(() => {
               </div>
             </Transition>
 
+            <!-- Pose Infer Assist (floating bar, same style as detection/seg) -->
             <Transition name="prompt-bar">
-              <div v-if="isPoseTask" class="dataset-prompt-action-bar">
-                <label class="dataset-prompt-conf-slider" style="gap: 4px;">
+              <div v-if="showPoseInferModal && isPoseTask" class="dataset-prompt-action-bar">
+                <label class="dataset-prompt-conf-slider">
                   Model
                   <input
                     type="text"
                     v-model="poseModelPath"
                     placeholder="yolo11n-pose.pt"
-                    class="dataset-pose-model-input"
-                    style="width: 130px; font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text);"
+                    style="width: 132px; height: 24px; padding: 0 8px; font-size: 11px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink);"
                   />
                 </label>
                 <label class="dataset-prompt-conf-slider">
@@ -1030,13 +1007,6 @@ onUnmounted(() => {
                   @click="runPoseInferCurrent"
                 >
                   {{ poseInferLoading ? 'Running...' : 'Infer Current' }}
-                </button>
-                <button
-                  class="dataset-secondary-button"
-                  :disabled="!canPoseInferNext"
-                  @click="runPoseInferNext"
-                >
-                  Next ▸
                 </button>
                 <div v-if="poseInferError" style="position: absolute; top: 100%; left: 0; right: 0; text-align: center; margin-top: 4px; color: #b42318; font-size: 11px;">
                   {{ poseInferError }}
@@ -1149,10 +1119,10 @@ onUnmounted(() => {
                 </div>
                 <button
                   class="dataset-primary-button dataset-candidate-continue"
-                  :disabled="poseAcceptingAll || poseCandidateBusyIds.size > 0 || !canNavigateNext"
-                  @click="acceptAllPoseCandidatesAndContinue"
+                  :disabled="poseCandidateBusyIds.size > 0"
+                  @click="acceptAllPoseCandidates"
                 >
-                  {{ poseAcceptingAll ? 'Saving...' : 'Accept All & Continue' }}
+                  Accept All
                 </button>
               </header>
               <div class="dataset-candidate-list">
@@ -1170,7 +1140,7 @@ onUnmounted(() => {
                   </button>
                   <button
                     class="dataset-secondary-button dataset-candidate-reject"
-                    :disabled="isPoseCandidateBusy(candidate._idx) || poseAcceptingAll"
+                    :disabled="isPoseCandidateBusy(candidate._idx)"
                     @click.stop="rejectPoseCandidate(candidate._idx)"
                   >
                     Reject

@@ -13,9 +13,11 @@ const props = withDefaults(defineProps<{
   activeTool?: PoseTool
   editingPoseId?: number | null
   saving?: boolean
+  candidates?: PosePayload[]
 }>(), {
   activeTool: 'move',
   editingPoseId: null,
+  candidates: () => [],
 })
 
 const emit = defineEmits<{
@@ -44,6 +46,8 @@ const selectedKeypoint = ref<string | null>(null)
 const hoverKeypoint = ref<string | null>(null)
 const draggingKeypoint = ref<string | null>(null)
 const draggingHandle = ref<string | null>(null)
+const draggingBody = ref(false)
+let bodyDrag: { start: { x: number; y: number }; box: number[]; keypoints: PoseKeypointAnnotation[] } | null = null
 
 // Stage/plane zoom-pan model (mirrors EditableAnnotationOverlay so cursor math stays exact).
 const stageRef = ref<HTMLElement | null>(null)
@@ -180,6 +184,17 @@ function startHandleDrag(handle: string, event: PointerEvent) {
   planeRef.value?.setPointerCapture?.(event.pointerId)
 }
 
+function startBodyDrag(event: PointerEvent) {
+  if (props.activeTool !== 'bbox' || !editor.value) return
+  bodyDrag = {
+    start: pointFromEvent(event),
+    box: [...editor.value.box],
+    keypoints: editor.value.keypoints.map((kp) => ({ ...kp })),
+  }
+  draggingBody.value = true
+  planeRef.value?.setPointerCapture?.(event.pointerId)
+}
+
 function onPlanePointerDown(event: PointerEvent) {
   if (props.activeTool === 'pan') {
     panDrag = { pointerId: event.pointerId, startClient: { x: event.clientX, y: event.clientY }, startPan: { ...panOffset } }
@@ -204,6 +219,13 @@ function onPointerMove(event: PointerEvent) {
     editor.value.keypoints = editor.value.keypoints.map((kp) =>
       kp.name === draggingKeypoint.value ? { ...kp, x, y } : kp,
     )
+  } else if (draggingBody.value && bodyDrag) {
+    const pos = pointFromEvent(event)
+    const b = bodyDrag.box
+    const dx = clamp(pos.x - bodyDrag.start.x, -b[0], imageWidth.value - b[2])
+    const dy = clamp(pos.y - bodyDrag.start.y, -b[1], imageHeight.value - b[3])
+    editor.value.box = [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy]
+    editor.value.keypoints = bodyDrag.keypoints.map((kp) => ({ ...kp, x: kp.x + dx, y: kp.y + dy }))
   } else if (draggingHandle.value) {
     resizeBox(event)
   }
@@ -249,6 +271,8 @@ function onPointerUp(event: PointerEvent) {
   }
   draggingKeypoint.value = null
   draggingHandle.value = null
+  draggingBody.value = false
+  bodyDrag = null
 }
 
 function setZoom(next: number, origin?: { x: number; y: number }) {
@@ -404,6 +428,29 @@ watch(() => [props.width, props.height, props.imageSrc], () => {
           </template>
         </g>
 
+        <!-- Candidates (dashed bbox + semi-transparent skeleton) -->
+        <g v-for="(cand, ci) in candidates" :key="`cand-${ci}`" opacity="0.6">
+          <rect
+            :x="cand.box[0]" :y="cand.box[1]"
+            :width="(cand.box[2] ?? 0) - (cand.box[0] ?? 0)"
+            :height="(cand.box[3] ?? 0) - (cand.box[1] ?? 0)"
+            fill="none" stroke="#F59E0B" :stroke-dasharray="`${6 * unit} ${4 * unit}`" :stroke-width="strokeW"
+          />
+          <line
+            v-for="edge in skeletonEdges" :key="`cand-${ci}-${edge[0]}-${edge[1]}`"
+            :x1="keypointMap(cand.keypoints ?? []).get(template.keypoint_names[edge[0]])?.x"
+            :y1="keypointMap(cand.keypoints ?? []).get(template.keypoint_names[edge[0]])?.y"
+            :x2="keypointMap(cand.keypoints ?? []).get(template.keypoint_names[edge[1]])?.x"
+            :y2="keypointMap(cand.keypoints ?? []).get(template.keypoint_names[edge[1]])?.y"
+            stroke="#F59E0B" :stroke-width="skeletonW" opacity="0.7"
+          />
+          <circle
+            v-for="kp in (cand.keypoints ?? [])" :key="`cand-${ci}-${kp.name}`"
+            :cx="kp.x" :cy="kp.y" :r="nodeR"
+            fill="#F59E0B" stroke="#ffffff" :stroke-width="strokeW * 0.75"
+          />
+        </g>
+
         <!-- Editor -->
         <g v-if="editor">
           <rect
@@ -422,6 +469,13 @@ watch(() => [props.width, props.height, props.imageSrc], () => {
 
           <!-- BBox handles -->
           <template v-if="activeTool === 'bbox'">
+            <!-- interior drag → translate whole box + keypoints -->
+            <rect
+              :x="editor.box[0]" :y="editor.box[1]"
+              :width="editor.box[2] - editor.box[0]" :height="editor.box[3] - editor.box[1]"
+              fill="transparent" class="cursor-move"
+              @pointerdown.stop="startBodyDrag($event)"
+            />
             <rect
               v-for="handle in handlePositions(editor.box)" :key="handle.id"
               :x="handle.x - handleHalf" :y="handle.y - handleHalf"
@@ -442,7 +496,7 @@ watch(() => [props.width, props.height, props.imageSrc], () => {
             />
             <circle
               :cx="kp.x" :cy="kp.y" :r="hitR" fill="transparent"
-              :class="activeTool === 'move' ? 'cursor-grab' : activeTool === 'visibility' ? 'cursor-pointer' : 'cursor-default'"
+              :class="activeTool === 'move' ? 'cursor-grab' : activeTool === 'visibility' ? 'cursor-pointer' : 'cursor-default pointer-events-none'"
               @pointerdown.stop="startKeypointDrag(kp.name, $event)"
               @pointerenter="hoverKeypoint = kp.name"
               @pointerleave="hoverKeypoint = null"
