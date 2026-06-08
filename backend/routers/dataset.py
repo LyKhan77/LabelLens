@@ -486,6 +486,39 @@ async def infer_next_visual_prompt(name: str, source_img_id: str, payload: dict 
     }
 
 
+@router.post("/datasets/{name}/images/{img_id}/infer-pose")
+async def infer_pose_image(name: str, img_id: str, payload: dict = Body(...)):
+    model_path = str(payload.get("model_path", "")).strip()
+    if not model_path:
+        raise HTTPException(400, "model_path is required")
+    try:
+        confidence = float(payload.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "confidence must be a number")
+    confidence = max(0.01, min(confidence, 0.99))
+
+    meta = dataset_service._read_meta(name)
+    pose_template = (meta.get("task_config") or {}).get("pose_template")
+    image = _read_dataset_image(name, img_id, "Image")
+
+    try:
+        result = _task_model_predict(image, "pose", model_path, confidence, pose_template)
+    except Exception as exc:
+        raise HTTPException(400, str(exc))
+
+    candidates = []
+    for idx, pose in enumerate(result.get("poses", [])):
+        candidates.append({
+            "id": idx,
+            "label": pose.get("label", ""),
+            "box": pose.get("box", []),
+            "confidence": pose.get("confidence", 0),
+            "keypoints": pose.get("keypoints", []),
+        })
+
+    return {"img_id": img_id, "candidates": candidates}
+
+
 @router.post("/datasets/{name}/save")
 async def save_to_dataset(
     name: str,

@@ -326,6 +326,15 @@ export async function inferNextVisualPrompt(
   return res.data
 }
 
+export async function inferPoseImage(
+  name: string,
+  imgId: string,
+  payload: { model_path: string; confidence: number },
+): Promise<{ img_id: string; candidates: PosePayload[] }> {
+  const res = await api.post(`/datasets/${name}/images/${imgId}/infer-pose`, payload)
+  return res.data
+}
+
 export async function addDetection(
   name: string,
   imgId: string,

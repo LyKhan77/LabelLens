@@ -256,6 +256,14 @@ export const useDatasetStore = defineStore('dataset', () => {
     })
   }
 
+  async function inferPoseImage(imgId: string, modelPath: string, confidence = 0.5) {
+    if (!currentProject.value) return
+    return api.inferPoseImage(currentProject.value, imgId, {
+      model_path: modelPath,
+      confidence,
+    })
+  }
+
   async function generateSamMask(
     imgId: string,
     box: [number, number, number, number],
@@ -480,6 +488,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     updatePose,
     deletePose,
     inferNextVisualPrompt,
+    inferPoseImage,
     generateSamMask,
     saveToDataset,
     removeImage,
