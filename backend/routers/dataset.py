@@ -60,6 +60,23 @@ def _run_inference(frame, prompt_type: str, labels: list[str], confidence: float
     raise ValueError(f"Unknown prompt_type: {prompt_type}")
 
 
+def _classification_label_from_detections(detections: list[dict], labels: list[str], confidence: float) -> dict | None:
+    allowed = {label.strip().lower(): label.strip() for label in labels if label.strip()}
+    candidates = []
+    for det in detections:
+        label = str(det.get("label") or "").strip()
+        score = float(det.get("confidence") or 0.0)
+        if score < confidence:
+            continue
+        if allowed and label.lower() not in allowed:
+            continue
+        candidates.append((score, label))
+    if not candidates:
+        return None
+    score, label = max(candidates, key=lambda item: item[0])
+    return {"label": allowed.get(label.lower(), label), "confidence": score, "source": "yoloe_prompt"}
+
+
 def _safe_model_path(model_path: str) -> str:
     cleaned = str(model_path or "").strip()
     if not cleaned:
@@ -175,12 +192,14 @@ def _run_label_job(
     try:
         meta = dataset_service._read_meta(name)
         task_type = meta.get("task_type", "detect")
-        is_grounding_task = task_type in {"detect", "segment"}
-        if is_grounding_task and model_service.model is None:
+        is_yoloe_task = task_type in {"detect", "segment", "classify_single"}
+        if is_yoloe_task and model_service.model is None:
             raise ValueError("No model loaded. Load a model first.")
-        if not is_grounding_task and task_type not in {"pose", "classify_single"}:
+        if not is_yoloe_task and task_type not in {"pose"}:
             raise ValueError(f"Rapid Inference is not supported for {task_type}")
-        if not is_grounding_task and prompt_type != "task_model":
+        if task_type == "classify_single" and prompt_type != "text":
+            raise ValueError("Classification Rapid Inference requires text prompts")
+        if not is_yoloe_task and prompt_type != "task_model":
             raise ValueError(f"{task_type} Rapid Inference requires task_model mode")
         if prompt_type == "text" and not labels:
             raise ValueError("At least one label required for text prompt")
@@ -224,23 +243,24 @@ def _run_label_job(
                 continue
 
             try:
-                if is_grounding_task:
+                if task_type in {"detect", "segment"}:
                     det_result = _run_inference(image, prompt_type, labels, confidence)
                     predictions = det_result.get("detections", [])
                     labeled = dataset_service.label_image(name, img_id, predictions)
                     count = labeled["detections_count"] if labeled else 0
                 elif task_type == "classify_single":
-                    result = _task_model_predict(image, task_type, model_path or "", confidence)
-                    predictions = result.get("labels", [])
-                    labeled = dataset_service.set_image_labels(name, img_id, predictions) if predictions else None
-                    count = len(predictions)
+                    det_result = _run_inference(image, "text", labels, confidence)
+                    selected = _classification_label_from_detections(det_result.get("detections", []), labels, confidence)
+                    label_payload = [selected] if selected else []
+                    labeled = dataset_service.set_image_labels(name, img_id, label_payload) if label_payload else None
+                    count = len(label_payload)
                     predictions = [
                         {
                             "label": item["label"],
                             "confidence": item.get("confidence", 0),
                             "box": [0, 0, annotations.get("width", 0), annotations.get("height", 0)] if annotations else [],
                         }
-                        for item in predictions
+                        for item in label_payload
                     ]
                 elif task_type == "pose":
                     result = _task_model_predict(
@@ -627,11 +647,13 @@ async def create_label_job(
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     task_type = meta.get("task_type", "detect")
-    if task_type in {"detect", "segment"} and model_service.model is None:
+    if task_type in {"detect", "segment", "classify_single"} and model_service.model is None:
         raise HTTPException(400, "No model loaded. Load a model first.")
     if task_type not in {"detect", "segment", "pose", "classify_single"}:
         raise HTTPException(400, f"Rapid Inference is not supported for {task_type}")
-    if task_type not in {"detect", "segment"} and prompt_type != "task_model":
+    if task_type == "classify_single" and prompt_type != "text":
+        raise HTTPException(400, "Classification Rapid Inference requires text prompts")
+    if task_type not in {"detect", "segment", "classify_single"} and prompt_type != "task_model":
         raise HTTPException(400, f"{task_type} Rapid Inference requires task_model mode")
 
     label_list = _parse_json_list(labels, "labels")

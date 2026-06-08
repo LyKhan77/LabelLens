@@ -33,6 +33,8 @@ const job = ref<DatasetLabelJobStatus | null>(null)
 const classColors = computed(() => datasetStore.currentProjectData?.class_colors ?? {})
 const taskType = computed(() => datasetStore.currentProjectData?.task_type ?? 'detect')
 const isGroundingTask = computed(() => taskType.value === 'detect' || taskType.value === 'segment')
+const isPromptClassificationTask = computed(() => taskType.value === 'classify_single')
+const usesYoloePromptTask = computed(() => isGroundingTask.value || isPromptClassificationTask.value)
 const taskLabel = computed(() => {
   if (taskType.value === 'segment') return 'Segmentation'
   if (taskType.value === 'classify_single') return 'Classification · Single'
@@ -94,12 +96,13 @@ const defaultTaskModelPath = computed(() => {
   return ''
 })
 const activeTaskModelPath = computed(() => modelPath.value.trim() || defaultTaskModelPath.value)
-const requiredGroundingModel = computed<'free' | 'prompt'>(() => promptType.value === 'free' ? 'free' : 'prompt')
-const requiredModel = computed(() => isGroundingTask.value ? requiredGroundingModel.value : activeTaskModelPath.value)
-const taskModelSupported = computed(() => taskType.value === 'pose' || taskType.value === 'classify_single')
-const modelReady = computed(() => isGroundingTask.value && inferenceStore.modelLoaded && inferenceStore.inferenceMode === requiredGroundingModel.value)
+const requiredGroundingModel = computed<'free' | 'prompt'>(() => isPromptClassificationTask.value || promptType.value !== 'free' ? 'prompt' : 'free')
+const requiredModel = computed(() => usesYoloePromptTask.value ? requiredGroundingModel.value : activeTaskModelPath.value)
+const taskModelSupported = computed(() => taskType.value === 'pose')
+const modelReady = computed(() => usesYoloePromptTask.value && inferenceStore.modelLoaded && inferenceStore.inferenceMode === requiredGroundingModel.value)
 const canUpload = computed(() => sourceMode.value === 'current' || (files.value.length > 0 && !hasMixedMedia.value))
 const canStart = computed(() => {
+  if (isPromptClassificationTask.value) return modelReady.value && labels.value.length > 0
   if (!isGroundingTask.value) return taskModelSupported.value && activeTaskModelPath.value.length > 0
   if (!modelReady.value) return false
   if (promptType.value === 'text' && labels.value.length === 0) return false
@@ -208,7 +211,7 @@ async function startUpload() {
 }
 
 async function loadSelectedModel() {
-  if (!isGroundingTask.value) return
+  if (!usesYoloePromptTask.value) return
   loadingModel.value = true
   error.value = ''
   try {
@@ -276,13 +279,13 @@ async function startLabeling() {
   phase.value = 'progress'
   try {
     const created = await datasetStore.createLabelJob({
-      promptType: isGroundingTask.value ? promptType.value : 'task_model',
+      promptType: usesYoloePromptTask.value ? (isPromptClassificationTask.value ? 'text' : promptType.value) : 'task_model',
       labels: labels.value,
       confidence: confidence.value,
       referImage: referImage.value ?? undefined,
       bboxes: visualAnnotations.value.map((a) => a.bbox),
       vcls: visualAnnotations.value.map((a) => a.label),
-      modelPath: isGroundingTask.value ? undefined : activeTaskModelPath.value,
+      modelPath: usesYoloePromptTask.value ? undefined : activeTaskModelPath.value,
     })
     if (!created) return
     job.value = created
@@ -392,8 +395,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <template v-if="isGroundingTask">
-            <div class="dataset-mode-tabs">
+            <template v-if="usesYoloePromptTask">
+            <div v-if="isGroundingTask" class="dataset-mode-tabs">
               <button :class="{ 'is-active': promptType === 'free' }" @click="promptType = 'free'">
                 <strong>Free</strong>
                 <small>LRPC vocabulary</small>
@@ -408,9 +411,9 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <label v-if="promptType === 'text'" class="dataset-field-block">
+            <label v-if="promptType === 'text' || isPromptClassificationTask" class="dataset-field-block">
               <span class="dataset-field-label">Labels</span>
-              <input v-model="labelsText" class="dataset-text-input" placeholder="person, vehicle, defect" />
+              <input v-model="labelsText" class="dataset-text-input" :placeholder="isPromptClassificationTask ? 'good part, scratched part, missing screw' : 'person, vehicle, defect'" />
             </label>
 
             <div v-if="promptType === 'visual'" class="dataset-visual-prompt">
