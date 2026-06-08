@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { PoseAnnotation, PoseKeypointAnnotation, PosePayload } from '../../shared/api/dataset'
 import type { PoseTemplate } from '../../shared/types'
 import type { PoseTool } from './PoseToolbar.vue'
@@ -44,13 +44,64 @@ const selectedKeypoint = ref<string | null>(null)
 const hoverKeypoint = ref<string | null>(null)
 const draggingKeypoint = ref<string | null>(null)
 const draggingHandle = ref<string | null>(null)
-const panning = ref<{ x: number; y: number } | null>(null)
-const view = reactive({ scale: 1, tx: 0, ty: 0 })
 
-const viewBox = computed(() => `0 0 ${props.width || 1} ${props.height || 1}`)
-const groupTransform = computed(() => `translate(${view.tx} ${view.ty}) scale(${view.scale})`)
+// Stage/plane zoom-pan model (mirrors EditableAnnotationOverlay so cursor math stays exact).
+const stageRef = ref<HTMLElement | null>(null)
+const planeRef = ref<HTMLElement | null>(null)
+const stageSize = ref({ width: 0, height: 0 })
+const zoom = ref(1)
+const panOffset = reactive({ x: 0, y: 0 })
+let panDrag: { pointerId: number; startClient: { x: number; y: number }; startPan: { x: number; y: number } } | null = null
+let observer: ResizeObserver | null = null
+
+const imageWidth = computed(() => Math.max(1, props.width || 16))
+const imageHeight = computed(() => Math.max(1, props.height || 9))
 const skeletonEdges = computed(() => props.template.skeleton ?? [])
 const editing = computed(() => editor.value !== null)
+const canPan = computed(() => zoom.value > 1.01)
+const zoomPercent = computed(() => `${Math.round(zoom.value * 100)}%`)
+
+// Letterbox-fit rendered size of the plane inside the stage (pre-transform).
+const rendered = computed(() => {
+  const sw = stageSize.value.width
+  const sh = stageSize.value.height
+  if (!sw || !sh) return { width: 0, height: 0, left: 0, top: 0 }
+  const imageAspect = imageWidth.value / imageHeight.value
+  const stageAspect = sw / sh
+  let width = sw
+  let height = sh
+  if (stageAspect > imageAspect) {
+    height = sh
+    width = height * imageAspect
+  } else {
+    width = sw
+    height = width / imageAspect
+  }
+  return { width, height, left: (sw - width) / 2, top: (sh - height) / 2 }
+})
+
+const planeStyle = computed(() => {
+  const r = rendered.value
+  const transform = `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom.value})`
+  if (!r.width || !r.height) return { width: '100%', height: '100%', left: '0px', top: '0px', transform }
+  return { width: `${r.width}px`, height: `${r.height}px`, left: `${r.left}px`, top: `${r.top}px`, transform }
+})
+
+// image-px per on-screen-px, accounting for zoom — keeps node/handle sizes constant on screen.
+const unit = computed(() => {
+  const rw = rendered.value.width
+  if (!rw) return 1
+  return imageWidth.value / (rw * zoom.value)
+})
+const nodeR = computed(() => 5 * unit.value)
+const selR = computed(() => 8 * unit.value)
+const ringR = computed(() => 11 * unit.value)
+const hitR = computed(() => 16 * unit.value)
+const strokeW = computed(() => 2 * unit.value)
+const skeletonW = computed(() => 2.5 * unit.value)
+const handleHalf = computed(() => 6 * unit.value)
+const labelFont = computed(() => 12 * unit.value)
+const visibilityOptions: PoseKeypointAnnotation['visibility'][] = ['visible', 'occluded', 'missing']
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(Math.max(v, lo), hi)
@@ -80,8 +131,8 @@ function layoutKeypoints(box: number[]): PoseKeypointAnnotation[] {
 }
 
 function createDraft() {
-  const w = props.width || 1
-  const h = props.height || 1
+  const w = imageWidth.value
+  const h = imageHeight.value
   const box = [w * 0.25, h * 0.2, w * 0.75, h * 0.8]
   editor.value = { sourceId: null, label: 'pose', box, keypoints: layoutKeypoints(box) }
   selectedKeypoint.value = null
@@ -104,12 +155,15 @@ watch(() => props.editingPoseId, (id) => {
   if (pose && editor.value?.sourceId !== id) editExisting(pose)
 })
 
-function pointerPosition(event: PointerEvent) {
-  const svg = event.currentTarget as SVGSVGElement
-  const rect = svg.getBoundingClientRect()
-  const svgX = ((event.clientX - rect.left) / rect.width) * props.width
-  const svgY = ((event.clientY - rect.top) / rect.height) * props.height
-  return { x: (svgX - view.tx) / view.scale, y: (svgY - view.ty) / view.scale, svgX, svgY }
+// Screen → image-space coords from the post-transform plane rect (always on-point).
+function pointFromEvent(event: PointerEvent) {
+  const el = planeRef.value
+  if (!el) return { x: 0, y: 0 }
+  const rect = el.getBoundingClientRect()
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * imageWidth.value,
+    y: ((event.clientY - rect.top) / rect.height) * imageHeight.value,
+  }
 }
 
 function startKeypointDrag(name: string, event: PointerEvent) {
@@ -117,29 +171,33 @@ function startKeypointDrag(name: string, event: PointerEvent) {
   if (props.activeTool !== 'move') return
   selectedKeypoint.value = name
   draggingKeypoint.value = name
-  ;(event.target as Element).setPointerCapture?.(event.pointerId)
+  planeRef.value?.setPointerCapture?.(event.pointerId)
 }
 
 function startHandleDrag(handle: string, event: PointerEvent) {
   if (props.activeTool !== 'bbox') return
   draggingHandle.value = handle
-  ;(event.target as Element).setPointerCapture?.(event.pointerId)
+  planeRef.value?.setPointerCapture?.(event.pointerId)
 }
 
-function onSvgPointerDown(event: PointerEvent) {
+function onPlanePointerDown(event: PointerEvent) {
   if (props.activeTool === 'pan') {
-    panning.value = { x: event.clientX, y: event.clientY }
-    ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
+    panDrag = { pointerId: event.pointerId, startClient: { x: event.clientX, y: event.clientY }, startPan: { ...panOffset } }
+    planeRef.value?.setPointerCapture?.(event.pointerId)
+    event.preventDefault()
   }
 }
 
 function onPointerMove(event: PointerEvent) {
-  if (!editor.value) {
-    if (panning.value) doPan(event)
+  if (panDrag && panDrag.pointerId === event.pointerId) {
+    panOffset.x = panDrag.startPan.x + event.clientX - panDrag.startClient.x
+    panOffset.y = panDrag.startPan.y + event.clientY - panDrag.startClient.y
+    event.preventDefault()
     return
   }
+  if (!editor.value) return
   if (draggingKeypoint.value) {
-    const pos = pointerPosition(event)
+    const pos = pointFromEvent(event)
     const box = editor.value.box
     const x = clamp(pos.x, box[0], box[2])
     const y = clamp(pos.y, box[1], box[3])
@@ -148,67 +206,86 @@ function onPointerMove(event: PointerEvent) {
     )
   } else if (draggingHandle.value) {
     resizeBox(event)
-  } else if (panning.value) {
-    doPan(event)
   }
-}
-
-function doPan(event: PointerEvent) {
-  if (!panning.value) return
-  const rect = (event.currentTarget as SVGSVGElement).getBoundingClientRect()
-  const dx = ((event.clientX - panning.value.x) / rect.width) * props.width
-  const dy = ((event.clientY - panning.value.y) / rect.height) * props.height
-  view.tx += dx
-  view.ty += dy
-  panning.value = { x: event.clientX, y: event.clientY }
 }
 
 function resizeBox(event: PointerEvent) {
   if (!editor.value) return
-  const pos = pointerPosition(event)
-  const box = [...editor.value.box]
-  const x = clamp(pos.x, 0, props.width)
-  const y = clamp(pos.y, 0, props.height)
+  const pos = pointFromEvent(event)
+  const previousBox = [...editor.value.box]
+  const box = [...previousBox]
+  const x = clamp(pos.x, 0, imageWidth.value)
+  const y = clamp(pos.y, 0, imageHeight.value)
   const h = draggingHandle.value as string
   if (h.includes('w')) box[0] = Math.min(x, box[2] - 4)
   if (h.includes('e')) box[2] = Math.max(x, box[0] + 4)
   if (h.includes('n')) box[1] = Math.min(y, box[3] - 4)
   if (h.includes('s')) box[3] = Math.max(y, box[1] + 4)
   editor.value.box = box
-  editor.value.keypoints = editor.value.keypoints.map((kp) => ({
-    ...kp,
-    x: clamp(kp.x, box[0], box[2]),
-    y: clamp(kp.y, box[1], box[3]),
-  }))
+  editor.value.keypoints = resizeKeypoints(editor.value.keypoints, previousBox, box)
 }
 
-function stopDrag() {
+function resizeKeypoints(keypoints: PoseKeypointAnnotation[], fromBox: number[], toBox: number[]) {
+  const fromW = Math.max(1, fromBox[2] - fromBox[0])
+  const fromH = Math.max(1, fromBox[3] - fromBox[1])
+  const toW = Math.max(1, toBox[2] - toBox[0])
+  const toH = Math.max(1, toBox[3] - toBox[1])
+  return keypoints.map((kp) => {
+    const nx = (kp.x - fromBox[0]) / fromW
+    const ny = (kp.y - fromBox[1]) / fromH
+    return {
+      ...kp,
+      x: clamp(toBox[0] + nx * toW, toBox[0], toBox[2]),
+      y: clamp(toBox[1] + ny * toH, toBox[1], toBox[3]),
+    }
+  })
+}
+
+function onPointerUp(event: PointerEvent) {
+  if (panDrag && panDrag.pointerId === event.pointerId) {
+    planeRef.value?.releasePointerCapture?.(event.pointerId)
+    panDrag = null
+    return
+  }
   draggingKeypoint.value = null
   draggingHandle.value = null
-  panning.value = null
+}
+
+function setZoom(next: number, origin?: { x: number; y: number }) {
+  const previous = zoom.value
+  const target = clamp(Math.round(next * 100) / 100, 1, 6)
+  if (Math.abs(previous - target) < 0.01) return
+  if (origin && stageRef.value) {
+    const rect = stageRef.value.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    panOffset.x = panOffset.x + (1 - target / previous) * (origin.x - centerX - panOffset.x)
+    panOffset.y = panOffset.y + (1 - target / previous) * (origin.y - centerY - panOffset.y)
+  }
+  zoom.value = target
+  if (target === 1) { panOffset.x = 0; panOffset.y = 0 }
+}
+
+function zoomBy(delta: number, origin?: { x: number; y: number }) {
+  setZoom(zoom.value + delta, origin)
+}
+
+function resetZoom() {
+  zoom.value = 1
+  panOffset.x = 0
+  panOffset.y = 0
 }
 
 function onWheel(event: WheelEvent) {
-  event.preventDefault()
-  const rect = (event.currentTarget as SVGSVGElement).getBoundingClientRect()
-  const svgX = ((event.clientX - rect.left) / rect.width) * props.width
-  const svgY = ((event.clientY - rect.top) / rect.height) * props.height
-  const imgX = (svgX - view.tx) / view.scale
-  const imgY = (svgY - view.ty) / view.scale
-  const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1
-  const newScale = clamp(view.scale * factor, 1, 8)
-  view.tx = svgX - imgX * newScale
-  view.ty = svgY - imgY * newScale
-  view.scale = newScale
+  zoomBy(event.deltaY < 0 ? 0.2 : -0.2, { x: event.clientX, y: event.clientY })
 }
 
 function cycleVisibility(name: string) {
   if (!editor.value) return
-  const order: PoseKeypointAnnotation['visibility'][] = ['visible', 'occluded', 'missing']
   editor.value.keypoints = editor.value.keypoints.map((kp) => {
     if (kp.name !== name) return kp
-    const next = order[(order.indexOf(kp.visibility) + 1) % order.length]
-    return { ...kp, visibility: next }
+    const nextVis = visibilityOptions[(visibilityOptions.indexOf(kp.visibility) + 1) % visibilityOptions.length]
+    return { ...kp, visibility: nextVis }
   })
 }
 
@@ -254,29 +331,60 @@ function closeEditor() {
   selectedKeypoint.value = null
   emit('update:editingPoseId', null)
 }
+
+function updateStageSize() {
+  const el = stageRef.value
+  if (!el) return
+  const rect = el.getBoundingClientRect()
+  stageSize.value = { width: rect.width, height: rect.height }
+}
+
+onMounted(() => {
+  nextTick(updateStageSize)
+  if (stageRef.value) {
+    observer = new ResizeObserver(updateStageSize)
+    observer.observe(stageRef.value)
+  }
+})
+
+onUnmounted(() => {
+  observer?.disconnect()
+  observer = null
+})
+
+watch(() => [props.width, props.height, props.imageSrc], () => {
+  resetZoom()
+  nextTick(updateStageSize)
+})
 </script>
 
 <template>
-  <div class="dataset-review-frame relative overflow-hidden">
-    <img :src="imageSrc" alt="" class="absolute inset-0 w-full h-full object-contain" />
-    <svg
-      class="absolute inset-0 w-full h-full"
-      :class="{ 'cursor-grab': activeTool === 'pan' }"
-      :viewBox="viewBox"
-      @pointerdown="onSvgPointerDown"
+  <div
+    ref="stageRef"
+    class="dataset-media-stage dataset-review-frame"
+    :class="{ 'is-zoomed': canPan, 'is-panning': Boolean(panDrag) }"
+    @wheel.prevent="onWheel"
+  >
+    <div
+      ref="planeRef"
+      class="dataset-media-plane"
+      :class="`pose-tool-${activeTool}`"
+      :style="planeStyle"
+      @pointerdown="onPlanePointerDown"
       @pointermove="onPointerMove"
-      @pointerup="stopDrag"
-      @pointerleave="stopDrag"
-      @wheel="onWheel"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
     >
-      <g :transform="groupTransform">
+      <img class="dataset-media-image" :src="imageSrc" alt="" draggable="false" @load="updateStageSize" />
+
+      <svg class="absolute inset-0 w-full h-full" :viewBox="`0 0 ${imageWidth} ${imageHeight}`" preserveAspectRatio="none">
         <!-- Saved poses (read-only unless being edited) -->
         <g v-for="pose in poses" :key="pose.id">
           <template v-if="editor?.sourceId !== pose.id">
             <rect
               :x="pose.box[0]" :y="pose.box[1]"
               :width="pose.box[2] - pose.box[0]" :height="pose.box[3] - pose.box[1]"
-              fill="none" stroke="#3ECF8E" stroke-width="2"
+              fill="none" stroke="#3ECF8E" :stroke-width="strokeW"
               class="cursor-pointer" @pointerdown.stop="editExisting(pose)"
             />
             <line
@@ -285,13 +393,13 @@ function closeEditor() {
               :y1="keypointMap(pose.keypoints).get(template.keypoint_names[edge[0]])?.y"
               :x2="keypointMap(pose.keypoints).get(template.keypoint_names[edge[1]])?.x"
               :y2="keypointMap(pose.keypoints).get(template.keypoint_names[edge[1]])?.y"
-              stroke="#3ECF8E" stroke-width="2" opacity="0.7"
+              stroke="#3ECF8E" :stroke-width="skeletonW" opacity="0.7"
             />
             <circle
               v-for="kp in pose.keypoints" :key="`${pose.id}-${kp.name}`"
-              :cx="kp.x" :cy="kp.y" r="4"
+              :cx="kp.x" :cy="kp.y" :r="nodeR"
               :fill="kp.visibility === 'missing' ? '#9CA3AF' : '#3ECF8E'"
-              stroke="#ffffff" stroke-width="1.5"
+              stroke="#ffffff" :stroke-width="strokeW * 0.75"
             />
           </template>
         </g>
@@ -301,7 +409,7 @@ function closeEditor() {
           <rect
             :x="editor.box[0]" :y="editor.box[1]"
             :width="editor.box[2] - editor.box[0]" :height="editor.box[3] - editor.box[1]"
-            fill="none" stroke="#2563EB" stroke-dasharray="6 4" stroke-width="2"
+            fill="none" stroke="#2563EB" :stroke-dasharray="`${6 * unit} ${4 * unit}`" :stroke-width="strokeW"
           />
           <line
             v-for="edge in skeletonEdges" :key="`edit-${edge[0]}-${edge[1]}`"
@@ -309,15 +417,16 @@ function closeEditor() {
             :y1="keypointMap(editor.keypoints).get(template.keypoint_names[edge[0]])?.y"
             :x2="keypointMap(editor.keypoints).get(template.keypoint_names[edge[1]])?.x"
             :y2="keypointMap(editor.keypoints).get(template.keypoint_names[edge[1]])?.y"
-            stroke="#2563EB" stroke-width="2"
+            stroke="#2563EB" :stroke-width="skeletonW"
           />
 
           <!-- BBox handles -->
           <template v-if="activeTool === 'bbox'">
             <rect
               v-for="handle in handlePositions(editor.box)" :key="handle.id"
-              :x="handle.x - 5" :y="handle.y - 5" width="10" height="10"
-              fill="#ffffff" stroke="#2563EB" stroke-width="2" class="cursor-pointer"
+              :x="handle.x - handleHalf" :y="handle.y - handleHalf"
+              :width="handleHalf * 2" :height="handleHalf * 2"
+              fill="#ffffff" stroke="#2563EB" :stroke-width="strokeW" class="cursor-pointer"
               @pointerdown.stop="startHandleDrag(handle.id, $event)"
             />
           </template>
@@ -325,37 +434,43 @@ function closeEditor() {
           <!-- Keypoint nodes -->
           <g v-for="kp in editor.keypoints" :key="kp.name">
             <circle
-              :cx="kp.x" :cy="kp.y"
-              :r="selectedKeypoint === kp.name ? 9 : hoverKeypoint === kp.name ? 8 : 6"
+              :cx="kp.x" :cy="kp.y" :r="ringR"
               fill="none"
-              :stroke="selectedKeypoint === kp.name ? '#2563EB' : 'transparent'"
-              stroke-width="2"
-              :opacity="selectedKeypoint === kp.name ? 0.6 : hoverKeypoint === kp.name ? 0.4 : 0"
+              :stroke="selectedKeypoint === kp.name ? '#2563EB' : '#ffffff'"
+              :stroke-width="strokeW"
+              :opacity="selectedKeypoint === kp.name ? 0.7 : hoverKeypoint === kp.name ? 0.5 : 0"
             />
             <circle
-              :cx="kp.x" :cy="kp.y" r="12" fill="transparent"
+              :cx="kp.x" :cy="kp.y" :r="hitR" fill="transparent"
               :class="activeTool === 'move' ? 'cursor-grab' : activeTool === 'visibility' ? 'cursor-pointer' : 'cursor-default'"
               @pointerdown.stop="startKeypointDrag(kp.name, $event)"
               @pointerenter="hoverKeypoint = kp.name"
               @pointerleave="hoverKeypoint = null"
             />
             <circle
-              :cx="kp.x" :cy="kp.y" r="5"
-              :fill="visibilityColor(kp.visibility)" stroke="#ffffff" stroke-width="1.5"
+              :cx="kp.x" :cy="kp.y" :r="hoverKeypoint === kp.name || selectedKeypoint === kp.name ? selR : nodeR"
+              :fill="visibilityColor(kp.visibility)" stroke="#ffffff" :stroke-width="strokeW * 0.75"
               class="pointer-events-none"
             />
             <text
               v-if="selectedKeypoint === kp.name"
-              :x="kp.x + 10" :y="kp.y - 8" font-size="11" fill="#2563EB"
+              :x="kp.x + ringR + 2 * unit" :y="kp.y - ringR" :font-size="labelFont" fill="#2563EB"
               class="pointer-events-none select-none"
             >{{ kp.name }}</text>
           </g>
         </g>
-      </g>
-    </svg>
+      </svg>
+    </div>
 
-    <aside class="absolute right-3 top-3 w-[260px] rounded-(--radius-md) border border-hairline bg-canvas/95 p-3 shadow-lg">
-      <div class="dataset-field-row mb-2">
+    <div class="dataset-zoom-toolbar" @pointerdown.stop @click.stop>
+      <button type="button" aria-label="Zoom out" @click="zoomBy(-0.25)">-</button>
+      <span>{{ zoomPercent }}</span>
+      <button type="button" aria-label="Zoom in" @click="zoomBy(0.25)">+</button>
+      <button type="button" aria-label="Reset zoom" @click="resetZoom">Reset</button>
+    </div>
+
+    <aside class="absolute right-3 top-3 z-10 flex max-h-[calc(100%-72px)] w-[248px] flex-col rounded-(--radius-md) border border-hairline bg-canvas/95 p-2 shadow-lg">
+      <div class="dataset-field-row mb-1.5">
         <span class="dataset-field-label">Pose</span>
         <span class="dataset-field-value">{{ template.name }}</span>
       </div>
@@ -363,28 +478,26 @@ function closeEditor() {
         New Pose
       </button>
       <template v-else-if="editor">
-        <input v-model="editor.label" class="dataset-text-input mb-2" placeholder="Label" />
-        <div class="max-h-[220px] overflow-auto space-y-1">
+        <input v-model="editor.label" class="dataset-text-input mb-1.5 !h-8 !text-[12px]" placeholder="Label" />
+        <div class="min-h-0 max-h-[190px] overflow-y-auto pr-1">
           <div
             v-for="kp in editor.keypoints" :key="kp.name"
-            class="flex items-center justify-between gap-2 text-[11px] rounded px-1 py-0.5"
+            class="grid grid-cols-[minmax(0,1fr)_112px] items-center gap-1 rounded px-1 py-px text-[10px]"
             :class="{ 'bg-hairline/40': selectedKeypoint === kp.name || hoverKeypoint === kp.name }"
             @mouseenter="hoverKeypoint = kp.name"
             @mouseleave="hoverKeypoint = null"
             @click="selectedKeypoint = kp.name"
           >
-            <span class="truncate text-ink cursor-pointer">{{ kp.name }}</span>
+            <span class="truncate text-ink cursor-pointer" :title="kp.name">{{ kp.name }}</span>
             <select
-              :value="kp.visibility" class="dataset-text-input !h-7 !text-[11px]"
+              :value="kp.visibility" class="dataset-text-input !h-6 !px-2 !py-0 !text-[10px]"
               @change="setVisibility(kp.name, ($event.target as HTMLSelectElement).value as PoseKeypointAnnotation['visibility'])"
             >
-              <option value="visible">visible</option>
-              <option value="occluded">occluded</option>
-              <option value="missing">missing</option>
+              <option v-for="visibility in visibilityOptions" :key="visibility" :value="visibility">{{ visibility }}</option>
             </select>
           </div>
         </div>
-        <div class="flex gap-2 mt-3">
+        <div class="mt-2 grid grid-cols-[1fr_auto_auto] gap-1.5">
           <button class="dataset-primary-button flex-1" type="button" :disabled="saving" @click="saveEditor">
             {{ saving ? 'Saving...' : editor.sourceId === null ? 'Save' : 'Update' }}
           </button>
