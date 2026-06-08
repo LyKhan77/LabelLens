@@ -119,6 +119,22 @@ const displayDetections = computed<DatasetOverlayDetection[]>(() => [
   })),
 ])
 
+function poseSummary(pose: PoseAnnotation) {
+  const visible = pose.keypoints.filter((kp) => kp.visibility === 'visible').length
+  const occluded = pose.keypoints.filter((kp) => kp.visibility === 'occluded').length
+  const missing = pose.keypoints.filter((kp) => kp.visibility === 'missing').length
+  const [x1, y1, x2, y2] = pose.box
+  const width = Math.max(0, Math.round(x2 - x1))
+  const height = Math.max(0, Math.round(y2 - y1))
+  return {
+    visible,
+    occluded,
+    missing,
+    box: `${Math.round(x1)},${Math.round(y1)} · ${width}x${height}`,
+    status: missing ? `Missing ${missing}` : 'Complete',
+  }
+}
+
 function classColor(label: string): string {
   return store.classColor(label)
 }
@@ -990,13 +1006,26 @@ onUnmounted(() => {
               <div class="dataset-detection-list">
                 <div
                   v-for="pose in poses" :key="pose.id"
-                  class="dataset-detection-row cursor-pointer"
+                  class="dataset-detection-row dataset-pose-row cursor-pointer"
                   :class="{ 'is-selected': editingPoseId === pose.id }"
                   @click="editingPoseId = pose.id"
                 >
-                  <div class="min-w-0">
-                    <p class="text-[12px] font-medium truncate">{{ pose.label }}</p>
-                    <p class="text-[10px] text-ink-faint font-mono truncate">{{ pose.keypoints.length }} keypoints · [{{ pose.box.map((v) => Math.round(v)).join(', ') }}]</p>
+                  <div class="min-w-0 space-y-1">
+                    <div class="flex items-start justify-between gap-2">
+                      <p class="text-[12px] font-medium text-ink break-words">{{ pose.label }}</p>
+                      <span
+                        class="dataset-pose-status-badge"
+                        :class="{ 'has-missing': poseSummary(pose).missing > 0 }"
+                      >
+                        {{ poseSummary(pose).status }}
+                      </span>
+                    </div>
+                    <p class="text-[10px] text-ink-faint font-mono">
+                      {{ pose.keypoints.length }} pts · V{{ poseSummary(pose).visible }} O{{ poseSummary(pose).occluded }} M{{ poseSummary(pose).missing }}
+                    </p>
+                    <p class="text-[10px] text-ink-faint font-mono">
+                      bbox {{ poseSummary(pose).box }}
+                    </p>
                   </div>
                 </div>
                 <div v-if="!poses.length" class="p-8 text-center text-[12px] text-ink-faint">

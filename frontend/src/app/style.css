@@ -1564,6 +1564,31 @@
     background: var(--color-canvas-soft);
   }
 
+  .dataset-pose-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    min-height: 72px;
+  }
+
+  .dataset-pose-status-badge {
+    flex: 0 0 auto;
+    padding: 3px 6px;
+    border: 1px solid rgba(62, 207, 142, 0.28);
+    border-radius: var(--radius-xs);
+    background: rgba(62, 207, 142, 0.12);
+    color: var(--color-primary);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .dataset-pose-status-badge.has-missing {
+    border-color: rgba(245, 158, 11, 0.32);
+    background: rgba(245, 158, 11, 0.12);
+    color: #b45309;
+  }
+
   .dataset-detection-row.is-prompt {
     box-shadow: inset 3px 0 0 var(--color-primary);
   }
