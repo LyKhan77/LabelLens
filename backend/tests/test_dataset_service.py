@@ -556,6 +556,36 @@ class DatasetServiceTest(unittest.TestCase):
         self.assertIn("0 ", label_text)
         self.assertNotIn("1 ", label_text)
 
+    def test_crop_objects_clamps_and_skips_degenerate(self):
+        image = np.zeros((100, 120, 3), dtype=np.uint8)
+        boxes = [
+            [10, 10, 50, 40],     # valid -> 30h x 40w
+            [100, 80, 200, 200],  # out of bounds -> clamped
+            [30, 30, 30, 60],     # degenerate width -> skipped
+            [5],                  # malformed -> skipped
+        ]
+        crops = DatasetService.crop_objects(image, boxes)
+        self.assertEqual(len(crops), 2)
+        first = cv2.imdecode(np.frombuffer(crops[0], np.uint8), cv2.IMREAD_COLOR)
+        self.assertEqual(first.shape[:2], (30, 40))
+
+    def test_save_crops_writes_unannotated_images(self):
+        self.service.create_project(
+            "crops", task_type="classify_single", task_config={"classification_mode": "single"}
+        )
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+        boxes = [[0, 0, 20, 20], [40, 40, 80, 90]]
+
+        count = self.service.save_crops("crops", image, boxes, source="crop")
+
+        self.assertEqual(count, 2)
+        result = self.service.list_images("crops")
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(
+            sorted(self.service.get_unlabeled_images("crops")),
+            sorted(img["img_id"] for img in result["images"]),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

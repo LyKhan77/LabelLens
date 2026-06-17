@@ -11,6 +11,7 @@ export interface StreamConfig {
   show_labels: boolean
   show_bbox: boolean
   show_masks: boolean
+  crop_target?: string
 }
 
 export interface StreamFrame {

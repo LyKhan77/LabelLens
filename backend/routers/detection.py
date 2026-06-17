@@ -99,6 +99,7 @@ async def detect_video(
     show_bbox: bool = Form(True),
     show_masks: bool = Form(False),
     sample_fps: int = Form(5),
+    crop_target: str = Form(''),
 ):
     try:
         activity_service.start_inference()
@@ -136,6 +137,7 @@ async def detect_video(
             show_bbox=show_bbox,
             show_masks=show_masks,
             sample_fps=sample_fps,
+            crop_target=crop_target or None,
         )
     finally:
         activity_service.stop_inference()

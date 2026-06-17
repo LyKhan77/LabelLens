@@ -3,6 +3,7 @@ import tempfile
 import cv2
 import numpy as np
 
+from backend.services.dataset import dataset_service
 from backend.services.model import model_service
 from backend.utils.drawing import draw_detections
 from backend.utils.encoding import decode_image, frame_to_base64
@@ -20,6 +21,7 @@ def process_video(
     show_bbox: bool = True,
     show_masks: bool = False,
     sample_fps: int = 5,
+    crop_target: str | None = None,
 ) -> dict:
     # Setup visual prompt once (VPE extraction) if using visual mode
     if prompt_type == "visual" and refer_image is not None:
@@ -73,6 +75,11 @@ def process_video(
                 frames.append(frame_to_base64(annotated, quality=70))
                 all_detections.append(result["detections"])
                 total_inference_ms += result["stats"]["inference_ms"]
+
+                if crop_target:
+                    boxes = [d.get("box", []) for d in result["detections"]]
+                    if boxes:
+                        dataset_service.save_crops(crop_target, frame, boxes, source="crop-video")
 
             frame_idx += 1
 

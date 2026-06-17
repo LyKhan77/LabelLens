@@ -2,13 +2,16 @@
 import { useInferenceStore } from '../../../shared/stores/inference'
 import { useTestModel } from '../../../shared/composables/useTestModel'
 import { useDatasetStore } from '../../../shared/stores/dataset'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import AutoCropModal from '../../workspace/components/AutoCropModal.vue'
 
 const emit = defineEmits<{ openAutoLabel: [] }>()
 
 const store = useInferenceStore()
 const { testModelInfo, loaded, loading, error: modelError, classNames, modelArch, taskType } = useTestModel()
 const datasetStore = useDatasetStore()
+const showAutoCropModal = ref(false)
+const canCrop = computed(() => taskType.value === 'detect' || taskType.value === 'segment')
 
 const canRun = computed(() => {
   if (store.isRunning) return false
@@ -148,6 +151,17 @@ const showMasksToggle = computed(() => taskType.value === 'segment')
         <p v-if="datasetStore.autoLabelActive" class="text-[10px] text-primary">
           {{ datasetStore.autoLabelDataset }} · {{ datasetStore.autoLabelFps }} fps
         </p>
+
+        <!-- Auto-Crop (detection/segmentation only) -->
+        <button
+          v-if="canCrop"
+          @click="showAutoCropModal = true"
+          class="w-full flex items-center justify-between px-2 py-1.5 text-[12px] rounded border transition-colors cursor-pointer"
+          :class="datasetStore.autoCropActive ? 'border-primary/50 bg-primary/5 text-primary' : 'border-hairline text-ink-mute hover:bg-canvas-soft'"
+        >
+          <span>{{ datasetStore.autoCropActive ? `Auto-Crop → ${datasetStore.autoCropDataset}` : 'Auto-Crop Objects' }}</span>
+          <span v-if="datasetStore.autoCropActive" class="w-2 h-2 rounded-full bg-primary animate-pulse" />
+        </button>
       </div>
 
       <!-- Display toggles (hidden for classification — whole-image result) -->
@@ -178,5 +192,7 @@ const showMasksToggle = computed(() => taskType.value === 'segment')
         {{ store.isRunning ? 'Stop' : 'Run Inference' }}
       </button>
     </div>
+
+    <AutoCropModal v-if="showAutoCropModal" @close="showAutoCropModal = false" />
   </aside>
 </template>

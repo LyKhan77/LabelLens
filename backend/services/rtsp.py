@@ -5,6 +5,7 @@ from typing import AsyncGenerator
 import cv2
 import numpy as np
 
+from backend.services.dataset import dataset_service
 from backend.services.model import model_service
 from backend.utils.drawing import draw_detections
 from backend.utils.encoding import frame_to_base64
@@ -34,6 +35,7 @@ class RTSPStream:
         show_labels: bool = True,
         show_bbox: bool = True,
         show_masks: bool = False,
+        crop_target: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         self._running = True
         loop = asyncio.get_event_loop()
@@ -80,6 +82,18 @@ class RTSPStream:
                     last_detections = result["detections"]
                     last_inference_ms = result["stats"]["inference_ms"]
                     last_classification = result.get("classification")
+
+                    if crop_target:
+                        boxes = [d.get("box", []) for d in last_detections]
+                        if boxes:
+                            await loop.run_in_executor(
+                                None,
+                                dataset_service.save_crops,
+                                crop_target,
+                                frame,
+                                boxes,
+                                "crop-rtsp",
+                            )
 
                 annotated = draw_detections(
                     frame,

@@ -6,6 +6,7 @@ import time
 import uuid
 
 import cv2
+import numpy as np
 from fastapi import APIRouter, BackgroundTasks, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -535,6 +536,29 @@ async def save_to_dataset(
     except ValueError as e:
         raise HTTPException(400, str(e))
     return result
+
+
+@router.post("/datasets/{name}/crops")
+async def save_object_crops(
+    name: str,
+    file: UploadFile = File(...),
+    detections: str = Form("[]"),
+    source: str = Form("crop"),
+):
+    det_list = _parse_json_list(detections, "detections")
+    boxes = [d.get("box", []) for d in det_list]
+    image_bytes = await file.read()
+    arr = np.frombuffer(image_bytes, np.uint8)
+    image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(400, "Invalid image data")
+    try:
+        cropped = dataset_service.save_crops(name, image, boxes, source)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"cropped": cropped}
 
 
 @router.post("/datasets/{name}/upload")

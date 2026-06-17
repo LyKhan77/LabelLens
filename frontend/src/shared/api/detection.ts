@@ -59,6 +59,7 @@ export async function detectVideo(params: {
   showBbox: boolean
   showMasks: boolean
   sampleFps?: number
+  cropTarget?: string
   signal?: AbortSignal
 }): Promise<VideoDetectionResponse> {
   const form = new FormData()
@@ -69,6 +70,7 @@ export async function detectVideo(params: {
   form.append('show_bbox', String(params.showBbox))
   form.append('show_masks', String(params.showMasks))
   form.append('sample_fps', String(params.sampleFps ?? 5))
+  if (params.cropTarget) form.append('crop_target', params.cropTarget)
 
   if (params.promptType === 'text' && params.labels) {
     form.append('labels', params.labels.join(','))

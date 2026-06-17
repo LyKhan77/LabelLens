@@ -346,6 +346,40 @@ class DatasetService:
             "detections_count": len(annotated_dets),
         }
 
+    @staticmethod
+    def crop_objects(image: np.ndarray, boxes: list[list[float]]) -> list[bytes]:
+        """Crop each bbox from the raw full-res image, lossless PNG. Boxes in image coords."""
+        h, w = image.shape[:2]
+        crops: list[bytes] = []
+        for box in boxes:
+            if not box or len(box) < 4:
+                continue
+            x1 = max(0, min(int(round(box[0])), w - 1))
+            y1 = max(0, min(int(round(box[1])), h - 1))
+            x2 = max(0, min(int(round(box[2])), w))
+            y2 = max(0, min(int(round(box[3])), h))
+            if x2 - x1 < 1 or y2 - y1 < 1:
+                continue
+            ok, buf = cv2.imencode(".png", image[y1:y2, x1:x2])
+            if ok:
+                crops.append(buf.tobytes())
+        return crops
+
+    def save_crops(
+        self,
+        target: str,
+        image: np.ndarray,
+        boxes: list[list[float]],
+        source: str = "crop",
+        original_stem: str | None = None,
+    ) -> int:
+        """Crop detected objects and save each as a raw (unannotated) image in the target dataset."""
+        crops = self.crop_objects(image, boxes)
+        for idx, png in enumerate(crops):
+            stem = f"{original_stem}_obj{idx}.png" if original_stem else None
+            self.upload_raw(target, png, source=source, original_filename=stem)
+        return len(crops)
+
     def upload_raw(
         self,
         name: str,

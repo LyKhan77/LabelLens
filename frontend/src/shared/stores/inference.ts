@@ -237,11 +237,14 @@ export const useInferenceStore = defineStore('inference', () => {
 
         // Auto-save to dataset if auto-labelling is active
         await autoSaveToDataset()
+        // Auto-crop detected objects to dataset if auto-crop is active
+        await autoCropToDataset()
       } else if (mediaMode.value === 'video' && file.value) {
         abortController = new AbortController()
         const resp = await detectVideo({
           file: file.value,
           ...buildPromptParams(),
+          cropTarget: datasetStore.autoCropActive ? datasetStore.autoCropDataset ?? undefined : undefined,
           signal: abortController.signal,
         })
         videoFrames.value = resp.frames
@@ -295,6 +298,7 @@ export const useInferenceStore = defineStore('inference', () => {
       show_labels: showLabels.value,
       show_bbox: showBbox.value,
       show_masks: showMasks.value,
+      crop_target: datasetStore.autoCropActive ? datasetStore.autoCropDataset ?? undefined : undefined,
     })
   }
 
@@ -361,6 +365,9 @@ export const useInferenceStore = defineStore('inference', () => {
     if (datasetStore.autoLabelActive) {
       datasetStore.disableAutoLabel()
     }
+    if (datasetStore.autoCropActive) {
+      datasetStore.disableAutoCrop()
+    }
     if (viewerState.value === 'loading' || viewerState.value === 'rtsp') {
       viewerState.value = 'empty'
     }
@@ -403,6 +410,17 @@ export const useInferenceStore = defineStore('inference', () => {
       }
     } catch {
       // Auto-save failure should not block inference
+    }
+  }
+
+  async function autoCropToDataset() {
+    if (!datasetStore.autoCropActive || !datasetStore.autoCropDataset) return
+    if (mediaMode.value !== 'image' || !file.value) return
+    if (detections.value.length === 0) return
+    try {
+      await datasetStore.saveCrops(datasetStore.autoCropDataset, file.value, detections.value)
+    } catch {
+      // Auto-crop failure should not block inference
     }
   }
 

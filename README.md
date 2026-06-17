@@ -311,6 +311,7 @@ Suggested manual validation checklist:
 - Review, edit, accept/reject, and export labels in Dataset Manager.
 - Generate SAM2.1 masks from manual bboxes.
 - Create Train Tune detection, segmentation, pose, and single-label classification Dataset Versions.
+- Auto-Crop detected objects (detection/segmentation) into a target/new dataset as raw HD crops for OK/NG classification annotation.
 - Run Standard and High-Speed Train Tune jobs with real checkpoints.
 - Open result and Test Model pages for completed model versions. Test Model renders task-matched output: bbox (detect), clipped masks (segment), keypoint skeletons (pose), and a top-1 banner (classification), with task-relevant display toggles and a task-aware Detection Log (pose keypoint counts or classification Top-5).
 

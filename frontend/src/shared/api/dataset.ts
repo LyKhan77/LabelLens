@@ -202,6 +202,18 @@ export async function saveToDataset(
   return res.data
 }
 
+export async function saveCrops(
+  name: string,
+  file: File,
+  detections: unknown[],
+): Promise<{ cropped: number }> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('detections', JSON.stringify(detections))
+  const res = await api.post(`/datasets/${name}/crops`, form)
+  return res.data
+}
+
 export async function uploadRaw(
   name: string,
   files: File[],

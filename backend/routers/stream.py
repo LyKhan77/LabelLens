@@ -41,6 +41,7 @@ async def stream_endpoint(ws: WebSocket):
         show_masks = config.get("show_masks", False)
         bboxes = config.get("bboxes", [])
         vcls = config.get("vcls", [])
+        crop_target = config.get("crop_target") or None
 
         logger.info(
             "RTSP stream config received: prompt_type=%s labels=%d visual_boxes=%d",
@@ -66,6 +67,7 @@ async def stream_endpoint(ws: WebSocket):
             show_labels=show_labels,
             show_bbox=show_bbox,
             show_masks=show_masks,
+            crop_target=crop_target,
         ):
             await ws.send_json(frame_data)
 

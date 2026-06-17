@@ -49,6 +49,12 @@ export const useDatasetStore = defineStore('dataset', () => {
   const autoLabelFps = ref(1)
   const autoLabelRtspTimerSeconds = ref<number | null>(null)
 
+  // Auto-crop (mutually exclusive with auto-label)
+  const autoCropActive = ref(false)
+  const autoCropDataset = ref<string | null>(null)
+  const autoCropFps = ref(1)
+  const autoCropRtspTimerSeconds = ref<number | null>(null)
+
   // Overlay state
   const overlayState = ref({
     showBbox: true,
@@ -280,6 +286,10 @@ export const useDatasetStore = defineStore('dataset', () => {
     return api.saveToDataset(name, file, detections, source)
   }
 
+  async function saveCrops(name: string, file: File, detections: unknown[]) {
+    return api.saveCrops(name, file, detections)
+  }
+
   async function removeImages(imgIds: string[]) {
     if (!currentProject.value || imgIds.length === 0) return
     const uniqueIds = Array.from(new Set(imgIds))
@@ -406,6 +416,7 @@ export const useDatasetStore = defineStore('dataset', () => {
 
   // Auto-labelling
   function toggleAutoLabel(dataset: string, fps: number, rtspTimerSeconds: number | null = null) {
+    disableAutoCrop()
     autoLabelActive.value = true
     autoLabelDataset.value = dataset
     autoLabelFps.value = fps
@@ -416,6 +427,21 @@ export const useDatasetStore = defineStore('dataset', () => {
     autoLabelActive.value = false
     autoLabelDataset.value = null
     autoLabelRtspTimerSeconds.value = null
+  }
+
+  // Auto-crop (exclusive with auto-label)
+  function toggleAutoCrop(dataset: string, fps: number, rtspTimerSeconds: number | null = null) {
+    disableAutoLabel()
+    autoCropActive.value = true
+    autoCropDataset.value = dataset
+    autoCropFps.value = fps
+    autoCropRtspTimerSeconds.value = rtspTimerSeconds
+  }
+
+  function disableAutoCrop() {
+    autoCropActive.value = false
+    autoCropDataset.value = null
+    autoCropRtspTimerSeconds.value = null
   }
 
   // Overlay controls
@@ -463,6 +489,10 @@ export const useDatasetStore = defineStore('dataset', () => {
     autoLabelDataset,
     autoLabelFps,
     autoLabelRtspTimerSeconds,
+    autoCropActive,
+    autoCropDataset,
+    autoCropFps,
+    autoCropRtspTimerSeconds,
     overlayState,
     // Computed
     currentProjectData,
@@ -491,6 +521,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     inferPoseImage,
     generateSamMask,
     saveToDataset,
+    saveCrops,
     removeImage,
     removeImages,
     uploadRaw,
@@ -503,6 +534,8 @@ export const useDatasetStore = defineStore('dataset', () => {
     exportDataset,
     toggleAutoLabel,
     disableAutoLabel,
+    toggleAutoCrop,
+    disableAutoCrop,
     toggleOverlay,
     toggleClassVisibility,
     toggleDetectionVisibility,

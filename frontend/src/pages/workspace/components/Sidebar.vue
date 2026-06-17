@@ -5,9 +5,11 @@ import GroundingInput from '../sections/grounding/GroundingInput.vue'
 import MediaInput from '../sections/media/MediaInput.vue'
 import SettingsPanel from '../sections/settings/SettingsPanel.vue'
 import AutoLabelModal from './AutoLabelModal.vue'
+import AutoCropModal from './AutoCropModal.vue'
 
 const collapsed = ref(false)
 const showAutoLabelModal = ref(false)
+const showAutoCropModal = ref(false)
 const datasetStore = useDatasetStore()
 </script>
 
@@ -73,10 +75,19 @@ const datasetStore = useDatasetStore()
             <span>{{ datasetStore.autoLabelActive ? `Auto-Label → ${datasetStore.autoLabelDataset}` : 'Auto-Label' }}</span>
             <span v-if="datasetStore.autoLabelActive" class="w-2 h-2 rounded-full bg-primary animate-pulse" />
           </button>
+          <button
+            @click="showAutoCropModal = true"
+            class="w-full flex items-center justify-between px-3 py-2 mt-2 text-[12px] rounded-(--radius-md) border transition-colors"
+            :class="datasetStore.autoCropActive ? 'border-primary/50 bg-primary/5 text-primary' : 'border-hairline text-ink-mute hover:border-hairline-strong'"
+          >
+            <span>{{ datasetStore.autoCropActive ? `Auto-Crop → ${datasetStore.autoCropDataset}` : 'Auto-Crop' }}</span>
+            <span v-if="datasetStore.autoCropActive" class="w-2 h-2 rounded-full bg-primary animate-pulse" />
+          </button>
         </div>
       </div>
     </div>
 
     <AutoLabelModal v-if="showAutoLabelModal" @close="showAutoLabelModal = false" />
+    <AutoCropModal v-if="showAutoCropModal" @close="showAutoCropModal = false" />
   </aside>
 </template>
