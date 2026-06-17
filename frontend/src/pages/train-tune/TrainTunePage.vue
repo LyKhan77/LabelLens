@@ -5,7 +5,7 @@ import { useInferenceStore } from '../../shared/stores/inference'
 import { useBackendStatus } from '../../shared/composables/useBackendStatus'
 import { useTheme } from '../../shared/composables/useTheme'
 import { useTrainingStore } from '../../shared/stores/training'
-import type { DatasetVersion, ModelVersion, TrainingJob, TrainingMetricPoint } from '../../shared/api/training'
+import type { DatasetVersion, DatasetVersionTrainingConfig, ModelVersion, TrainingJob, TrainingMetricPoint } from '../../shared/api/training'
 import { getTrainingGpus } from '../../shared/api/system'
 import type { GpuInfo } from '../../shared/types'
 
@@ -35,6 +35,7 @@ type AugmentKey = 'fliplr' | 'flipud' | 'degrees' | 'translate' | 'scale' | 'she
 const activeAugmentKey = ref<AugmentKey | null>(null)
 const augmentDraft = ref(0)
 const augmentPreviewLoading = ref(false)
+let suppressCheckpointSync = false
 
 const previewOffsets = [-1, 0, 1] as const
 const augmentationSteps = [
@@ -202,7 +203,40 @@ function taskSnapshotNote() {
 }
 
 function syncCheckpoint() {
+  if (suppressCheckpointSync) return
   form.baseCheckpoint = defaultCheckpoint(form.family, form.size, form.taskType)
+}
+
+function currentTrainingConfig(): DatasetVersionTrainingConfig {
+  return {
+    family: form.family,
+    size: form.size,
+    base_checkpoint: form.baseCheckpoint,
+    epochs: form.epochs,
+    patience: form.patience,
+    imgsz: form.imgsz,
+    batch: form.batch,
+    workers: form.workers,
+    training_mode: form.trainingMode,
+  }
+}
+
+function applyTrainingConfig(config: DatasetVersion['training_config'] | null | undefined) {
+  if (!config) return
+  try {
+    suppressCheckpointSync = true
+    form.family = config.family
+    form.size = config.size
+    form.baseCheckpoint = config.base_checkpoint
+    form.epochs = config.epochs
+    form.patience = config.patience
+    form.imgsz = config.imgsz
+    form.batch = config.batch
+    form.workers = config.workers
+    form.trainingMode = config.training_mode
+  } finally {
+    suppressCheckpointSync = false
+  }
 }
 
 function configText(value: unknown, fallback = 'N/A') {
@@ -551,6 +585,7 @@ async function buildVersion() {
         splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
         preprocessingConfig: policyPreprocessingConfig(),
         augmentationConfig: policyAugmentationConfig(),
+        trainingConfig: currentTrainingConfig(),
         resizeMode: form.resizeMode,
         taskType: form.taskType,
       })
@@ -566,6 +601,7 @@ async function buildVersion() {
         splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
         preprocessingConfig: policyPreprocessingConfig(),
         augmentationConfig: policyAugmentationConfig(),
+        trainingConfig: currentTrainingConfig(),
         taskType: form.taskType,
       })
     }
@@ -713,6 +749,10 @@ async function pickVersion(version: DatasetVersion) {
   trainingStore.selectedVersion = version
   if (version.task_type) {
     form.taskType = version.task_type as typeof form.taskType
+  }
+  if (version.training_config) {
+    applyTrainingConfig(version.training_config)
+  } else {
     syncCheckpoint()
   }
   versionDeleteError.value = null
@@ -1179,7 +1219,7 @@ async function resumeJob(jobId: string) {
                   <button class="train-version-select" @click="pickVersion(version)">
                     <div>
                       <strong>{{ version.version_name }}</strong>
-                      <span>{{ taskLabel(version.task_type) }} / {{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
+                      <span>{{ taskLabel(version.task_type) }} / {{ version.training_config?.family || 'yolo11' }} {{ version.training_config?.size || 'n' }} / {{ version.source_type }} / {{ version.summary.usable_labeled_images }} images</span>
                     </div>
                   </button>
                   <button class="train-mini-action is-danger train-version-delete" @click.stop="requestDatasetVersionDelete(version)">Delete</button>

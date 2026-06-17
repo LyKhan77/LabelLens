@@ -797,20 +797,43 @@ class TrainingService:
     def _version_payload(self, version_id: str) -> dict:
         return self._read_json(self._version_meta_path(version_id), {})
 
+    def _job_training_config(self, job: dict) -> dict:
+        return {
+            'family': job.get('architecture_family', 'yolo11'),
+            'size': job.get('architecture_size', 'n'),
+            'base_checkpoint': job.get('base_checkpoint', ''),
+            'epochs': job.get('epochs', 50),
+            'patience': job.get('patience', 30),
+            'imgsz': job.get('imgsz', 640),
+            'batch': job.get('batch', -1),
+            'workers': job.get('workers', 2),
+            'training_mode': job.get('training_mode', 'standard'),
+        }
+
+    def _with_training_config(self, version: dict) -> dict:
+        if version.get('training_config'):
+            return version
+        version_id = version.get('id')
+        linked_jobs = [job for job in self.list_training_jobs() if job.get('dataset_version_id') == version_id]
+        if linked_jobs:
+            latest = sorted(linked_jobs, key=lambda job: job.get('created_at') or '', reverse=True)[0]
+            return {**version, 'training_config': self._job_training_config(latest)}
+        return {**version, 'training_config': self._normalize_dataset_training_config({}, version.get('task_type', 'detect'))}
+
     def list_dataset_versions(self) -> list[dict]:
         self._ensure_root()
         versions = []
         for name in sorted(os.listdir(self._versions_dir())):
             meta_path = self._version_meta_path(name)
             if os.path.isfile(meta_path):
-                versions.append(self._read_json(meta_path, {}))
+                versions.append(self._with_training_config(self._read_json(meta_path, {})))
         return versions
 
     def get_dataset_version(self, version_id: str) -> dict:
         payload = self._version_payload(version_id)
         if not payload:
             raise FileNotFoundError(f'Dataset version {version_id} not found')
-        return payload
+        return self._with_training_config(payload)
 
     def delete_dataset_version(self, version_id: str) -> None:
         self.get_dataset_version(version_id)
@@ -929,6 +952,7 @@ class TrainingService:
             'task_type': task_type,
             'task_config': task_config,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
+            'training_config': self._normalize_dataset_training_config(config, task_type),
             'preprocessing_config': snapshot['preprocessing_config'],
             'augmentation_config': snapshot['augmentation_config'],
             'storage_path': version_dir,
@@ -1193,6 +1217,7 @@ class TrainingService:
             'task_type': task_type,
             'task_config': task_config,
             'split_config': config.get('split_config') or {'train': 70, 'val': 20, 'test': 10},
+            'training_config': self._normalize_dataset_training_config(config, task_type),
             'preprocessing_config': snapshot['preprocessing_config'],
             'augmentation_config': snapshot['augmentation_config'],
             'storage_path': version_dir,
@@ -1280,6 +1305,46 @@ class TrainingService:
             'imgsz': int((config or {}).get('imgsz') or 640),
             'augmentation_mode': 'basic',
             'reason': reason,
+        }
+
+    def _normalize_dataset_training_config(self, config: dict, task_type: str) -> dict:
+        raw = config.get('training_config') if isinstance(config.get('training_config'), dict) else config
+        family = raw.get('family', 'yolo11')
+        if family not in TRAINING_FAMILIES:
+            family = 'yolo11'
+        size = raw.get('size', 'n')
+        if size not in TRAINING_SIZES:
+            size = 'n'
+        mode = raw.get('training_mode', 'standard')
+        if mode not in TRAINING_MODES:
+            mode = 'standard'
+        suffix = '-seg' if task_type == 'segment' else '-pose' if task_type == 'pose' else '-cls' if task_type == 'classify_single' else ''
+        default_checkpoint = f"yolo11{size}{suffix}.pt" if family == 'yolo11' else f"yolo26{size}{suffix}.pt"
+
+        def int_value(key: str, default: int, minimum: int, maximum: int) -> int:
+            try:
+                value = int(raw.get(key, default))
+            except (TypeError, ValueError):
+                value = default
+            return min(max(value, minimum), maximum)
+
+        try:
+            batch = int(raw.get('batch', -1))
+        except (TypeError, ValueError):
+            batch = -1
+        if batch != -1:
+            batch = min(max(batch, 1), 128)
+
+        return {
+            'family': family,
+            'size': size,
+            'base_checkpoint': str(raw.get('base_checkpoint') or default_checkpoint).strip() or default_checkpoint,
+            'epochs': int_value('epochs', 50, 1, 500),
+            'patience': int_value('patience', 30, 0, 100),
+            'imgsz': int_value('imgsz', 640, 320, 2048),
+            'batch': batch,
+            'workers': int_value('workers', 2, 0, 16),
+            'training_mode': mode,
         }
 
     def _validate_training_config(self, config: dict, version: dict) -> dict:

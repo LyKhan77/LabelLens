@@ -21,7 +21,7 @@ The app is built for fast dataset loops: run prompt-free, text-prompt, or visual
 | Dataset Manager | Multi-project task-aware dataset workspace for detection, segmentation, single-label classification, multi-label classification, and pose datasets, with overlay gallery, modal review, class colors, and task-native exports. |
 | Auto-Labelling | Saves inference results into datasets from image, video, batch upload, or continuous RTSP viewer frames with optional timer control. |
 | SAM2.1 Auto-mask | Generates segmentation masks from manual bbox annotations when SAM is available; bbox saves remain non-fatal if SAM fails. |
-| Train Tune | Builds immutable detection, segmentation, pose, and single-label classification Dataset Versions, previews preprocessing/augmentation policy, recommends settings, runs training jobs, tracks metrics/artifacts, resumes checkpoints, and tests registered model versions. |
+| Train Tune | Builds immutable detection, segmentation, pose, and single-label classification Dataset Versions, persists training architecture config, previews preprocessing/augmentation policy, recommends settings, runs training jobs, tracks metrics/artifacts, resumes checkpoints, and tests registered model versions. |
 | GPU Policy | Defaults LabelLens to physical GPUs `1,2`, leaving physical GPU `0` reserved for vLLM. Train Tune Standard uses GPU `1`; High-Speed uses GPUs `1,2` with AMP off. |
 
 ## Validation Status
@@ -213,7 +213,7 @@ npm run dev -- --host 0.0.0.0 --port 8282
 4. Configure preprocessing policy: Keep, Letterbox, or Stretch.
 5. Choose Basic online augmentation or Advanced materialized augmentation.
 6. Generate policy preview samples.
-7. Create an immutable Dataset Version.
+7. Create an immutable Dataset Version; the selected family, size, base checkpoint, and training parameters are saved with the version.
 8. Review recommended settings and training estimate.
 9. Start a training job and monitor `/train-tune/jobs/:id`.
 10. Watch task-aware metrics stream from Ultralytics `results.csv`; detection, segmentation, pose, and classification jobs use their matching metric columns.

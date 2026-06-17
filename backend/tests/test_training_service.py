@@ -102,6 +102,85 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(label_path))
         self.assertEqual(saved["image"], "img_0001.jpg")
 
+    def test_create_dataset_version_persists_training_config(self):
+        self.dataset_service.create_project("training-config-demo", ["bolt"])
+        self.dataset_service.save_image(
+            "training-config-demo",
+            jpg_bytes(),
+            [{"box": [2, 4, 20, 18], "label": "bolt", "confidence": 0.91}],
+            original_filename="panel-top.jpg",
+        )
+
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "training-config-demo",
+            {
+                "version_name": "training-config-v1",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"auto_orient": True},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+                "task_type": "detect",
+                "training_config": {
+                    "family": "yolo26",
+                    "size": "s",
+                    "base_checkpoint": "yolo26s.pt",
+                    "epochs": 120,
+                    "patience": 25,
+                    "imgsz": 768,
+                    "batch": 8,
+                    "workers": 4,
+                    "training_mode": "high_speed",
+                },
+            },
+        )
+
+        self.assertEqual(
+            version["training_config"],
+            {
+                "family": "yolo26",
+                "size": "s",
+                    "base_checkpoint": "yolo26s.pt",
+                "epochs": 120,
+                "patience": 25,
+                "imgsz": 768,
+                "batch": 8,
+                "workers": 4,
+                "training_mode": "high_speed",
+            },
+        )
+        meta = json.loads(Path(self.training_service._version_meta_path(version["id"])).read_text())
+        self.assertEqual(meta["training_config"], version["training_config"])
+
+    def test_existing_dataset_version_uses_linked_job_training_config_fallback(self):
+        version = self._create_demo_version()
+        meta_path = Path(self.training_service._version_meta_path(version["id"]))
+        meta = json.loads(meta_path.read_text())
+        meta.pop("training_config", None)
+        meta_path.write_text(json.dumps(meta))
+
+        self.training_service.create_training_job(
+            {
+                "job_name": "legacy-yolo26-job",
+                "dataset_version_id": version["id"],
+                "family": "yolo26",
+                "size": "m",
+                "base_checkpoint": "yolo26m.pt",
+                "epochs": 75,
+                "patience": 20,
+                "imgsz": 768,
+                "batch": 8,
+                "workers": 4,
+                "training_mode": "high_speed",
+                "task_type": "detect",
+            }
+        )
+
+        loaded = self.training_service.get_dataset_version(version["id"])
+
+        self.assertEqual(loaded["training_config"]["family"], "yolo26")
+        self.assertEqual(loaded["training_config"]["size"], "m")
+        self.assertEqual(loaded["training_config"]["base_checkpoint"], "yolo26m.pt")
+
     def test_create_dataset_version_from_export_zip_can_keep_existing_split(self):
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:

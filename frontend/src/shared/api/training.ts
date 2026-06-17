@@ -2,6 +2,18 @@ import { api } from './client'
 
 export type TrainingTaskType = 'detect' | 'segment' | 'pose' | 'classify_single'
 
+export interface DatasetVersionTrainingConfig {
+  family: 'yolo11' | 'yolo26'
+  size: 'n' | 's' | 'm' | 'l'
+  base_checkpoint: string
+  epochs: number
+  patience: number
+  imgsz: number
+  batch: number
+  workers: number
+  training_mode: 'standard' | 'high_speed'
+}
+
 export interface DatasetVersion {
   id: string
   source_type: 'live_dataset' | 'export_zip'
@@ -13,6 +25,7 @@ export interface DatasetVersion {
   classes: string[]
   task_type: TrainingTaskType
   split_config: { train: number; val: number; test: number }
+  training_config?: DatasetVersionTrainingConfig
   preprocessing_config: Record<string, unknown>
   augmentation_config: Record<string, unknown>
   storage_path: string
@@ -195,6 +208,7 @@ export async function createLiveDatasetVersion(params: {
   splitConfig: { train: number; val: number; test: number }
   preprocessingConfig: Record<string, unknown>
   augmentationConfig: Record<string, unknown>
+  trainingConfig: DatasetVersionTrainingConfig
   resizeMode: string
   taskType: TrainingTaskType
 }): Promise<DatasetVersion> {
@@ -204,6 +218,7 @@ export async function createLiveDatasetVersion(params: {
   form.append('split_config', JSON.stringify(params.splitConfig))
   form.append('preprocessing_config', JSON.stringify(params.preprocessingConfig))
   form.append('augmentation_config', JSON.stringify(params.augmentationConfig))
+  form.append('training_config', JSON.stringify(params.trainingConfig))
   form.append('resize_mode', params.resizeMode)
   form.append('task_type', params.taskType)
   const res = await api.post('/training/dataset-versions/live', form)
@@ -217,6 +232,7 @@ export async function importDatasetVersion(params: {
   splitConfig: { train: number; val: number; test: number }
   preprocessingConfig: Record<string, unknown>
   augmentationConfig: Record<string, unknown>
+  trainingConfig: DatasetVersionTrainingConfig
   taskType: TrainingTaskType
 }): Promise<DatasetVersion> {
   const form = new FormData()
@@ -226,6 +242,7 @@ export async function importDatasetVersion(params: {
   form.append('split_config', JSON.stringify(params.splitConfig))
   form.append('preprocessing_config', JSON.stringify(params.preprocessingConfig))
   form.append('augmentation_config', JSON.stringify(params.augmentationConfig))
+  form.append('training_config', JSON.stringify(params.trainingConfig))
   form.append('task_type', params.taskType)
   const res = await api.post('/training/dataset-versions/import', form, { timeout: 300_000 })
   return res.data

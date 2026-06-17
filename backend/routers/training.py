@@ -84,6 +84,7 @@ async def create_live_dataset_version(
     split_config: str = Form('{"train": 70, "val": 20, "test": 10}'),
     preprocessing_config: str = Form('{}'),
     augmentation_config: str = Form('{"profile": "baseline"}'),
+    training_config: str = Form('{}'),
     resize_mode: str = Form('keep'),
     task_type: str = Form('detect'),
 ):
@@ -95,6 +96,7 @@ async def create_live_dataset_version(
                 'split_config': _parse_json(split_config, 'split_config', {'train': 70, 'val': 20, 'test': 10}),
                 'preprocessing_config': _parse_json(preprocessing_config, 'preprocessing_config', {}),
                 'augmentation_config': _parse_json(augmentation_config, 'augmentation_config', {'profile': 'baseline'}),
+                'training_config': _parse_json(training_config, 'training_config', {}),
                 'resize_mode': resize_mode,
                 'task_type': task_type,
             },
@@ -117,6 +119,7 @@ async def import_dataset_version(
     split_config: str = Form('{"train": 70, "val": 20, "test": 10}'),
     preprocessing_config: str = Form('{}'),
     augmentation_config: str = Form('{"profile": "baseline"}'),
+    training_config: str = Form('{}'),
     task_type: str = Form('detect'),
 ):
     try:
@@ -129,6 +132,7 @@ async def import_dataset_version(
                 'split_config': _parse_json(split_config, 'split_config', {'train': 70, 'val': 20, 'test': 10}),
                 'preprocessing_config': _parse_json(preprocessing_config, 'preprocessing_config', {}),
                 'augmentation_config': _parse_json(augmentation_config, 'augmentation_config', {'profile': 'baseline'}),
+                'training_config': _parse_json(training_config, 'training_config', {}),
                 'task_type': task_type,
             },
         )
