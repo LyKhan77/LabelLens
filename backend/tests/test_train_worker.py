@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import importlib
 import math
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -10,19 +11,35 @@ from backend import train_worker
 
 
 class TrainWorkerTest(unittest.TestCase):
+    def training_policy(self, visible_devices="1", device="1", local_device="0", amp=True):
+        return {
+            "cuda_device_order": "PCI_BUS_ID",
+            "cuda_visible_devices": visible_devices,
+            "device": device,
+            "local_device": local_device,
+            "amp": amp,
+        }
+
     def test_backend_config_defaults_hide_4090_from_labellens(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "LABELLENS_CUDA_VISIBLE_DEVICES": "1,2",
+                "GPU_CONFIG_PATH": os.path.join(tmp, "gpu_config.json"),
+            },
+            clear=True,
+        ):
             import backend.config as config
 
             importlib.reload(config)
             self.assertEqual(os.environ["CUDA_DEVICE_ORDER"], "PCI_BUS_ID")
             self.assertEqual(os.environ["CUDA_VISIBLE_DEVICES"], "1,2")
-            self.assertEqual(config.DEVICE, "0")
-            self.assertEqual(config.SAM_DEVICE, "1")
+            self.assertEqual(config.DEVICE, "cuda:0")
+            self.assertEqual(config.SAM_DEVICE, "cuda:1")
         importlib.reload(config)
 
     def test_resolve_training_device_policy_uses_5080_visible_devices(self):
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {}, clear=True), patch("backend.services.gpu.gpu_service.get_training_config", return_value=None):
             standard = train_worker.resolve_training_device_policy({"training_mode": "standard"})
             high_speed = train_worker.resolve_training_device_policy({"training_mode": "high_speed"})
 
@@ -76,6 +93,60 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertEqual(train_worker.metric_value({"val/seg_loss": "inf"}, ["val/seg_loss"]), 0.0)
         self.assertEqual(train_worker.metric_value({"val/seg_loss": -math.inf}, ["val/seg_loss"]), 0.0)
 
+    def test_metric_from_row_uses_task_specific_columns_without_epoch_offset(self):
+        segment = train_worker.metric_from_row(
+            {
+                "epoch": "1",
+                "train/box_loss": "0.5",
+                "train/seg_loss": "4.0",
+                "val/seg_loss": "1.5",
+                "metrics/mAP50(M)": "0.25",
+            },
+            {"task_type": "segment", "epochs": 10},
+            start_time=100.0,
+            now=102.0,
+        )
+        pose = train_worker.metric_from_row(
+            {
+                "epoch": "2",
+                "train/pose_loss": "3.0",
+                "val/pose_loss": "2.0",
+                "metrics/mAP50(P)": "0.5",
+                "metrics/precision(P)": "0.6",
+                "metrics/recall(P)": "0.7",
+            },
+            {"task_type": "pose", "epochs": 10},
+            start_time=100.0,
+            now=104.0,
+        )
+        classify = train_worker.metric_from_row(
+            {
+                "epoch": "3",
+                "train/loss": "1.2",
+                "val/loss": "0.9",
+                "metrics/accuracy_top1": "0.8",
+                "metrics/accuracy_top5": "1.0",
+            },
+            {"task_type": "classify_single", "epochs": 10},
+            start_time=100.0,
+            now=106.0,
+        )
+
+        self.assertEqual(segment["epoch"], 1)
+        self.assertEqual(segment["train_loss"], 4.0)
+        self.assertEqual(segment["val_loss"], 1.5)
+        self.assertEqual(segment["map50"], 0.25)
+        self.assertEqual(pose["epoch"], 2)
+        self.assertEqual(pose["train_loss"], 3.0)
+        self.assertEqual(pose["map50"], 0.5)
+        self.assertEqual(pose["precision"], 0.6)
+        self.assertEqual(pose["recall"], 0.7)
+        self.assertEqual(classify["epoch"], 3)
+        self.assertEqual(classify["train_loss"], 1.2)
+        self.assertEqual(classify["val_loss"], 0.9)
+        self.assertEqual(classify["map50"], 0.8)
+        self.assertEqual(classify["map50_95"], 1.0)
+
     def test_emit_traceback_streams_error_and_stack_lines(self):
         emitted = []
 
@@ -113,6 +184,7 @@ class TrainWorkerTest(unittest.TestCase):
             }
             with (
                 patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "resolve_training_device_policy", return_value=self.training_policy()),
                 patch.object(train_worker, "emit", side_effect=emitted.append),
             ):
                 train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
@@ -155,6 +227,7 @@ class TrainWorkerTest(unittest.TestCase):
             }
             with (
                 patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "resolve_training_device_policy", return_value=self.training_policy()),
                 patch.object(train_worker, "emit"),
             ):
                 train_worker.actual_train(job, version)
@@ -190,6 +263,7 @@ class TrainWorkerTest(unittest.TestCase):
             }
             with (
                 patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "resolve_training_device_policy", return_value=self.training_policy()),
                 patch.object(train_worker, "emit"),
             ):
                 train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
@@ -218,6 +292,11 @@ class TrainWorkerTest(unittest.TestCase):
             with (
                 patch.dict("sys.modules", {"ultralytics": ultralytics}),
                 patch.dict(os.environ, {}, clear=True),
+                patch.object(
+                    train_worker,
+                    "resolve_training_device_policy",
+                    return_value=self.training_policy(visible_devices="1,2", device="1,2", local_device="0,1", amp=False),
+                ),
                 patch.object(train_worker, "emit"),
             ):
                 train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
@@ -263,6 +342,40 @@ class TrainWorkerTest(unittest.TestCase):
 
         self.assertEqual(train_called[0]["batch"], 16)
 
+    def test_actual_train_fails_when_ultralytics_saves_no_checkpoint(self):
+        emitted = []
+
+        class DetectModel:
+            task = "detect"
+
+            def train(self, **kwargs):
+                output_dir = Path(kwargs["project"]) / kwargs["name"]
+                output_dir.mkdir(parents=True, exist_ok=True)
+                (output_dir / "results.csv").write_text(
+                    "epoch,train/box_loss,metrics/mAP50(B)\n1,nan,0\n"
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ultralytics = SimpleNamespace(YOLO=lambda _checkpoint: DetectModel())
+            job = {
+                "output_dir": os.path.join(tmp, "run"),
+                "base_checkpoint": "models/yolo26n.pt",
+                "training_mode": "standard",
+                "task_type": "detect",
+                "epochs": 1,
+            }
+            with (
+                patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "resolve_training_device_policy", return_value=self.training_policy()),
+                patch.object(train_worker, "emit", side_effect=emitted.append),
+            ):
+                train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
+
+        failed = [item for item in emitted if item.get("event") == "job_failed"]
+        self.assertEqual(len(failed), 1)
+        self.assertIn("no checkpoint was saved", failed[0]["error"])
+        self.assertIn("non-finite", failed[0]["error"])
+
     def test_actual_train_accepts_segment_checkpoint_for_segment_job(self):
         emitted = []
         train_called = []
@@ -272,6 +385,9 @@ class TrainWorkerTest(unittest.TestCase):
 
             def train(self, **kwargs):
                 train_called.append(kwargs)
+                weights_dir = Path(kwargs["project"]) / kwargs["name"] / "weights"
+                weights_dir.mkdir(parents=True, exist_ok=True)
+                (weights_dir / "last.pt").write_bytes(b"last")
 
         with tempfile.TemporaryDirectory() as tmp:
             ultralytics = SimpleNamespace(YOLO=lambda _checkpoint: SegmentModel())
@@ -284,12 +400,19 @@ class TrainWorkerTest(unittest.TestCase):
             }
             with (
                 patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "resolve_training_device_policy", return_value=self.training_policy()),
                 patch.object(train_worker, "emit", side_effect=emitted.append),
             ):
                 train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
 
         self.assertTrue(train_called)
         self.assertFalse(any(item.get("event") == "job_failed" for item in emitted))
+
+    def test_ultralytics_task_maps_train_tune_task_types(self):
+        self.assertEqual(train_worker.ultralytics_task("detect"), "detect")
+        self.assertEqual(train_worker.ultralytics_task("segment"), "segment")
+        self.assertEqual(train_worker.ultralytics_task("pose"), "pose")
+        self.assertEqual(train_worker.ultralytics_task("classify_single"), "classify")
 
 
 if __name__ == "__main__":

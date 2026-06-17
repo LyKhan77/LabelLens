@@ -216,8 +216,9 @@ npm run dev -- --host 0.0.0.0 --port 8282
 7. Create an immutable Dataset Version.
 8. Review recommended settings and training estimate.
 9. Start a training job and monitor `/train-tune/jobs/:id`.
-10. Review results at `/train-tune/results/:id`.
-11. Test a registered artifact at `/train-tune/test/:id`.
+10. Watch task-aware metrics stream from Ultralytics `results.csv`; detection, segmentation, pose, and classification jobs use their matching metric columns.
+11. Review results at `/train-tune/results/:id`.
+12. Test a registered artifact at `/train-tune/test/:id`.
 
 ## Routes
 
@@ -323,6 +324,7 @@ Suggested manual validation checklist:
 | CUDA device mismatch | Confirm `LABELLENS_CUDA_VISIBLE_DEVICES`, `DEVICE`, `SAM_DEVICE`, and `CUDA_DEVICE_ORDER=PCI_BUS_ID`. |
 | RTSP stream does not connect | Test the RTSP URL separately, then check backend logs and network/firewall access. |
 | Train Tune job fails immediately | Verify checkpoint path, task type compatibility, dataset version labels, and GPU policy env vars. |
+| Train Tune completed without a checkpoint | Inspect `results.csv` for non-finite loss/metric values; the worker now reports the first affected epochs when `best.pt`/`last.pt` is missing. |
 | High-Speed DDP errors | Keep `TRAIN_AMP_HIGH_SPEED=false`; try Standard Mode to isolate multi-GPU issues. |
 | Frontend cannot reach backend | Confirm backend is on `0.0.0.0:3131` and CORS/network settings allow the client host. |
 

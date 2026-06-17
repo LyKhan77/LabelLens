@@ -200,6 +200,101 @@ def metric_value(row: dict, keys: list[str]) -> float:
     return 0.0
 
 
+TASK_METRIC_KEYS = {
+    'detect': {
+        'train_loss': ['train/box_loss', 'train/cls_loss', 'train/dfl_loss', 'train/loss'],
+        'val_loss': ['val/box_loss', 'val/cls_loss', 'val/dfl_loss', 'val/loss'],
+        'map50': ['metrics/mAP50(B)', 'metrics/mAP50'],
+        'map50_95': ['metrics/mAP50-95(B)', 'metrics/mAP50-95'],
+        'precision': ['metrics/precision(B)', 'metrics/precision'],
+        'recall': ['metrics/recall(B)', 'metrics/recall'],
+    },
+    'segment': {
+        'train_loss': ['train/seg_loss', 'train/box_loss', 'train/loss'],
+        'val_loss': ['val/seg_loss', 'val/box_loss', 'val/loss'],
+        'map50': ['metrics/mAP50(M)', 'metrics/mAP50(B)', 'metrics/mAP50'],
+        'map50_95': ['metrics/mAP50-95(M)', 'metrics/mAP50-95(B)', 'metrics/mAP50-95'],
+        'precision': ['metrics/precision(M)', 'metrics/precision(B)', 'metrics/precision'],
+        'recall': ['metrics/recall(M)', 'metrics/recall(B)', 'metrics/recall'],
+    },
+    'pose': {
+        'train_loss': ['train/pose_loss', 'train/kobj_loss', 'train/box_loss', 'train/loss'],
+        'val_loss': ['val/pose_loss', 'val/kobj_loss', 'val/box_loss', 'val/loss'],
+        'map50': ['metrics/mAP50(P)', 'metrics/mAP50(B)', 'metrics/mAP50'],
+        'map50_95': ['metrics/mAP50-95(P)', 'metrics/mAP50-95(B)', 'metrics/mAP50-95'],
+        'precision': ['metrics/precision(P)', 'metrics/precision(B)', 'metrics/precision'],
+        'recall': ['metrics/recall(P)', 'metrics/recall(B)', 'metrics/recall'],
+    },
+    'classify_single': {
+        'train_loss': ['train/loss'],
+        'val_loss': ['val/loss'],
+        'map50': ['metrics/accuracy_top1'],
+        'map50_95': ['metrics/accuracy_top5'],
+        'precision': ['metrics/accuracy_top1'],
+        'recall': ['metrics/accuracy_top1'],
+    },
+}
+
+
+def metric_from_row(row: dict, job: dict, start_time: float, now: float | None = None) -> dict:
+    now = time.time() if now is None else now
+    task_type = job.get('task_type', 'detect')
+    keys = TASK_METRIC_KEYS.get(task_type, TASK_METRIC_KEYS['detect'])
+    try:
+        epoch = int(float(row.get('epoch', 0)))
+    except (TypeError, ValueError):
+        epoch = 0
+    epoch = max(1, epoch)
+    total_epochs = int(job.get('epochs', 50))
+    elapsed = max(0.0, now - start_time)
+    return {
+        'event': 'metric_update',
+        'epoch': epoch,
+        'total_epochs': total_epochs,
+        'train_loss': metric_value(row, keys['train_loss']),
+        'val_loss': metric_value(row, keys['val_loss']),
+        'map50': metric_value(row, keys['map50']),
+        'map50_95': metric_value(row, keys['map50_95']),
+        'precision': metric_value(row, keys['precision']),
+        'recall': metric_value(row, keys['recall']),
+        'lr': metric_value(row, ['lr/pg0', 'lr/pg1', 'lr/pg2']),
+        'time_per_epoch_sec': round(elapsed / max(1, epoch), 2),
+        'elapsed_sec': round(elapsed, 2),
+        'eta_sec': max(0.0, round((elapsed / max(1, epoch)) * (total_epochs - epoch), 2)),
+    }
+
+
+def checkpoint_paths(output_dir: Path) -> tuple[Path, Path, Path | None]:
+    best_path = output_dir / 'weights' / 'best.pt'
+    last_path = output_dir / 'weights' / 'last.pt'
+    saved_path = best_path if best_path.is_file() else last_path if last_path.is_file() else None
+    return best_path, last_path, saved_path
+
+
+def summarize_results_csv_issues(results_csv: Path) -> str:
+    if not results_csv.is_file():
+        return 'results.csv was not created'
+    issues = []
+    with open(results_csv, newline='') as f:
+        for row in csv.DictReader(f):
+            epoch = row.get('epoch', '?')
+            bad_keys = []
+            for key, value in row.items():
+                if value in ('', None):
+                    continue
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if not math.isfinite(number):
+                    bad_keys.append(key)
+            if bad_keys:
+                issues.append(f"epoch {epoch} non-finite {', '.join(bad_keys[:4])}")
+            if len(issues) >= 3:
+                break
+    return '; '.join(issues) if issues else 'results.csv contains no non-finite values'
+
+
 def actual_train(job: dict, version: dict):
     policy = resolve_training_device_policy(job)
     apply_training_device_policy(policy)
@@ -298,25 +393,11 @@ def actual_train(job: dict, version: dict):
             with open(results_csv, newline='') as f:
                 rows = list(csv.DictReader(f))
             for row in rows:
-                epoch = int(float(row.get('epoch', 0))) + 1
+                epoch = int(float(row.get('epoch', 0)))
                 if epoch in seen_epochs:
                     continue
                 seen_epochs.add(epoch)
-                metric = {
-                    'event': 'metric_update',
-                    'epoch': epoch,
-                    'total_epochs': int(job.get('epochs', 50)),
-                    'train_loss': metric_value(row, ['train/seg_loss', 'train/box_loss', 'train/loss']),
-                    'val_loss': metric_value(row, ['val/seg_loss', 'val/box_loss', 'val/loss']),
-                    'map50': metric_value(row, ['metrics/mAP50(M)', 'metrics/mAP50(B)', 'metrics/mAP50']),
-                    'map50_95': metric_value(row, ['metrics/mAP50-95(M)', 'metrics/mAP50-95(B)', 'metrics/mAP50-95']),
-                    'precision': metric_value(row, ['metrics/precision(M)', 'metrics/precision(B)', 'metrics/precision']),
-                    'recall': metric_value(row, ['metrics/recall(M)', 'metrics/recall(B)', 'metrics/recall']),
-                    'lr': metric_value(row, ['lr/pg0', 'lr/pg1', 'lr/pg2']),
-                    'time_per_epoch_sec': round(max(0.0, (time.time() - start) / max(1, epoch)), 2),
-                    'elapsed_sec': round(time.time() - start, 2),
-                    'eta_sec': max(0.0, round(((time.time() - start) / max(1, epoch)) * (int(job.get('epochs', 50)) - epoch), 2)),
-                }
+                metric = metric_from_row(row, job, start)
                 emit(metric)
         time.sleep(1.0)
 
@@ -325,10 +406,16 @@ def actual_train(job: dict, version: dict):
         emit({'event': 'job_failed', 'error': state['error']})
         return
 
-    best_path = output_dir / 'weights' / 'best.pt'
-    last_path = output_dir / 'weights' / 'last.pt'
-    emit({'event': 'checkpoint_saved', 'path': str(best_path)})
-    emit({'event': 'job_completed', 'best_model_path': str(best_path), 'last_checkpoint_path': str(last_path)})
+    best_path, last_path, saved_path = checkpoint_paths(output_dir)
+    if saved_path is None:
+        reason = (
+            f'Training completed but no checkpoint was saved. Expected {best_path} or {last_path}. '
+            f'{summarize_results_csv_issues(results_csv)}.'
+        )
+        emit({'event': 'job_failed', 'error': reason})
+        return
+    emit({'event': 'checkpoint_saved', 'path': str(saved_path)})
+    emit({'event': 'job_completed', 'best_model_path': str(saved_path), 'last_checkpoint_path': str(last_path if last_path.is_file() else saved_path)})
 
 
 def main():
