@@ -158,16 +158,24 @@ class TrainingRuntime:
                 self._current_job_id = None
 
     def _preflight_job(self, job: dict, version: dict):
-        dataset_yaml = version.get('dataset_yaml')
-        if not dataset_yaml or not os.path.isfile(dataset_yaml):
-            raise RuntimeError('dataset.yaml not found')
-        dataset_dir = os.path.dirname(dataset_yaml)
-        train_dir = os.path.join(dataset_dir, 'images', 'train')
-        labels_dir = os.path.join(dataset_dir, 'labels', 'train')
-        if not os.path.isdir(train_dir) or not os.listdir(train_dir):
-            raise RuntimeError('training images not found')
-        if not os.path.isdir(labels_dir):
-            raise RuntimeError('training labels directory not found')
+        task_type = version.get('task_type') or 'detect'
+        dataset_data = version.get('dataset_yaml')
+        if task_type == 'classify_single':
+            if not dataset_data or not os.path.isdir(dataset_data):
+                raise RuntimeError('classification dataset not found')
+            train_dir = os.path.join(dataset_data, 'train')
+            if not os.path.isdir(train_dir) or not os.listdir(train_dir):
+                raise RuntimeError('training images not found')
+        else:
+            if not dataset_data or not os.path.isfile(dataset_data):
+                raise RuntimeError('dataset.yaml not found')
+            dataset_dir = os.path.dirname(dataset_data)
+            train_dir = os.path.join(dataset_dir, 'images', 'train')
+            labels_dir = os.path.join(dataset_dir, 'labels', 'train')
+            if not os.path.isdir(train_dir) or not os.listdir(train_dir):
+                raise RuntimeError('training images not found')
+            if not os.path.isdir(labels_dir):
+                raise RuntimeError('training labels directory not found')
         checkpoint = job.get('resume_from_checkpoint') if job.get('resume') else job.get('base_checkpoint')
         if checkpoint != 'mock' and (not checkpoint or not os.path.isfile(checkpoint)):
             raise RuntimeError(f'checkpoint not found: {checkpoint}')
