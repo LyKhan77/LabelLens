@@ -22,6 +22,15 @@ function runInference() {
   store.inferenceMode = 'free'
   store.runInference()
 }
+
+const taskLabel = computed(() => ({
+  segment: 'Segmentation',
+  pose: 'Pose',
+  classify_single: 'Classification',
+} as Record<string, string>)[taskType.value] ?? 'Detection')
+
+const isClassify = computed(() => taskType.value === 'classify_single')
+const showMasksToggle = computed(() => taskType.value === 'segment')
 </script>
 
 <template>
@@ -36,7 +45,7 @@ function runInference() {
           </span>
         </div>
         <div class="text-sm font-medium text-ink truncate">{{ testModelInfo.model_name }}</div>
-        <div class="text-xs text-ink-mute">{{ modelArch }} · {{ taskType === 'segment' ? 'Segmentation' : 'Detection' }} · {{ classNames.length }} classes</div>
+        <div class="text-xs text-ink-mute">{{ modelArch }} · {{ taskLabel }} · {{ classNames.length }} classes</div>
         <div v-if="testModelInfo.metrics_best" class="text-xs text-ink-mute">
           mAP50: {{ testModelInfo.metrics_best.map50 }}
         </div>
@@ -141,8 +150,8 @@ function runInference() {
         </p>
       </div>
 
-      <!-- Display toggles -->
-      <div class="space-y-1.5">
+      <!-- Display toggles (hidden for classification — whole-image result) -->
+      <div v-if="!isClassify" class="space-y-1.5">
         <label class="flex items-center gap-2 text-xs text-ink-mute cursor-pointer">
           <input v-model="store.showLabels" type="checkbox" class="accent-primary" />
           Show Labels
@@ -151,7 +160,7 @@ function runInference() {
           <input v-model="store.showBbox" type="checkbox" class="accent-primary" />
           Show BBox
         </label>
-        <label class="flex items-center gap-2 text-xs text-ink-mute cursor-pointer">
+        <label v-if="showMasksToggle" class="flex items-center gap-2 text-xs text-ink-mute cursor-pointer">
           <input v-model="store.showMasks" type="checkbox" class="accent-primary" />
           Show Masks
         </label>

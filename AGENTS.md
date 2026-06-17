@@ -37,7 +37,7 @@
 - **Dual Prompt Modes** — Text prompt (comma-separated labels via `set_classes`) and Visual Prompt (reference image + bbox annotations via SAVPE encoder)
 - **Multi-Media Input** — Static image upload (JPG/PNG), video processing (MP4/AVI/MOV), and RTSP live streaming
 - **Canvas BBox Annotation** — Interactive drawing tool with thin hover/drag X/Y guide lines for annotating reference images as visual grounding input
-- **Configurable Inference** — Confidence threshold slider plus backend-rendered label/bbox visibility and clipped mask overlay toggles. Task-matched rendering: bbox (detect), clipped masks (segment), keypoint skeletons (pose), and classification top-1 banner with Top-5 class panel — used by inference workspaces and the Test Model page.
+- **Configurable Inference** — Confidence threshold slider plus backend-rendered label/bbox visibility and clipped mask overlay toggles. Task-matched rendering: bbox (detect), clipped masks (segment), keypoint skeletons (pose), and classification top-1 banner — used by inference workspaces and the Test Model page. Test Model exposes only task-relevant display toggles (BBox/Masks hidden for classification, Masks hidden outside segmentation) and a task-aware Detection Log (per-detection rows with pose keypoint counts, or a classification Top-5 prediction list).
 - **Detection Dashboard** — Floating right-side inference panel with compact stats and scrollable detection log
 - **Clear Media Workflow** — Media mode switching is locked until inference is stopped and current media input is cleared
 - **Network-Accessible** — Hosts on `0.0.0.0:3131`, accessible from any device on the local network
