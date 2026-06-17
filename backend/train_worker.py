@@ -73,6 +73,9 @@ ONLINE_AUGMENTATION_KEYS = {
     'flipud', 'fliplr', 'bgr', 'mosaic', 'mixup', 'copy_paste', 'erasing', 'close_mosaic',
 }
 
+# Ultralytics requires these args be int, not float
+ONLINE_AUGMENTATION_INT_KEYS = {'close_mosaic'}
+
 
 def _local_device_arg(cuda_visible_devices: str) -> str:
     devices = [device.strip() for device in cuda_visible_devices.split(',') if device.strip()]
@@ -179,7 +182,7 @@ def online_augmentation_args(version: dict) -> dict:
         if key not in ONLINE_AUGMENTATION_KEYS or value in (None, ''):
             continue
         try:
-            args[key] = float(value)
+            args[key] = int(round(float(value))) if key in ONLINE_AUGMENTATION_INT_KEYS else float(value)
         except (TypeError, ValueError):
             continue
     return args

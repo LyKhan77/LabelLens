@@ -148,6 +148,7 @@ class TrainWorkerTest(unittest.TestCase):
                         "degrees": 7,
                         "fliplr": 0.5,
                         "mosaic": 0.25,
+                        "close_mosaic": 10.0,
                         "unsupported": 99,
                     },
                 },
@@ -161,6 +162,8 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertEqual(train_called[0]["degrees"], 7)
         self.assertEqual(train_called[0]["fliplr"], 0.5)
         self.assertEqual(train_called[0]["mosaic"], 0.25)
+        self.assertEqual(train_called[0]["close_mosaic"], 10)
+        self.assertIsInstance(train_called[0]["close_mosaic"], int)
         self.assertEqual(train_called[0]["device"], "1")
         self.assertTrue(train_called[0]["amp"])
         self.assertNotIn("unsupported", train_called[0])
