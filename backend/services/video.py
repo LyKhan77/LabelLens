@@ -68,6 +68,7 @@ def process_video(
                     show_labels=show_labels,
                     show_bbox=show_bbox,
                     show_masks=show_masks,
+                    classification=result.get("classification"),
                 )
                 frames.append(frame_to_base64(annotated, quality=70))
                 all_detections.append(result["detections"])

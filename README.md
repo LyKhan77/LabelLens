@@ -311,7 +311,7 @@ Suggested manual validation checklist:
 - Generate SAM2.1 masks from manual bboxes.
 - Create Train Tune detection, segmentation, pose, and single-label classification Dataset Versions.
 - Run Standard and High-Speed Train Tune jobs with real checkpoints.
-- Open result and Test Model pages for completed model versions.
+- Open result and Test Model pages for completed model versions. Test Model renders task-matched output: bbox (detect), clipped masks (segment), keypoint skeletons (pose), and a top-1 banner plus Top-5 class panel (classification).
 
 ## Troubleshooting
 

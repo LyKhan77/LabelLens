@@ -14,6 +14,15 @@ COLORS = [
 ]
 MASK_ALPHA = 0.40
 
+# 0-indexed skeleton edges by keypoint count
+COCO17_SKELETON = [
+    [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6],
+    [5, 7], [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6],
+]
+CORNERS4_SKELETON = [[0, 1], [1, 2], [2, 3], [3, 0]]
+KEYPOINT_COLOR = (19, 219, 255)   # accent yellow (BGR)
+SKELETON_COLOR = (142, 207, 62)   # primary emerald (BGR)
+
 
 def draw_detections(
     image: np.ndarray,
@@ -21,6 +30,7 @@ def draw_detections(
     show_labels: bool = True,
     show_bbox: bool = True,
     show_masks: bool = False,
+    classification: dict | None = None,
 ) -> np.ndarray:
     annotated = image.copy()
 
@@ -35,6 +45,9 @@ def draw_detections(
 
         if show_bbox:
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+
+        if det.get("keypoints"):
+            _draw_keypoints(annotated, det["keypoints"])
 
         if show_labels:
             text = f"{label} {conf:.0%}"
@@ -55,7 +68,33 @@ def draw_detections(
                 annotated, text, (x1 + 2, text_y), font, font_scale, (255, 255, 255), thickness
             )
 
+    if classification and classification.get("top1"):
+        _draw_classification_banner(annotated, classification["top1"])
+
     return annotated
+
+
+def _draw_keypoints(image: np.ndarray, keypoints: list[list[float]]) -> None:
+    n = len(keypoints)
+    skeleton = COCO17_SKELETON if n == 17 else CORNERS4_SKELETON if n == 4 else []
+    for a, b in skeleton:
+        if a < n and b < n and keypoints[a][2] > 0 and keypoints[b][2] > 0:
+            pa = (int(keypoints[a][0]), int(keypoints[a][1]))
+            pb = (int(keypoints[b][0]), int(keypoints[b][1]))
+            cv2.line(image, pa, pb, SKELETON_COLOR, 2)
+    for kp in keypoints:
+        if kp[2] > 0:
+            cv2.circle(image, (int(kp[0]), int(kp[1])), 4, KEYPOINT_COLOR, -1)
+
+
+def _draw_classification_banner(image: np.ndarray, top1: dict) -> None:
+    text = f"{top1['label']} {top1['confidence']:.0%}"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.8
+    thickness = 2
+    (tw, th), _ = cv2.getTextSize(text, font, font_scale, thickness)
+    cv2.rectangle(image, (0, 0), (tw + 16, th + 16), COLORS[0], -1)
+    cv2.putText(image, text, (8, th + 8), font, font_scale, (255, 255, 255), thickness)
 
 
 def _draw_masks(image: np.ndarray, detections: list[dict]) -> None:

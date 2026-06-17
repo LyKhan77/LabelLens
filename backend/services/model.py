@@ -227,34 +227,47 @@ class ModelService:
         return self.predict_with_vpe(image, conf)
 
     def _parse_results(self, results, inference_ms: float) -> dict:
+        if not results or len(results) == 0:
+            return {
+                "detections": [],
+                "stats": {"total_objects": 0, "classes_count": {}, "inference_ms": round(inference_ms, 1)},
+            }
+
+        r = results[0]
+
+        if self.current_task_type == "classify_single":
+            return self._parse_classification(r, inference_ms)
+
         boxes_data = []
         classes_count: dict[str, int] = {}
+        masks = getattr(r, "masks", None)
+        keypoints = getattr(r, "keypoints", None)
+        orig_shape = getattr(r, "orig_shape", None)
+        if r.boxes is not None and len(r.boxes) > 0:
+            for i, box in enumerate(r.boxes):
+                xyxy = box.xyxy[0].cpu().numpy().tolist()
+                cls_id = int(box.cls[0])
+                label = r.names.get(cls_id, str(cls_id))
+                confidence = float(box.conf[0])
+                detection = {
+                    "box": [round(v, 1) for v in xyxy],
+                    "label": label,
+                    "confidence": round(confidence, 3),
+                    "cls_id": cls_id,
+                }
+                mask_rle = extract_mask_rle(masks, i, orig_shape, xyxy)
+                if mask_rle:
+                    detection["mask_rle"] = mask_rle
 
-        if results and len(results) > 0:
-            r = results[0]
-            masks = getattr(r, "masks", None)
-            orig_shape = getattr(r, "orig_shape", None)
-            if r.boxes is not None and len(r.boxes) > 0:
-                for i, box in enumerate(r.boxes):
-                    xyxy = box.xyxy[0].cpu().numpy().tolist()
-                    cls_id = int(box.cls[0])
-                    label = r.names.get(cls_id, str(cls_id))
-                    confidence = float(box.conf[0])
-                    detection = {
-                        "box": [round(v, 1) for v in xyxy],
-                        "label": label,
-                        "confidence": round(confidence, 3),
-                        "cls_id": cls_id,
-                    }
-                    mask_rle = extract_mask_rle(masks, i, orig_shape, xyxy)
-                    if mask_rle:
-                        detection["mask_rle"] = mask_rle
+                mask = extract_mask_polygon(masks, i, orig_shape, xyxy)
+                if mask:
+                    detection["mask"] = mask
 
-                    mask = extract_mask_polygon(masks, i, orig_shape, xyxy)
-                    if mask:
-                        detection["mask"] = mask
-                    boxes_data.append(detection)
-                    classes_count[label] = classes_count.get(label, 0) + 1
+                kpts = self._extract_keypoints(keypoints, i)
+                if kpts is not None:
+                    detection["keypoints"] = kpts
+                boxes_data.append(detection)
+                classes_count[label] = classes_count.get(label, 0) + 1
 
         boxes_data = nms_dedup(boxes_data, iou_threshold=0.5)
 
@@ -268,6 +281,42 @@ class ModelService:
             "stats": {
                 "total_objects": len(boxes_data),
                 "classes_count": classes_count,
+                "inference_ms": round(inference_ms, 1),
+            },
+        }
+
+    @staticmethod
+    def _extract_keypoints(keypoints, index: int) -> list[list[float]] | None:
+        if keypoints is None or getattr(keypoints, "xy", None) is None or index >= len(keypoints.xy):
+            return None
+        xy = keypoints.xy[index].cpu().numpy()
+        conf = keypoints.conf[index].cpu().numpy() if getattr(keypoints, "conf", None) is not None else None
+        result = []
+        for j, (x, y) in enumerate(xy):
+            v = float(conf[j]) if conf is not None else 1.0
+            result.append([round(float(x), 1), round(float(y), 1), round(v, 3)])
+        return result
+
+    def _parse_classification(self, r, inference_ms: float) -> dict:
+        probs = getattr(r, "probs", None)
+        if probs is None:
+            return {
+                "detections": [],
+                "stats": {"total_objects": 0, "classes_count": {}, "inference_ms": round(inference_ms, 1)},
+            }
+        top5_ids = [int(i) for i in probs.top5]
+        top5_conf = [float(c) for c in probs.top5conf.cpu().numpy()]
+        top5 = [
+            {"label": r.names.get(cls_id, str(cls_id)), "confidence": round(conf, 3)}
+            for cls_id, conf in zip(top5_ids, top5_conf)
+        ]
+        top1 = top5[0] if top5 else None
+        return {
+            "detections": [],
+            "classification": {"top1": top1, "top5": top5},
+            "stats": {
+                "total_objects": 1 if top1 else 0,
+                "classes_count": {top1["label"]: 1} if top1 else {},
                 "inference_ms": round(inference_ms, 1),
             },
         }

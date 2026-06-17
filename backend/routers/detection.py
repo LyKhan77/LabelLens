@@ -72,12 +72,16 @@ async def detect_image(
             show_labels=show_labels,
             show_bbox=show_bbox,
             show_masks=show_masks,
+            classification=result.get('classification'),
         )
-        return {
+        response = {
             'image': frame_to_base64(annotated),
             'detections': result['detections'],
             'stats': result['stats'],
         }
+        if result.get('classification'):
+            response['classification'] = result['classification']
+        return response
     finally:
         activity_service.stop_inference()
 

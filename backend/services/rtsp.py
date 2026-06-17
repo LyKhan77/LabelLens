@@ -56,6 +56,7 @@ class RTSPStream:
 
             last_detections: list[dict] = []
             last_inference_ms = 0.0
+            last_classification: dict | None = None
             frame_idx = 0
 
             while self._running:
@@ -78,6 +79,7 @@ class RTSPStream:
                         )
                     last_detections = result["detections"]
                     last_inference_ms = result["stats"]["inference_ms"]
+                    last_classification = result.get("classification")
 
                 annotated = draw_detections(
                     frame,
@@ -85,6 +87,7 @@ class RTSPStream:
                     show_labels=show_labels,
                     show_bbox=show_bbox,
                     show_masks=show_masks,
+                    classification=last_classification,
                 )
 
                 yield {

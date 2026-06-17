@@ -31,6 +31,7 @@ export interface Detection {
   cls_id?: number
   mask?: [number, number][]
   mask_rle?: MaskRle
+  keypoints?: number[][]
 }
 
 export interface Stats {
@@ -39,10 +40,21 @@ export interface Stats {
   inference_ms: number
 }
 
+export interface ClassPrediction {
+  label: string
+  confidence: number
+}
+
+export interface Classification {
+  top1: ClassPrediction | null
+  top5: ClassPrediction[]
+}
+
 export interface ImageDetectionResponse {
   image: string
   detections: Detection[]
   stats: Stats
+  classification?: Classification
 }
 
 export type MediaMode = 'image' | 'video' | 'rtsp'

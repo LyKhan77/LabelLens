@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import type { PromptMode, MediaMode, ViewerState, BBoxAnnotation, Detection, Stats, InferenceMode } from '../types'
+import type { PromptMode, MediaMode, ViewerState, BBoxAnnotation, Detection, Stats, Classification, InferenceMode } from '../types'
 import { detectImage, detectVideo } from '../api/detection'
 import { loadModel, getModelStatus } from '../api/client'
 import { useWebSocket } from '../composables/useWebSocket'
@@ -37,6 +37,7 @@ export const useInferenceStore = defineStore('inference', () => {
   const resultImage = ref<string>('')
   const detections = ref<Detection[]>([])
   const stats = ref<Stats | null>(null)
+  const classification = ref<Classification | null>(null)
   const error = ref<string | null>(null)
 
   // Video state
@@ -171,6 +172,7 @@ export const useInferenceStore = defineStore('inference', () => {
     resultImage.value = ''
     detections.value = []
     stats.value = null
+    classification.value = null
     error.value = null
     viewerState.value = 'empty'
     videoFrames.value = []
@@ -230,6 +232,7 @@ export const useInferenceStore = defineStore('inference', () => {
         resultImage.value = resp.image
         detections.value = resp.detections
         stats.value = resp.stats
+        classification.value = resp.classification ?? null
         viewerState.value = 'result'
 
         // Auto-save to dataset if auto-labelling is active
@@ -494,7 +497,7 @@ export const useInferenceStore = defineStore('inference', () => {
     promptMode, labels, referImage, annotations,
     mediaMode, file, rtspUrl,
     confidence, showLabels, showBbox, showMasks,
-    isRunning, viewerState, resultImage, detections, stats, error,
+    isRunning, viewerState, resultImage, detections, stats, classification, error,
     videoFrames, videoDetections, videoIndex, videoPlaying,
     rtspFrame, rtspConnected, ws,
     hasMediaInput, canSwitchMediaMode, canRun,
