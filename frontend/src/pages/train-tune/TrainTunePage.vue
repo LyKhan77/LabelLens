@@ -711,6 +711,10 @@ async function openResult(modelId: string) {
 
 async function pickVersion(version: DatasetVersion) {
   trainingStore.selectedVersion = version
+  if (version.task_type) {
+    form.taskType = version.task_type as typeof form.taskType
+    syncCheckpoint()
+  }
   versionDeleteError.value = null
   await refreshRecommendation()
   await refreshEstimate()
