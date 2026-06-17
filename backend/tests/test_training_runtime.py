@@ -51,6 +51,44 @@ class TrainingRuntimeTest(unittest.TestCase):
                     {"task_type": "classify_single", "dataset_yaml": dataset_dir},
                 )
 
+    def test_ensure_base_checkpoint_downloads_known_asset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                runtime = TrainingRuntime()
+
+                def fake_download(path):
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, "wb") as f:
+                        f.write(b"weights")
+                    return path
+
+                job = {"id": "j1", "base_checkpoint": "yolo11n-cls.pt"}
+                with (
+                    patch("ultralytics.utils.downloads.attempt_download_asset", side_effect=fake_download),
+                    patch("backend.services.training_runtime.training_service.update_training_job") as update,
+                    patch("backend.services.training_runtime.training_event_hub.publish"),
+                ):
+                    resolved = runtime._ensure_base_checkpoint(job, "yolo11n-cls.pt")
+
+                self.assertEqual(resolved, os.path.join("models", "yolo11n-cls.pt"))
+                self.assertTrue(os.path.isfile(resolved))
+                update.assert_called_once_with("j1", base_checkpoint=resolved)
+            finally:
+                os.chdir(cwd)
+
+    def test_ensure_base_checkpoint_rejects_unknown_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd = os.getcwd()
+            os.chdir(tmp)
+            try:
+                runtime = TrainingRuntime()
+                with self.assertRaisesRegex(RuntimeError, "checkpoint not found"):
+                    runtime._ensure_base_checkpoint({"id": "j2", "base_checkpoint": "notamodel.pt"}, "notamodel.pt")
+            finally:
+                os.chdir(cwd)
+
     def test_terminate_process_group_escalates_to_kill_after_timeout(self):
         runtime = TrainingRuntime()
         process = SimpleNamespace(pid=1234, poll=lambda: None, terminate=lambda: None, kill=lambda: None)

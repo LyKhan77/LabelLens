@@ -157,6 +157,34 @@ class TrainingRuntime:
                 self._current_process = None
                 self._current_job_id = None
 
+    def _ensure_base_checkpoint(self, job: dict, checkpoint: str) -> str:
+        """Resolve a base checkpoint, auto-downloading a pretrained Ultralytics asset into models/ when missing."""
+        name = os.path.basename(checkpoint)
+        models_path = os.path.join('models', name)
+        if os.path.isfile(models_path):
+            resolved = models_path
+        else:
+            try:
+                from ultralytics.utils.downloads import GITHUB_ASSETS_NAMES, attempt_download_asset
+            except Exception as exc:
+                raise RuntimeError(f'checkpoint not found: {checkpoint}') from exc
+            if name not in GITHUB_ASSETS_NAMES:
+                raise RuntimeError(f'checkpoint not found: {checkpoint}')
+            os.makedirs('models', exist_ok=True)
+            training_event_hub.publish(job['id'], {'event': 'log_line', 'line': f'Downloading base checkpoint {name}...'})
+            try:
+                attempt_download_asset(models_path)
+            except Exception as exc:
+                raise RuntimeError(f'checkpoint download failed for {name}: {exc}') from exc
+            if not os.path.isfile(models_path):
+                raise RuntimeError(f'checkpoint download failed for {name}')
+            resolved = models_path
+            training_event_hub.publish(job['id'], {'event': 'log_line', 'line': f'Base checkpoint ready at {resolved}'})
+        if resolved != job.get('base_checkpoint'):
+            training_service.update_training_job(job['id'], base_checkpoint=resolved)
+            job['base_checkpoint'] = resolved
+        return resolved
+
     def _preflight_job(self, job: dict, version: dict):
         task_type = version.get('task_type') or 'detect'
         dataset_data = version.get('dataset_yaml')
@@ -177,8 +205,13 @@ class TrainingRuntime:
             if not os.path.isdir(labels_dir):
                 raise RuntimeError('training labels directory not found')
         checkpoint = job.get('resume_from_checkpoint') if job.get('resume') else job.get('base_checkpoint')
-        if checkpoint != 'mock' and (not checkpoint or not os.path.isfile(checkpoint)):
-            raise RuntimeError(f'checkpoint not found: {checkpoint}')
+        if checkpoint != 'mock':
+            if not checkpoint:
+                raise RuntimeError(f'checkpoint not found: {checkpoint}')
+            if not os.path.isfile(checkpoint):
+                if job.get('resume'):
+                    raise RuntimeError(f'checkpoint not found: {checkpoint}')
+                checkpoint = self._ensure_base_checkpoint(job, checkpoint)
         output_dir = job.get('output_dir')
         if not output_dir:
             raise RuntimeError('output directory not configured')
