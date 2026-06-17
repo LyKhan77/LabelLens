@@ -1,13 +1,33 @@
 # Project Overview
 
-## Project Synopsis
+## Project Synopsis - ALWAYS Update this section based on Codebase or Workflow Changes
 
-**LabelLens** is a web-based object detection and dataset iteration application powered by **YOLOE-26L** for inference, with a dedicated **Train Tune** workspace for YOLO fine-tuning orchestration. It provides a visual interface for real-time and batch inference, dataset review/export, and immutable training job workflows using live dataset snapshots or exported zips. The architecture separates compute-heavy CV workloads (FastAPI + PyTorch) from the presentation layer (Vue 3 SPA), communicating via REST API and WebSockets.
+**LabelLens** is a web-based object detection, segmentation, pose, classification, and dataset iteration application powered by **YOLOE-26L**, Ultralytics YOLO task models, and SAM/SAM2-style mask generation workflows. It provides visual workspaces for real-time and batch inference, dataset review/export, auto-labelling, and immutable Train Tune jobs using live Dataset Version snapshots or exported zips. The architecture separates compute-heavy CV workloads (FastAPI, PyTorch, Ultralytics, OpenCV, Albumentations) from the presentation layer (Vue 3 SPA with Vite and Pinia), communicating via REST API and WebSockets.
 
-## References
-- `https://github.com/THU-MIG/yoloe`
-- `https://docs.ultralytics.com/models/yoloe`
-- `https://huggingface.co/spaces/jameslahm/yoloe`
+## References - ALWAYS Update this section based on Model, CV Stack, Workflow, or Architecture Changes
+
+**Model and Computer Vision Stack**
+- YOLOE repository: `https://github.com/THU-MIG/yoloe`
+- YOLOE documentation: `https://docs.ultralytics.com/models/yoloe/`
+- YOLOE Hugging Face Space: `https://huggingface.co/spaces/jameslahm/yoloe`
+- Ultralytics YOLO documentation: `https://docs.ultralytics.com/`
+- Ultralytics YOLO task docs: `https://docs.ultralytics.com/tasks/`
+- Ultralytics SAM docs: `https://docs.ultralytics.com/models/sam/`
+- Meta SAM2 repository: `https://github.com/facebookresearch/sam2`
+- Ultralytics CLIP dependency: `https://github.com/ultralytics/CLIP`
+- PyTorch documentation: `https://pytorch.org/docs/stable/index.html`
+- OpenCV documentation: `https://docs.opencv.org/`
+- Albumentations documentation: `https://albumentations.ai/docs/`
+- NumPy documentation: `https://numpy.org/doc/`
+- Pillow documentation: `https://pillow.readthedocs.io/`
+
+**Application Stack**
+- FastAPI documentation: `https://fastapi.tiangolo.com/`
+- Uvicorn documentation: `https://www.uvicorn.org/`
+- Python websockets documentation: `https://websockets.readthedocs.io/`
+- Vue documentation: `https://vuejs.org/`
+- Vite documentation: `https://vite.dev/`
+- Pinia documentation: `https://pinia.vuejs.org/`
 
 ## Key Features - ALWAYS Update this section based on Changes or Features Made
 
@@ -67,22 +87,18 @@ LabelLens/
 
 ## Current State - ALWAYS Update this section based on Changes or Features Made
 
-**Condition:** Implemented and awaiting full end-to-end validation. All three inference phases (Image, Video, RTSP) are scaffolded, integrated, and routed through the backend model service, which supports `predict_text()`, `predict_visual()` (SAVPE), and `predict_free()` (LRPC prompt-free mode). Model loading is deferred: users land on `/` (Feature Modes), navigate to `/workspace` after inference model load, while Dataset Manager remains independently available at `/datasets` and Train Tune is independently available at `/train-tune`. Frontend UI components use the DESIGN.md Supabase-inspired tokens. Backend unit coverage exists for dataset and Train Tune services/runtime.
+**Codebase Changelog:** This section records the implemented codebase state as a change log. Each entry should describe what was developed and what changed in the application after that work.
 
-**Implemented and pending end-to-end validation:**
-
-- **Inference Workspaces:** Free Mode, Text Prompt, Visual Prompt, Image Detection, Video Processing, and RTSP WebSocket streaming are implemented across backend and frontend. Validation still needs real YOLOE weights, sample videos, and live RTSP feeds on target hardware.
-- **Dataset Manager / Auto-Labelling / Rapid Inference:** Standalone Dataset Manager, delete controls, Select All Files, paginated overlay gallery, modal review, zoom/pan canvas, viewport-clamped bbox editor, persisted class colors, manual bbox add/edit/delete, direct saved-label delete, multi-prompt Infer Next, Rapid Inference jobs for YOLOE detection/segmentation grounding, YOLOE-assisted single-label classification prompts, and Ultralytics pose task models, workspace image/video/RTSP auto-save, and YOLO/COCO/classification/pose export are implemented. Multi-label classification Rapid Inference remains unsupported by standard YOLO classification.
-- **Train Tune / Custom Model Reuse:** Detection, segmentation, pose, and single-label classification task selection, Dataset Version snapshots, bbox/polygon/keypoint/class-folder export, missing-mask validation, preprocessing Policy, Basic/Advanced augmentation, smart defaults, policy previews, locked Dataset Version summaries, backend validation/preflight, queueing, Standard vs High-Speed RTX 5080 GPU policy, cancellation, recompute/delete, resume from `last.pt`, train log/results CSV tracking, live websocket progress, metric trends, model registry, result pages, and `/train-tune/test/:id` artifact testing are implemented. Validation still needs real detection, segmentation, pose, and classification checkpoint runs.
-- **SAM2.1 Auto-mask:** Backend `SAMService`, status/load/unload endpoints, dataset-scoped mask generation, and frontend auto-mask flow for manual bbox save are implemented. Validation still needs full SAM2.1 GPU execution checks on the target RTX 5080 device.
-
-**Operational validation still needed:**
-
-- Verify required model files on the target machine: `models/yoloe-26l-seg.pt`, `models/yoloe-26l-seg-pf.pt`, and `models/sam2.1_l.pt`.
-- Run full image/video/RTSP inference validation with real media and expected detections.
-- Run Train Tune detection and segmentation jobs using real checkpoints, including Standard Mode and High-Speed Mode.
-- Confirm SAM2.1 mask generation quality and failure behavior when SAM is unavailable.
-- Confirm physical GPU mapping: LabelLens defaults to `CUDA_VISIBLE_DEVICES=1,2` but now supports runtime auto-detection and manual reassignment via Settings modal. Train Tune GPU selection uses auto-detected devices for Standard (1 GPU) and High-Speed (2+ GPUs) modes. Both configs persist to JSON files with env var fallback.
+| Area | What was developed | After the change |
+|------|--------------------|------------------|
+| Feature Modes and Routing | Added deterministic `/` mode selection for Free Inference, Prompt Inference, and Train Tune. | Users start from a mode selector, inference model loading is deferred until workspace entry, and `/datasets` plus `/train-tune` remain independently reachable. |
+| Inference Workspaces | Implemented Free Mode, Text Prompt, Visual Prompt, image inference, video processing, and RTSP WebSocket streaming through the backend model service. | Backend exposes `predict_free()`, `predict_text()`, and `predict_visual()` paths, while the frontend can run image, video, and live-stream detection flows. |
+| Dataset Manager and Auto-Labelling | Built standalone dataset management, gallery review, bbox editing, class controls, auto-save from inference, YOLO/COCO/classification/pose export, and Rapid Inference flows. | Datasets can be created, reviewed, corrected, propagated with prompt-assisted inference, and exported for downstream training workflows. |
+| Pose Annotation | Added Ultralytics-style pose editing with keypoint templates, visibility cycling, bbox/keypoint drag behavior, pan/zoom, and pose infer assist. | Pose datasets can be reviewed and corrected directly in the Dataset Manager with task-specific controls. |
+| SAM2.1 Auto-mask | Added backend `SAMService`, status/load/unload endpoints, dataset-scoped mask generation, and frontend auto-mask trigger from manual bbox save. | Manual bbox annotations can optionally receive generated segmentation masks, while bbox saves remain non-fatal if SAM is unavailable. |
+| Train Tune Workspace | Implemented task-selectable training builder, immutable Dataset Version snapshots, preprocessing policy, augmentation controls, training preflight, job queueing, live progress, result pages, resume/recompute/delete, artifact testing, and model registry. | Detection, segmentation, pose, and single-label classification jobs can be configured, launched, monitored, resumed, tested, and tracked as reusable model versions. |
+| GPU Settings | Added CUDA GPU auto-detection, inference GPU assignment, SAM GPU assignment, Train Tune Standard/High-Speed GPU selection, and persisted GPU config files. | Runtime GPU mapping can be managed from UI/config instead of relying only on environment defaults. |
+| Backend Runtime and Tests | Added dataset and Train Tune service/runtime unit coverage around implemented backend workflows. | Core dataset and training orchestration behavior has automated coverage, with full target-hardware validation still pending. |
 
 
 =====================
