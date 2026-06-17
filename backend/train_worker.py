@@ -248,6 +248,13 @@ def actual_train(job: dict, version: dict):
         ),
     })
 
+    gpu_count = len([d for d in str(policy['local_device']).split(',') if d.strip()])
+    batch = int(job.get('batch', 8))
+    if batch < 1 and gpu_count > 1:
+        # AutoBatch (batch=-1) is unsupported for Multi-GPU; use a valid multiple of GPU count
+        batch = 8 * gpu_count
+        emit({'event': 'log_line', 'line': f'AutoBatch unsupported for {gpu_count}-GPU training; using batch={batch}'})
+
     def train_runner():
         try:
             checkpoint = job.get('resume_from_checkpoint') if job.get('resume') else job['base_checkpoint']
@@ -262,7 +269,7 @@ def actual_train(job: dict, version: dict):
                 'epochs': int(job.get('epochs', 50)),
                 'patience': int(job.get('patience', 30)),
                 'imgsz': int(job.get('imgsz', 640)),
-                'batch': int(job.get('batch', 8)),
+                'batch': batch,
                 'workers': int(job.get('workers', 2)),
                 'project': project,
                 'name': name,

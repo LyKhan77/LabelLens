@@ -227,6 +227,42 @@ class TrainWorkerTest(unittest.TestCase):
         self.assertEqual(train_called[0]["device"], "1,2")
         self.assertFalse(train_called[0]["amp"])
 
+    def test_actual_train_overrides_auto_batch_for_multi_gpu(self):
+        train_called = []
+
+        class DetectModel:
+            task = "detect"
+
+            def train(self, **kwargs):
+                train_called.append(kwargs)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ultralytics = SimpleNamespace(YOLO=lambda _checkpoint: DetectModel())
+            job = {
+                "output_dir": os.path.join(tmp, "run"),
+                "base_checkpoint": "models/yolo26n.pt",
+                "training_mode": "high_speed",
+                "task_type": "detect",
+                "epochs": 1,
+                "batch": -1,
+            }
+            policy = {
+                "cuda_device_order": "PCI_BUS_ID",
+                "cuda_visible_devices": "1,2",
+                "device": "1,2",
+                "local_device": "0,1",
+                "amp": False,
+            }
+            with (
+                patch.dict("sys.modules", {"ultralytics": ultralytics}),
+                patch.object(train_worker, "resolve_training_device_policy", return_value=policy),
+                patch.object(train_worker, "apply_training_device_policy"),
+                patch.object(train_worker, "emit"),
+            ):
+                train_worker.actual_train(job, {"dataset_yaml": "dataset.yaml"})
+
+        self.assertEqual(train_called[0]["batch"], 16)
+
     def test_actual_train_accepts_segment_checkpoint_for_segment_job(self):
         emitted = []
         train_called = []
