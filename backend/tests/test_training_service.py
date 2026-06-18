@@ -1116,6 +1116,74 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertEqual(completed["metrics_best"]["epoch"], 1)
         self.assertEqual(completed["metrics_best"]["accuracy_top1"], 0.91)
 
+    def test_complete_training_job_uses_runtime_accuracy_fields_for_classification_best_metrics(self):
+        self.dataset_service.create_project("runtime-cls-demo", ["ok", "ng"], task_type="classify_single")
+        uploaded = self.dataset_service.upload_raw("runtime-cls-demo", jpg_bytes(), original_filename="panel-ok.jpg")
+        self.dataset_service.set_image_labels("runtime-cls-demo", uploaded["img_id"], [{"label": "ok", "confidence": 1.0}])
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "runtime-cls-demo",
+            {
+                "version_name": "runtime-cls-demo-v1",
+                "task_type": "classify_single",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"resize_mode": "keep"},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+        with patch.object(
+            self.training_service,
+            "_validate_training_config",
+            return_value={
+                "family": "yolo26",
+                "size": "n",
+                "base_checkpoint": "yolo26n-cls.pt",
+                "epochs": 2,
+                "patience": 30,
+                "imgsz": 224,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+                "task_type": "classify_single",
+            },
+        ):
+            job = self.training_service.create_training_job(
+                {
+                    "job_name": "runtime-panel-classifier",
+                    "dataset_version_id": version["id"],
+                    "family": "yolo26",
+                    "size": "n",
+                    "base_checkpoint": "yolo26n-cls.pt",
+                    "epochs": 2,
+                    "imgsz": 224,
+                    "batch": 2,
+                    "workers": 1,
+                    "training_mode": "standard",
+                    "task_type": "classify_single",
+                },
+                inference_active=False,
+            )
+
+        self.training_service.append_metric(
+            job["id"],
+            {"epoch": 1, "map50": 0.76, "map50_95": 0.9, "val_loss": 0.2},
+        )
+        self.training_service.append_metric(
+            job["id"],
+            {"epoch": 2, "map50": 0.91, "map50_95": 0.95, "val_loss": 0.8},
+        )
+
+        completed = self.training_service.complete_training_job(
+            job["id"],
+            best_model_path="/tmp/best.pt",
+            last_checkpoint_path="/tmp/last.pt",
+        )
+
+        self.assertEqual(completed["metrics_latest"]["epoch"], 2)
+        self.assertEqual(completed["metrics_best"]["epoch"], 2)
+        self.assertEqual(completed["metrics_best"]["map50"], 0.91)
+        self.assertEqual(completed["metrics_best"]["map50_95"], 0.95)
+
     def test_metrics_are_json_safe_when_training_outputs_nan(self):
         self.dataset_service.create_project("demo", ["bolt"])
         self.dataset_service.save_image(

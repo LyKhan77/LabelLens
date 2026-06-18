@@ -75,11 +75,22 @@ def _finite_metric_value(metric: dict, key: str, default: float = float("-inf"))
     return number
 
 
+def _finite_metric_value_or_none(metric: dict, key: str) -> float | None:
+    if key not in metric:
+        return None
+    value = _finite_metric_value(metric, key)
+    if value == float("-inf"):
+        return None
+    return value
+
+
 def _metric_rank(metric: dict, task_type: str) -> tuple:
     if task_type == "classify_single":
+        accuracy_top1 = _finite_metric_value_or_none(metric, "accuracy_top1")
+        accuracy_top5 = _finite_metric_value_or_none(metric, "accuracy_top5")
         return (
-            _finite_metric_value(metric, "accuracy_top1"),
-            _finite_metric_value(metric, "accuracy_top5"),
+            accuracy_top1 if accuracy_top1 is not None else _finite_metric_value(metric, "map50"),
+            accuracy_top5 if accuracy_top5 is not None else _finite_metric_value(metric, "map50_95"),
             -_finite_metric_value(metric, "val_loss", default=float("inf")),
             _finite_metric_value(metric, "epoch", default=0.0),
         )
