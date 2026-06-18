@@ -210,16 +210,17 @@ npm run dev -- --host 0.0.0.0 --port 8282
 1. Open `/train-tune`.
 2. Select a live dataset or import an export ZIP.
 3. Choose Detection, Segmentation, Pose, or single-label Classification.
-4. Configure preprocessing policy: Keep, Letterbox, or Stretch.
-5. Choose Basic online augmentation or Advanced materialized augmentation.
-6. Generate policy preview samples.
-7. Create an immutable Dataset Version; the selected family, size, base checkpoint, and training parameters are saved with the version.
-8. Review recommended settings and training estimate.
-9. Start a training job and monitor `/train-tune/jobs/:id`.
-10. Watch task-aware metrics stream from Ultralytics `results.csv`; detection, segmentation, pose, and classification jobs use their matching metric columns.
-Completed Train Tune jobs and model-version cards report best validation metrics selected from the metric history; live progress still shows the latest epoch metrics.
-11. Review results at `/train-tune/results/:id`.
-12. Test a registered artifact at `/train-tune/test/:id`, or pick one from the Test Model gallery at `/test` (reachable from the landing page).
+4. Set the Policy Dataset Split with the combined Train/Valid/Test slider or presets.
+5. Configure preprocessing policy: Keep, Letterbox, or Stretch.
+6. Choose Basic online augmentation or Advanced materialized augmentation.
+7. Generate policy preview samples.
+8. Create an immutable Dataset Version; the selected split, family, size, base checkpoint, and training parameters are saved with the version.
+9. Review recommended settings and training estimate.
+10. Start a training job and monitor `/train-tune/jobs/:id`.
+11. Watch task-aware metrics stream from Ultralytics `results.csv`; detection, segmentation, pose, and classification jobs use their matching metric columns.
+    Completed Train Tune jobs and model-version cards report best validation metrics selected from the metric history; live progress still shows the latest epoch metrics.
+12. Review results at `/train-tune/results/:id`.
+13. Test a registered artifact at `/train-tune/test/:id`, or pick one from the Test Model gallery at `/test` (reachable from the landing page).
 
 ## Routes
 

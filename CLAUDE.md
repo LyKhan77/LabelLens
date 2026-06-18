@@ -2,4 +2,4 @@
 
 Follow all instructions and updates in `@AGENTS.md`. Modify any necessary instructions as requested.
 
-Last synced with `@AGENTS.md`: 2026-06-17 Train Tune task-aware metrics, checkpoint diagnostics, and Dataset Version training config persistence.
+Last synced with `@AGENTS.md`: 2026-06-18 Train Tune Dataset Split Policy slider.

@@ -32,6 +32,7 @@ const deleteTarget = ref<DeleteTarget | null>(null)
 const builderStep = ref(1)
 const showAugmentMenu = ref(false)
 type AugmentKey = 'fliplr' | 'flipud' | 'degrees' | 'translate' | 'scale' | 'shear' | 'hsv_h' | 'hsv_s' | 'hsv_v' | 'exposure' | 'blur' | 'noise' | 'mosaic' | 'mixup' | 'copy_paste' | 'erasing'
+type SplitKey = 'train' | 'val' | 'test'
 const activeAugmentKey = ref<AugmentKey | null>(null)
 const augmentDraft = ref(0)
 const augmentPreviewLoading = ref(false)
@@ -116,6 +117,15 @@ const routeView = computed(() => {
 })
 const routeId = computed(() => props.path.split('/').filter(Boolean)[2] ?? null)
 const totalSplit = computed(() => form.splitTrain + form.splitVal + form.splitTest)
+const splitConfig = computed(() => ({ train: form.splitTrain, val: form.splitVal, test: form.splitTest }))
+const splitTrainBoundary = computed({
+  get: () => form.splitTrain,
+  set: (value: number) => setSplitTrainBoundary(value),
+})
+const splitTestBoundary = computed({
+  get: () => form.splitTrain + form.splitVal,
+  set: (value: number) => setSplitTestBoundary(value),
+})
 const builderReady = computed(() => trainingStore.selectedVersion !== null)
 const latestMetric = computed(() => trainingStore.selectedJob?.metrics_latest ?? trainingStore.jobMetrics.at(-1) ?? null)
 const resultSourceVersion = computed(() => trainingStore.versions.find((version) => version.id === trainingStore.selectedModel?.dataset_version_id) ?? null)
@@ -144,6 +154,21 @@ const preprocessingSummary = computed(() => `${resizeStrategyLabel.value}; ${for
 const selectedDatasetProject = computed(() => datasetStore.projects.find((project) => project.name === form.selectedDataset) ?? null)
 const estimatedSourceImages = computed(() => selectedDatasetProject.value?.stats.accepted || selectedDatasetProject.value?.stats.total_images || 0)
 const estimatedTrainOriginal = computed(() => Math.round(estimatedSourceImages.value * (form.splitTrain / 100)))
+const estimatedValImages = computed(() => Math.round(estimatedSourceImages.value * (form.splitVal / 100)))
+const estimatedTestImages = computed(() => Math.max(0, estimatedSourceImages.value - estimatedTrainOriginal.value - estimatedValImages.value))
+const splitEstimateSummary = computed(() => {
+  if (!estimatedSourceImages.value) return 'Select a live dataset to estimate images per split.'
+  return `${estimatedTrainOriginal.value} train · ${estimatedValImages.value} valid · ${estimatedTestImages.value} test from ${estimatedSourceImages.value} source images`
+})
+const splitWarning = computed(() => {
+  if (!estimatedSourceImages.value) return ''
+  if (form.splitVal > 0 && estimatedValImages.value < 1) return 'Valid split may produce 0 images. Increase Valid or add more labeled images.'
+  if (form.splitTest > 0 && estimatedTestImages.value < 1) return 'Test split may produce 0 images. Increase Test or add more labeled images.'
+  return ''
+})
+const splitBarStyle = computed(() => ({
+  background: `linear-gradient(90deg, #86efac 0 ${form.splitTrain}%, #fde68a ${form.splitTrain}% ${form.splitTrain + form.splitVal}%, #c4b5fd ${form.splitTrain + form.splitVal}% 100%)`,
+}))
 const advancedAugmentationEnabled = computed(() => form.augmentationMode === 'advanced')
 const activeAugmentationSteps = computed(() => advancedAugmentationEnabled.value ? augmentationSteps.filter((step) => augmentValue(step.key) > 0) : [])
 const activeMaterializedSteps = computed(() => activeAugmentationSteps.value.filter((step) => step.materialized))
@@ -276,6 +301,50 @@ function versionAugment(version: DatasetVersion | null | undefined) {
 
 function batchLabel(batch: number | undefined) {
   return batch === -1 ? 'Auto' : String(batch ?? 'N/A')
+}
+
+function clampSplitPercent(value: number, min = 0, max = 100) {
+  if (!Number.isFinite(value)) return min
+  return Math.min(max, Math.max(min, Math.round(value)))
+}
+
+function applySplitBoundaries(trainEnd: number, valEnd: number) {
+  const train = clampSplitPercent(trainEnd)
+  const valBoundary = clampSplitPercent(valEnd, train, 100)
+  form.splitTrain = train
+  form.splitVal = valBoundary - train
+  form.splitTest = 100 - valBoundary
+}
+
+function setSplitTrainBoundary(value: number) {
+  applySplitBoundaries(value, form.splitTrain + form.splitVal)
+}
+
+function setSplitTestBoundary(value: number) {
+  applySplitBoundaries(form.splitTrain, value)
+}
+
+function updateSplitPercent(key: SplitKey, event: Event) {
+  const value = clampSplitPercent(Number((event.target as HTMLInputElement).value))
+  if (key === 'train') {
+    applySplitBoundaries(value, Math.min(100, value + form.splitVal))
+  } else if (key === 'val') {
+    applySplitBoundaries(form.splitTrain, form.splitTrain + value)
+  } else {
+    applySplitBoundaries(form.splitTrain, 100 - value)
+  }
+}
+
+function applySplitPreset(train: number, val: number, test: number) {
+  const nextTrain = clampSplitPercent(train)
+  const nextVal = clampSplitPercent(val, 0, 100 - nextTrain)
+  form.splitTrain = nextTrain
+  form.splitVal = nextVal
+  form.splitTest = 100 - nextTrain - nextVal
+  if (test !== form.splitTest) {
+    form.splitTest = clampSplitPercent(test, 0, 100)
+    form.splitVal = Math.max(0, 100 - form.splitTrain - form.splitTest)
+  }
 }
 
 function policyPreprocessingConfig() {
@@ -582,7 +651,7 @@ async function buildVersion() {
       version = await trainingStore.createLiveVersion({
         datasetName: form.selectedDataset,
         versionName: form.versionName || `${form.selectedDataset}-snapshot`,
-        splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
+        splitConfig: splitConfig.value,
         preprocessingConfig: policyPreprocessingConfig(),
         augmentationConfig: policyAugmentationConfig(),
         trainingConfig: currentTrainingConfig(),
@@ -598,7 +667,7 @@ async function buildVersion() {
         file: form.zipFile,
         versionName: form.versionName || form.zipFile.name.replace(/\.zip$/i, ''),
         splitMode: form.splitMode,
-        splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
+        splitConfig: splitConfig.value,
         preprocessingConfig: policyPreprocessingConfig(),
         augmentationConfig: policyAugmentationConfig(),
         trainingConfig: currentTrainingConfig(),
@@ -639,7 +708,7 @@ async function requestPolicyPreview(showValidation = true) {
     sourceType: form.sourceType,
     datasetName: form.sourceType === 'live' ? form.selectedDataset : undefined,
     file: form.sourceType === 'zip' ? form.zipFile : null,
-    splitConfig: { train: form.splitTrain, val: form.splitVal, test: form.splitTest },
+    splitConfig: splitConfig.value,
     preprocessingConfig: policyPreprocessingConfig(),
     augmentationConfig: policyAugmentationConfig(),
     taskType: form.taskType,
@@ -957,7 +1026,38 @@ async function resumeJob(jobId: string) {
                   <div class="train-policy-sections">
                     <div class="train-policy-section">
                       <div class="train-version-title">
-                        <strong>1. Preprocessing</strong>
+                        <strong>1. Dataset Split</strong>
+                        <span>{{ splitEstimateSummary }}</span>
+                      </div>
+                      <div class="train-split-composer">
+                        <div class="train-split-track" :style="splitBarStyle" aria-hidden="true">
+                          <span class="train-split-name is-train" :style="{ width: `${form.splitTrain}%` }">Train {{ form.splitTrain }}%</span>
+                          <span class="train-split-name is-val" :style="{ width: `${form.splitVal}%` }">Valid {{ form.splitVal }}%</span>
+                          <span class="train-split-name is-test" :style="{ width: `${form.splitTest}%` }">Test {{ form.splitTest }}%</span>
+                          <span class="train-split-handle" :style="{ left: `${form.splitTrain}%` }" />
+                          <span class="train-split-handle" :style="{ left: `${form.splitTrain + form.splitVal}%` }" />
+                        </div>
+                        <div class="train-split-range-layer">
+                          <input v-model.number="splitTrainBoundary" class="train-split-range is-train" type="range" min="0" :max="splitTestBoundary" step="1" aria-label="Train split percent" />
+                          <input v-model.number="splitTestBoundary" class="train-split-range is-test" type="range" :min="splitTrainBoundary" max="100" step="1" aria-label="Valid and test split boundary" />
+                        </div>
+                      </div>
+                      <div class="train-split-inputs">
+                        <label><span>Train</span><input type="number" min="0" max="100" :value="form.splitTrain" @input="updateSplitPercent('train', $event)" /><strong>%</strong></label>
+                        <label><span>Valid</span><input type="number" min="0" max="100" :value="form.splitVal" @input="updateSplitPercent('val', $event)" /><strong>%</strong></label>
+                        <label><span>Test</span><input type="number" min="0" max="100" :value="form.splitTest" @input="updateSplitPercent('test', $event)" /><strong>%</strong></label>
+                      </div>
+                      <div class="train-split-presets" aria-label="Dataset split presets">
+                        <button type="button" @click="applySplitPreset(70, 20, 10)">70/20/10</button>
+                        <button type="button" @click="applySplitPreset(80, 10, 10)">80/10/10</button>
+                        <button type="button" @click="applySplitPreset(90, 10, 0)">90/10/0</button>
+                      </div>
+                      <p class="train-version-note" :class="splitWarning ? 'is-warning' : ''">{{ splitWarning || 'Roboflow-style split policy is locked into the immutable Dataset Version snapshot.' }}</p>
+                    </div>
+
+                    <div class="train-policy-section">
+                      <div class="train-version-title">
+                        <strong>2. Preprocessing</strong>
                         <span>{{ preprocessingSummary }}</span>
                       </div>
                       <div class="train-version-fields">
@@ -970,7 +1070,7 @@ async function resumeJob(jobId: string) {
 
                       <div class="train-policy-section">
                         <div class="train-version-title">
-                          <strong>2. Augmentation</strong>
+                          <strong>3. Augmentation</strong>
                           <span>{{ augmentationSummary }}</span>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-(--spacing-sm)">
@@ -1017,7 +1117,7 @@ async function resumeJob(jobId: string) {
 
                       <div v-if="advancedAugmentationEnabled" class="train-policy-section">
                         <div class="train-version-title">
-                          <strong>3. Generate Size</strong>
+                          <strong>4. Generate Size</strong>
                         <span>Maximum Version Size multiplies only train images and only when materialized augmentation steps exist.</span>
                       </div>
                       <div class="train-version-fields">
@@ -1032,7 +1132,7 @@ async function resumeJob(jobId: string) {
 
                       <div class="train-policy-section">
                         <div class="train-version-title">
-                          <strong>{{ advancedAugmentationEnabled ? '4' : '3' }}. Preview</strong>
+                          <strong>{{ advancedAugmentationEnabled ? '5' : '4' }}. Preview</strong>
                           <span>Backend renders 3 samples with transformed bbox/mask overlays before snapshot creation.</span>
                       </div>
                       <div class="flex flex-wrap gap-(--spacing-sm)">
@@ -1711,12 +1811,32 @@ async function resumeJob(jobId: string) {
 .train-version-status.is-valid small { color: var(--color-primary-deep); }
 .train-version-status.is-invalid small { color: #b91c1c; }
 .train-version-note { margin: 0; min-height: 38px; padding: 10px 12px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); color: var(--color-ink-mute); background: var(--color-canvas); font-size: 12px; line-height: 1.5; }
+.train-version-note.is-warning { border-color: #f59e0b; color: #92400e; background: #fffbeb; }
 .train-version-preview { display: flex; align-items: stretch; gap: 16px; padding: 14px 16px; border: 1px solid var(--color-hairline); border-radius: var(--radius-md); background: var(--color-canvas); }
 .train-preview-title { width: min(180px, 100%); display: flex; flex-direction: column; justify-content: center; gap: 4px; padding-right: 16px; border-right: 1px solid var(--color-hairline); }
 .train-preview-grid { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .train-preview-grid div { min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
 .train-preview-grid span { color: var(--color-ink-mute); font-size: 11px; text-transform: uppercase; }
 .train-preview-grid strong { color: var(--color-ink); font-size: 13px; font-weight: 500; line-height: 1.4; word-break: break-word; }
+.train-split-composer { position: relative; min-height: 48px; display: flex; align-items: center; }
+.train-split-track { position: relative; width: 100%; min-height: 44px; display: flex; align-items: stretch; border: 1px solid var(--color-hairline-strong); border-radius: var(--radius-sm); background: var(--color-canvas); overflow: hidden; }
+.train-split-name { min-width: 0; display: flex; align-items: center; padding: 0 10px; color: #171717; font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.train-split-name.is-val { justify-content: center; }
+.train-split-name.is-test { justify-content: flex-end; }
+.train-split-handle { position: absolute; top: 5px; bottom: 5px; width: 2px; transform: translateX(-1px); border-radius: 999px; background: rgba(23, 23, 23, 0.62); box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.42); pointer-events: none; }
+.train-split-range-layer { position: absolute; inset: 0; }
+.train-split-range { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; cursor: ew-resize; }
+.train-split-range::-webkit-slider-thumb { width: 28px; height: 48px; pointer-events: auto; cursor: ew-resize; -webkit-appearance: none; appearance: none; }
+.train-split-range::-moz-range-thumb { width: 28px; height: 48px; border: 0; background: transparent; pointer-events: auto; cursor: ew-resize; }
+.train-split-range.is-train { z-index: 2; }
+.train-split-range.is-test { z-index: 3; }
+.train-split-inputs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.train-split-inputs label { min-width: 0; display: grid; grid-template-columns: 1fr minmax(58px, 74px) auto; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink-mute); font-size: 12px; }
+.train-split-inputs input { min-width: 0; height: 30px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas-soft); color: var(--color-ink); text-align: right; padding: 0 8px; }
+.train-split-inputs strong { color: var(--color-ink); font-size: 12px; font-weight: 600; }
+.train-split-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.train-split-presets button { min-height: 30px; padding: 0 10px; border: 1px solid var(--color-hairline); border-radius: var(--radius-sm); background: var(--color-canvas); color: var(--color-ink); font-size: 12px; font-weight: 600; cursor: pointer; }
+.train-split-presets button:hover, .train-split-presets button:focus-visible { border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-hairline)); color: var(--color-primary-deep); }
 .train-stat {
   display: flex;
   flex-direction: column;
@@ -1814,7 +1934,7 @@ async function resumeJob(jobId: string) {
   .train-version-delete { align-self: center; }
   .train-model-card { grid-template-columns: 1fr; align-items: stretch; }
   .train-model-meta { justify-content: space-between; }
-  .train-augment-grid, .train-augment-advanced, .train-version-fields { grid-template-columns: 1fr; }
+  .train-augment-grid, .train-augment-advanced, .train-version-fields, .train-split-inputs { grid-template-columns: 1fr; }
   .train-augment-step-row { grid-template-columns: 1fr; }
   .train-augment-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
 }
