@@ -2,4 +2,6 @@
 
 Follow all instructions and updates in `@AGENTS.md`. Modify any necessary instructions as requested.
 
-Last synced with `@AGENTS.md`: 2026-06-18 Train Tune Dataset Split Policy slider.
+Current codebase state, long-term cross-agent memory, and AI-agent change history are documented in `@CHANGELOG.md`, as referenced by `@AGENTS.md`.
+
+Last synced with `@AGENTS.md`: 2026-06-18 CHANGELOG.md long-term memory format.
