@@ -50,6 +50,56 @@ def ultralytics_task(task_type: str) -> str:
     return 'classify' if task_type == 'classify_single' else task_type
 
 
+def _sanitize_json_value(value):
+    if isinstance(value, float):
+        return value if math.isfinite(value) else 0.0
+    if isinstance(value, list):
+        return [_sanitize_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize_json_value(item) for key, item in value.items()}
+    return value
+
+
+def _finite_metric_value(metric: dict, key: str, default: float = float("-inf")) -> float:
+    value = metric.get(key)
+    if value is None:
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if number != number:
+        return default
+    if number in {float("inf"), float("-inf")}:
+        return default
+    return number
+
+
+def _metric_rank(metric: dict, task_type: str) -> tuple:
+    if task_type == "classify_single":
+        return (
+            _finite_metric_value(metric, "accuracy_top1"),
+            _finite_metric_value(metric, "accuracy_top5"),
+            -_finite_metric_value(metric, "val_loss", default=float("inf")),
+            _finite_metric_value(metric, "epoch", default=0.0),
+        )
+    return (
+        _finite_metric_value(metric, "map50_95"),
+        _finite_metric_value(metric, "map50"),
+        _finite_metric_value(metric, "precision"),
+        _finite_metric_value(metric, "recall"),
+        -_finite_metric_value(metric, "val_loss", default=float("inf")),
+        _finite_metric_value(metric, "epoch", default=0.0),
+    )
+
+
+def _select_best_metric(metrics: list[dict], task_type: str) -> dict | None:
+    if not metrics:
+        return None
+    best = max(metrics, key=lambda metric: _metric_rank(metric, task_type))
+    return _sanitize_json_value(best)
+
+
 class TrainingService:
     def __init__(self, dataset_service_instance: DatasetService | None = None):
         self.dataset_service = dataset_service_instance or dataset_service
@@ -112,13 +162,7 @@ class TrainingService:
             json.dump(self._sanitize_json_value(payload), f, indent=2, allow_nan=False)
 
     def _sanitize_json_value(self, value):
-        if isinstance(value, float):
-            return value if math.isfinite(value) else 0.0
-        if isinstance(value, list):
-            return [self._sanitize_json_value(item) for item in value]
-        if isinstance(value, dict):
-            return {key: self._sanitize_json_value(item) for key, item in value.items()}
-        return value
+        return _sanitize_json_value(value)
 
     def _slugify(self, value: str, fallback: str) -> str:
         base = re.sub(r'[^A-Za-z0-9._-]+', '-', (value or '').strip()).strip('-.')
@@ -1575,13 +1619,26 @@ class TrainingService:
     def fail_training_job(self, job_id: str, reason: str) -> dict:
         return self.update_training_job(job_id, status='failed', failure_reason=reason, finished_at=datetime.now().isoformat())
 
-    def complete_training_job(self, job_id: str, best_model_path: str, last_checkpoint_path: str | None = None) -> dict:
+    def complete_training_job(
+        self,
+        job_id: str,
+        best_model_path: str,
+        last_checkpoint_path: str | None = None,
+        metrics_best: dict | None = None,
+    ) -> dict:
+        job = self.get_training_job(job_id)
+        metrics = self.list_training_metrics(job_id)
+        selected_metrics_best = _sanitize_json_value(metrics_best) if metrics_best else _select_best_metric(
+            metrics,
+            job.get('task_type', 'detect'),
+        )
         job = self.update_training_job(
             job_id,
             status='completed',
             best_model_path=best_model_path,
             last_checkpoint_path=last_checkpoint_path or best_model_path,
             finished_at=datetime.now().isoformat(),
+            metrics_best=selected_metrics_best,
         )
         model_id = uuid.uuid4().hex
         model_payload = {
@@ -1595,7 +1652,7 @@ class TrainingService:
             'task_type': job.get('task_type', 'detect'),
             'best_model_path': best_model_path,
             'class_names': job.get('class_names', []),
-            'metrics_best': job.get('metrics_latest'),
+            'metrics_best': job.get('metrics_best') or job.get('metrics_latest'),
             'created_at': datetime.now().isoformat(),
             'status': 'ready',
         }
