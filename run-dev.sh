@@ -20,6 +20,35 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+free_port() {
+  local port="$1"
+  local pids=""
+  if command -v ss >/dev/null 2>&1; then
+    pids=$( { ss -tlnp 2>/dev/null \
+      | awk -v p=":$port" '$4 ~ p { print $0 }' \
+      | grep -oP 'pid=\K[0-9]+' || true; } | sort -u)
+  fi
+  if [[ -z "$pids" ]] && command -v fuser >/dev/null 2>&1; then
+    pids=$(fuser -n tcp "$port" 2>/dev/null \
+      | tr -s ' ' '\n' | grep -E '^[0-9]+$' || true)
+  fi
+  if [[ -z "$pids" ]] && command -v lsof >/dev/null 2>&1 && [[ $EUID -eq 0 ]]; then
+    pids=$(lsof -t -i:"$port" 2>/dev/null | sort -u || true)
+  fi
+  for pid in $pids; do
+    [[ "$pid" == "$$" ]] && continue
+    if [[ -z "$(ps -o comm= -p "$pid" 2>/dev/null)" ]]; then
+      continue
+    fi
+    echo "Port $port masih dipakai PID $pid — kill -9."
+    kill -9 "$pid" 2>/dev/null || true
+  done
+}
+
+free_port "$BACKEND_PORT"
+free_port "$FRONTEND_PORT"
+sleep 1
+
 cleanup() {
   trap - EXIT INT TERM
   echo ""
