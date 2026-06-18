@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDatasetStore } from '../../shared/stores/dataset'
 import { useInferenceStore } from '../../shared/stores/inference'
 import type { BBoxAnnotation } from '../../shared/types'
 import type { DatasetLabelJobItem, DatasetLabelJobStatus } from '../../shared/api/dataset'
+import { listModelVersions, type ModelVersion } from '../../shared/api/training'
 import BBoxAnnotationCanvas from '../../shared/components/BBoxAnnotation.vue'
 import DatasetMediaOverlay from './DatasetMediaOverlay.vue'
 
@@ -44,6 +45,64 @@ const taskLabel = computed(() => {
 })
 const highlightedItemIndex = ref(0)
 const jobComplete = ref(false)
+
+// Auto-Crop Objects (detect/segment only)
+const configMode = ref<'rapid' | 'crop'>('rapid')
+const cropSource = ref<'pretrained' | 'trained'>('pretrained')
+const cropClassesText = ref('')
+const cropConfidence = ref(0.5)
+const trainedModels = ref<ModelVersion[]>([])
+const selectedTrainedId = ref('')
+const cropClassList = computed(() => cropClassesText.value.split(',').map((s) => s.trim()).filter(Boolean))
+const selectedTrainedModel = computed(() => trainedModels.value.find((m) => m.id === selectedTrainedId.value) ?? null)
+const cropModelReady = computed(() => inferenceStore.modelLoaded && inferenceStore.inferenceMode === 'prompt')
+const canStartCrop = computed(() => {
+  if (cropSource.value === 'pretrained') return cropModelReady.value && cropClassList.value.length > 0
+  return Boolean(selectedTrainedModel.value)
+})
+
+async function loadCropModels() {
+  try {
+    const all = await listModelVersions()
+    trainedModels.value = all.filter((m) => m.task_type === 'detect' || m.task_type === 'segment')
+  } catch {
+    trainedModels.value = []
+  }
+}
+
+async function loadCropYoloe() {
+  loadingModel.value = true
+  error.value = ''
+  try {
+    await inferenceStore.selectMode('prompt')
+  } finally {
+    loadingModel.value = false
+  }
+}
+
+async function startCrop() {
+  if (!canStartCrop.value) return
+  error.value = ''
+  highlightedItemIndex.value = 0
+  jobComplete.value = false
+  stopDisplayPlayback()
+  phase.value = 'progress'
+  try {
+    const created = await datasetStore.createCropJob({
+      source: cropSource.value,
+      labels: cropClassList.value,
+      confidence: cropConfidence.value,
+      modelPath: cropSource.value === 'trained' ? selectedTrainedModel.value?.best_model_path : undefined,
+      modelTask: cropSource.value === 'trained' ? selectedTrainedModel.value?.task_type : undefined,
+    })
+    if (!created) return
+    job.value = created
+    pollTimer = setInterval(() => pollJob(created.job_id), 300)
+    await pollJob(created.job_id)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Auto-crop job failed'
+  }
+}
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let displayTimer: ReturnType<typeof setInterval> | null = null
 
@@ -297,6 +356,7 @@ async function startLabeling() {
 }
 
 watch(promptType, () => { error.value = '' })
+onMounted(() => { loadCropModels() })
 onUnmounted(() => {
   stopPolling()
   stopDisplayPlayback()
@@ -395,6 +455,72 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <div class="dataset-mode-tabs">
+              <button :class="{ 'is-active': configMode === 'rapid' }" @click="configMode = 'rapid'">
+                <strong>Rapid Inference</strong>
+                <small>Auto-label images</small>
+              </button>
+              <button :class="{ 'is-active': configMode === 'crop' }" @click="configMode = 'crop'">
+                <strong>Auto-Crop Objects</strong>
+                <small>Crop detections only</small>
+              </button>
+            </div>
+
+            <template v-if="configMode === 'crop'">
+              <div class="dataset-mode-tabs">
+                <button :class="{ 'is-active': cropSource === 'pretrained' }" @click="cropSource = 'pretrained'">
+                  <strong>Pre-trained</strong>
+                  <small>YOLOE + class names</small>
+                </button>
+                <button :class="{ 'is-active': cropSource === 'trained' }" @click="cropSource = 'trained'">
+                  <strong>Trained Model</strong>
+                  <small>From Train Tune</small>
+                </button>
+              </div>
+
+              <template v-if="cropSource === 'pretrained'">
+                <label class="dataset-field-block">
+                  <span class="dataset-field-label">Class Names</span>
+                  <input v-model="cropClassesText" class="dataset-text-input" placeholder="bolt, scratch, crack" />
+                </label>
+                <div class="dataset-model-row">
+                  <div>
+                    <span class="dataset-field-label">Required Model</span>
+                    <strong>yoloe-26l-seg.pt</strong>
+                  </div>
+                  <button class="dataset-secondary-button" :class="{ 'is-ready': cropModelReady }" :disabled="loadingModel" @click="loadCropYoloe">
+                    {{ cropModelReady ? 'Model Ready' : loadingModel ? 'Loading...' : 'Load Model' }}
+                  </button>
+                </div>
+              </template>
+
+              <template v-else>
+                <label class="dataset-field-block">
+                  <span class="dataset-field-label">Trained Model (Detection / Segmentation)</span>
+                  <select v-model="selectedTrainedId" class="dataset-text-input">
+                    <option value="" disabled>Select a model version...</option>
+                    <option v-for="m in trainedModels" :key="m.id" :value="m.id">
+                      {{ m.version_name }} · {{ m.task_type === 'segment' ? 'SEG' : 'DET' }} · {{ m.family }}{{ m.size }}
+                    </option>
+                  </select>
+                </label>
+                <p v-if="trainedModels.length === 0" class="text-[12px] text-ink-mute">No detection/segmentation model versions found. Train one in Train Tune.</p>
+              </template>
+
+              <div class="dataset-panel-block">
+                <div class="dataset-field-row">
+                  <span class="dataset-field-label">Confidence</span>
+                  <span class="dataset-field-value">{{ Math.round(cropConfidence * 100) }}%</span>
+                </div>
+                <input v-model.number="cropConfidence" type="range" min="0.05" max="0.95" step="0.05" class="dataset-range" />
+              </div>
+
+              <p class="text-[12px] text-ink-mute leading-relaxed">
+                Each uploaded image is inferred, detected objects are cropped (HD PNG), and only the crops are kept — original images are removed. Use the resulting dataset for classification (e.g. OK/NG) annotation.
+              </p>
+            </template>
+
+            <template v-else>
             <template v-if="usesYoloePromptTask">
             <div v-if="isGroundingTask" class="dataset-mode-tabs">
               <button :class="{ 'is-active': promptType === 'free' }" @click="promptType = 'free'">
@@ -477,6 +603,7 @@ onUnmounted(() => {
                 {{ taskModelSupported ? `${taskLabel} Rapid Inference uses a task-compatible Ultralytics model. Pretrained models work only when their class list or keypoint template matches this dataset.` : 'Multi-label classification needs a dedicated multi-label model pipeline and is not supported by standard YOLO classification inference.' }}
               </p>
             </div>
+            </template>
           </template>
 
           <template v-else>
@@ -548,6 +675,9 @@ onUnmounted(() => {
           <div class="dataset-footer-actions">
             <button v-if="phase === 'upload'" class="dataset-primary-button" :disabled="uploading || !canUpload" @click="startUpload">
               {{ sourceMode === 'current' ? 'Continue' : uploading ? 'Uploading...' : 'Upload' }}
+            </button>
+            <button v-else-if="phase === 'configure' && configMode === 'crop'" class="dataset-primary-button" :disabled="!canStartCrop" @click="startCrop">
+              Start Auto-Crop
             </button>
             <button v-else-if="phase === 'configure'" class="dataset-primary-button" :disabled="!canStart" @click="startLabeling">
               Start Inference

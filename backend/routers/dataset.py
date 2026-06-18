@@ -14,6 +14,7 @@ from backend.services.dataset import dataset_service
 from backend.services.model import model_service
 from backend.services.sam import sam_service
 from backend.utils.encoding import decode_image
+from backend.utils.masks import extract_mask_polygon, extract_mask_rle
 
 router = APIRouter(tags=["datasets"])
 
@@ -109,8 +110,33 @@ def _task_model_predict(image, task_type: str, model_path: str, confidence: floa
     if model_task != expected:
         raise ValueError(f"{task_type} Rapid Inference requires a {expected} model; got {model_task}")
 
-    result = model.predict(image, conf=confidence, verbose=False)[0]
+    result = model.predict(image, conf=confidence, verbose=False, retina_masks=True)[0]
     names = getattr(result, "names", {}) or {}
+
+    if task_type in {"detect", "segment"}:
+        boxes = getattr(result, "boxes", None)
+        masks = getattr(result, "masks", None)
+        orig_shape = getattr(result, "orig_shape", None)
+        detections = []
+        if boxes is not None:
+            for i in range(len(boxes)):
+                xyxy = _tensor_list(boxes.xyxy[i])
+                cls_id = int(_tensor_list(boxes.cls[i]))
+                conf = float(_tensor_list(boxes.conf[i]))
+                det = {
+                    "box": [round(float(v), 1) for v in xyxy],
+                    "label": names.get(cls_id, str(cls_id)),
+                    "confidence": round(conf, 3),
+                    "cls_id": cls_id,
+                }
+                mask_rle = extract_mask_rle(masks, i, orig_shape, xyxy)
+                if mask_rle:
+                    det["mask_rle"] = mask_rle
+                mask = extract_mask_polygon(masks, i, orig_shape, xyxy)
+                if mask:
+                    det["mask"] = mask
+                detections.append(det)
+        return {"detections": detections}
 
     if task_type == "classify_single":
         probs = getattr(result, "probs", None)
@@ -287,6 +313,91 @@ def _run_label_job(
                 else:
                     item["state"] = "failed"
                     item["error"] = "No compatible predictions above confidence"
+            except Exception as exc:
+                item["state"] = "failed"
+                item["error"] = str(exc)
+            job["processed"] += 1
+
+        job["state"] = "done"
+    except Exception as exc:
+        job["state"] = "failed"
+        job["error"] = str(exc)
+    finally:
+        label_job_lock.release()
+
+
+def _run_crop_job(
+    job_id: str,
+    name: str,
+    source: str,
+    labels: list[str],
+    confidence: float,
+    model_path: str | None,
+    model_task: str = "detect",
+):
+    job = label_jobs[job_id]
+    if not label_job_lock.acquire(blocking=False):
+        job["state"] = "failed"
+        job["error"] = "Another labeling job is already running"
+        return
+
+    try:
+        if source == "pretrained" and model_service.model is None:
+            raise ValueError("No model loaded. Load a model first.")
+        if source == "pretrained" and not labels:
+            raise ValueError("At least one class name required for pre-trained Auto-Crop")
+        if source == "trained" and not (model_path or "").strip():
+            raise ValueError("A trained model must be selected")
+        if source == "trained" and model_task not in {"detect", "segment"}:
+            raise ValueError("Auto-Crop only supports detection or segmentation models")
+
+        unlabeled = dataset_service.get_unlabeled_images(name)
+        job["state"] = "running"
+        job["total"] = len(unlabeled)
+
+        for img_id in unlabeled:
+            image_data = dataset_service.get_image(name, img_id)
+            image_url = f"/api/datasets/{name}/images/{img_id}/file"
+            item = {
+                "img_id": img_id,
+                "filename": image_data["filename"] if image_data else img_id,
+                "image_url": image_url,
+                "state": "running",
+                "detections_count": 0,
+                "detections": [],
+                "error": None,
+            }
+            job["items"].append(item)
+            job["current_filename"] = item["filename"]
+            job["current_image_url"] = image_url
+
+            if image_data is None or image_data["image_path"] is None:
+                item["state"] = "failed"
+                item["error"] = "Image not found"
+                job["processed"] += 1
+                continue
+            image = cv2.imread(image_data["image_path"])
+            if image is None:
+                item["state"] = "failed"
+                item["error"] = "Image could not be read"
+                job["processed"] += 1
+                continue
+
+            try:
+                if source == "pretrained":
+                    result = _run_inference(image, "text", labels, confidence)
+                else:
+                    result = _task_model_predict(image, model_task, model_path or "", confidence)
+                detections = result.get("detections", [])
+                boxes = [d.get("box", []) for d in detections]
+                cropped = dataset_service.save_crops(name, image, boxes, source="crop")
+                dataset_service.delete_image(name, img_id)
+                item["detections_count"] = cropped
+                item["detections"] = detections
+                item["state"] = "done" if cropped else "failed"
+                if not cropped:
+                    item["error"] = "No objects detected above confidence"
+                job["detections_count"] += cropped
             except Exception as exc:
                 item["state"] = "failed"
                 item["error"] = str(exc)
@@ -730,6 +841,42 @@ async def create_label_job(
         bbox_list,
         vcls_list,
         model_path,
+    )
+    return job
+
+
+@router.post("/datasets/{name}/crop-jobs")
+async def create_crop_job(
+    name: str,
+    background_tasks: BackgroundTasks,
+    source: str = Form("pretrained"),
+    labels: str = Form("[]"),
+    confidence: float = Form(0.5),
+    model_path: str = Form(""),
+    model_task: str = Form("detect"),
+):
+    try:
+        dataset_service._read_meta(name)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    if source not in {"pretrained", "trained"}:
+        raise HTTPException(400, "source must be 'pretrained' or 'trained'")
+    if source == "pretrained" and model_service.model is None:
+        raise HTTPException(400, "No model loaded. Load a model first.")
+    if source == "trained" and model_task not in {"detect", "segment"}:
+        raise HTTPException(400, "Auto-Crop only supports detection or segmentation models")
+
+    label_list = _parse_json_list(labels, "labels")
+    job = _new_job(name)
+    background_tasks.add_task(
+        _run_crop_job,
+        job["job_id"],
+        name,
+        source,
+        label_list,
+        confidence,
+        model_path,
+        model_task,
     )
     return job
 

@@ -287,6 +287,26 @@ export async function createLabelJob(
   return res.data
 }
 
+export async function createCropJob(
+  name: string,
+  params: {
+    source: 'pretrained' | 'trained'
+    labels?: string[]
+    confidence?: number
+    modelPath?: string
+    modelTask?: string
+  },
+): Promise<DatasetLabelJobStatus> {
+  const form = new FormData()
+  form.append('source', params.source)
+  form.append('labels', JSON.stringify(params.labels ?? []))
+  form.append('confidence', String(params.confidence ?? 0.5))
+  if (params.modelPath) form.append('model_path', params.modelPath)
+  if (params.modelTask) form.append('model_task', params.modelTask)
+  const res = await api.post(`/datasets/${name}/crop-jobs`, form)
+  return res.data
+}
+
 export async function getLabelJob(
   name: string,
   jobId: string,

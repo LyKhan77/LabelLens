@@ -20,6 +20,7 @@ The app is built for fast dataset loops: run prompt-free, text-prompt, or visual
 | Inference Workspace | Free Inference with YOLOE LRPC vocabulary, text prompts, visual prompts via SAVPE, image/video/RTSP inputs, configurable overlays, and a compact detection log. |
 | Dataset Manager | Multi-project task-aware dataset workspace for detection, segmentation, single-label classification, multi-label classification, and pose datasets, with overlay gallery, modal review, class colors, and task-native exports. |
 | Auto-Labelling | Saves inference results into datasets from image, video, batch upload, or continuous RTSP viewer frames with optional timer control. |
+| Auto-Crop Objects | Crops detected objects during inference, or as an Upload Data crop job (detection/segmentation model, pre-trained YOLOE + class names or a trained registry model), keeping only HD crops for classification annotation. |
 | SAM2.1 Auto-mask | Generates segmentation masks from manual bbox annotations when SAM is available; bbox saves remain non-fatal if SAM fails. |
 | Train Tune | Builds immutable detection, segmentation, pose, and single-label classification Dataset Versions, persists training architecture config, previews preprocessing/augmentation policy, recommends settings, runs training jobs, tracks metrics/artifacts, resumes checkpoints, and tests registered model versions. |
 | GPU Policy | Defaults LabelLens to physical GPUs `1,2`, leaving physical GPU `0` reserved for vLLM. Train Tune Standard uses GPU `1`; High-Speed uses GPUs `1,2` with AMP off. |

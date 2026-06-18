@@ -357,6 +357,17 @@ export const useDatasetStore = defineStore('dataset', () => {
     return api.createLabelJob(currentProject.value, params)
   }
 
+  async function createCropJob(params: {
+    source: 'pretrained' | 'trained'
+    labels?: string[]
+    confidence?: number
+    modelPath?: string
+    modelTask?: string
+  }) {
+    if (!currentProject.value) return
+    return api.createCropJob(currentProject.value, params)
+  }
+
   async function getLabelJob(jobId: string) {
     if (!currentProject.value) return
     const result = await api.getLabelJob(currentProject.value, jobId)
@@ -528,6 +539,7 @@ export const useDatasetStore = defineStore('dataset', () => {
     uploadStream,
     labelImages,
     createLabelJob,
+    createCropJob,
     getLabelJob,
     batchUpload,
     saveStream,
