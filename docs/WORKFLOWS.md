@@ -61,7 +61,7 @@ This document describes operator workflows from the user interface.
 10. Classification: assign one image label or multiple image labels depending on dataset task.
 11. Pose: create a bbox-first pose instance, then drag fixed-template keypoints and set visibility.
 12. Adjust per-class colors when needed.
-13. Export accepted labels in the native task format.
+13. Export accepted labels in the native task format, or export raw images only (no labels).
 
 ## Rapid Inference
 
@@ -122,7 +122,7 @@ Segmentation Dataset Versions require masks for every accepted object.
 
 1. Auto-label or manually annotate dataset images.
 2. Review and accept labels.
-3. Export YOLO/COCO when external training is needed, or create a Train Tune Dataset Version directly.
+3. Export YOLO/COCO (or raw images only) when external training is needed, or create a Train Tune Dataset Version directly.
 4. Train a model.
 5. Register the model as a Model Version.
 6. Test the artifact.

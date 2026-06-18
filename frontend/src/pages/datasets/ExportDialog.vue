@@ -5,7 +5,7 @@ import { useDatasetStore } from '../../shared/stores/dataset'
 const emit = defineEmits<{ close: [] }>()
 const store = useDatasetStore()
 
-const format = ref<'yolo' | 'coco'>('yolo')
+const format = ref<'yolo' | 'coco' | 'raw'>('yolo')
 const split = ref(0.8)
 const exporting = ref(false)
 
@@ -58,10 +58,17 @@ async function doExport() {
                   <small>Single annotation file for COCO tooling.</small>
                 </span>
               </label>
+              <label :class="['dataset-choice-card', { 'is-active': format === 'raw' }]">
+                <input v-model="format" type="radio" value="raw" />
+                <span>
+                  <strong>Raw Images</strong>
+                  <small>Original images only, no labels.</small>
+                </span>
+              </label>
             </div>
           </div>
 
-          <div>
+          <div v-if="format !== 'raw'">
             <div class="dataset-field-row">
               <span class="dataset-field-label">Train / Val Split</span>
               <span class="dataset-field-value">{{ Math.round(split * 100) }} / {{ Math.round((1 - split) * 100) }}</span>

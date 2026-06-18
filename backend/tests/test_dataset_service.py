@@ -485,6 +485,36 @@ class DatasetServiceTest(unittest.TestCase):
             label_names = [n for n in zf.namelist() if n.endswith(".txt")]
         self.assertEqual(label_names, [])
 
+    def test_export_raw_images_includes_all_uploaded_images(self):
+        self.service.create_project("demo", ["car"])
+        self.service.upload_raw("demo", jpg_bytes(), original_filename="a.jpg")
+        self.service.upload_raw("demo", jpg_bytes(), original_filename="b.jpg")
+        self.service.save_image(
+            "demo",
+            jpg_bytes(),
+            [{"box": [4, 6, 28, 30], "label": "car", "confidence": 0.9}],
+            original_filename="c.jpg",
+        )
+
+        zip_bytes = self.service.export_raw_images("demo")
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            names = zf.namelist()
+        self.assertEqual(sorted(names), ["a.jpg", "b.jpg", "c.jpg"])
+        self.assertFalse(any(n.endswith(".txt") for n in names))
+        self.assertNotIn("dataset.yaml", names)
+
+    def test_export_raw_images_uses_original_filenames_with_dedup(self):
+        self.service.create_project("demo")
+        self.service.upload_raw("demo", jpg_bytes(), original_filename="dup.jpg")
+        self.service.upload_raw("demo", jpg_bytes(), original_filename="dup.jpg")
+
+        zip_bytes = self.service.export_raw_images("demo")
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            names = sorted(zf.namelist())
+        self.assertEqual(names, ["dup-2.jpg", "dup.jpg"])
+
     def test_delete_class_removes_classification_labels(self):
         self.service.create_project("cls", task_type="classify_multi")
         saved = self.service.upload_raw("cls", jpg_bytes(width=64, height=48))

@@ -11,7 +11,7 @@
 
 LabelLens is a local-network computer vision workspace for YOLOE-powered object detection, task-aware dataset iteration, and YOLO fine-tuning orchestration. It separates GPU-heavy inference/training workloads in a FastAPI backend from a Vue 3 SPA, with REST APIs for batch workflows and WebSockets for live RTSP streams.
 
-The app is built for fast dataset loops: run prompt-free, text-prompt, or visual-prompt inference; review and correct labels; export YOLO/COCO datasets; then create immutable Train Tune dataset versions and launch training jobs.
+The app is built for fast dataset loops: run prompt-free, text-prompt, or visual-prompt inference; review and correct labels; export YOLO/COCO datasets or raw images; then create immutable Train Tune dataset versions and launch training jobs.
 
 ## Highlights
 
@@ -196,7 +196,7 @@ npm run dev -- --host 0.0.0.0 --port 8282
 5. Open the modal reviewer for zoom/pan inspection.
 6. Accept, reject, edit, add, or delete annotations.
 7. Use Infer Next to propagate visual-prompt candidates to following images.
-8. Export accepted labels as YOLO TXT or COCO JSON.
+8. Export accepted labels as YOLO TXT or COCO JSON, or export raw images only (no labels).
 
 ### 3. Auto-Labelling
 

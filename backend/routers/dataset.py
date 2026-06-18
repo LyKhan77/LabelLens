@@ -1049,8 +1049,11 @@ async def export_dataset(name: str, format: str = Form("yolo"), split: float = F
         elif format == "coco":
             zip_bytes = dataset_service.export_coco(name, split)
             filename = f"{name}_coco.zip"
+        elif format == "raw":
+            zip_bytes = dataset_service.export_raw_images(name)
+            filename = f"{name}_raw.zip"
         else:
-            raise HTTPException(400, f"Unknown format: {format}. Use 'yolo' or 'coco'.")
+            raise HTTPException(400, f"Unknown format: {format}. Use 'yolo', 'coco', or 'raw'.")
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
 

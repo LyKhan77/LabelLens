@@ -1327,6 +1327,34 @@ class DatasetService:
         zip_buf.seek(0)
         return zip_buf.getvalue()
 
+    def export_raw_images(self, name: str) -> bytes:
+        """Export original images only, no labels/split/yaml. All raw images."""
+        pdir = self._project_dir(name)
+        if not os.path.isdir(pdir):
+            raise FileNotFoundError(f"Dataset '{name}' not found")
+        ann_dir = os.path.join(pdir, "annotations")
+
+        used_filenames: set[str] = set()
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for fname in sorted(os.listdir(ann_dir)):
+                if not fname.endswith(".json"):
+                    continue
+                with open(os.path.join(ann_dir, fname)) as f:
+                    ann = json.load(f)
+                img_filename = ann["image"]
+                img_path = os.path.join(pdir, "images", img_filename)
+                if not os.path.isfile(img_path):
+                    continue
+                export_filename = self._unique_export_filename(
+                    ann.get("original_filename") or img_filename,
+                    used_filenames,
+                )
+                zf.write(img_path, export_filename)
+
+        zip_buf.seek(0)
+        return zip_buf.getvalue()
+
     def export_coco(self, name: str, split: float = 0.8) -> bytes:
         pdir = self._project_dir(name)
         ann_dir = os.path.join(pdir, "annotations")

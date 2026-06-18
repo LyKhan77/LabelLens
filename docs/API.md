@@ -78,7 +78,7 @@ Backend sends JSON frame payloads or `{ "error": "..." }`.
 | GET | `/api/datasets/{name}/label-jobs/{job_id}` | Poll rapid inference job state |
 | POST | `/api/datasets/{name}/batch` | Batch upload and infer images |
 | POST | `/api/datasets/{name}/save-stream` | Sample video/RTSP frames, infer, and save detections |
-| POST | `/api/datasets/{name}/export` | Export accepted labels as `yolo` or `coco` zip. `yolo` dispatches to native task export for detection, classification, and pose. |
+| POST | `/api/datasets/{name}/export` | Export accepted labels as `yolo` or `coco` zip, or `raw` for original images only (no labels/split/yaml). `yolo` dispatches to native task export for detection, classification, and pose. |
 
 ## Dataset Review and Annotation
 
