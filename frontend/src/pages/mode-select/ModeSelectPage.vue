@@ -71,8 +71,8 @@ function navigate(path: string) {
       </div>
 
       <div class="flex justify-center">
-        <div class="w-full max-w-[980px]">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-(--spacing-lg)">
+        <div class="w-full max-w-[1240px]">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-(--spacing-lg)">
             <button
               v-for="m in MODES"
               :key="m.mode"
@@ -151,6 +151,24 @@ function navigate(path: string) {
                 Build immutable dataset versions, configure YOLO training, queue fine-tune jobs, and monitor live metrics history in one workspace.
               </p>
               <span class="text-[12px] font-mono text-primary">YOLO11 / YOLO26</span>
+            </button>
+
+            <button
+              @click="navigate('/test')"
+              class="group relative flex flex-col items-start p-(--spacing-xxl) rounded-(--radius-lg) border border-primary/20 bg-primary/5 transition-all duration-150 text-left cursor-pointer hover:border-primary/40 hover:shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
+            >
+              <div class="mb-(--spacing-lg)">
+                <svg class="w-6 h-6 text-primary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 3h6" />
+                  <path d="M10 3v6.5L5.5 17a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9.5V3" />
+                  <path d="M7.5 14h9" />
+                </svg>
+              </div>
+              <h2 class="text-[18px] font-medium text-ink tracking-[-0.42px] mb-(--spacing-xs)">Test Model</h2>
+              <p class="text-[13px] text-ink-mute leading-[1.45] mb-(--spacing-lg)">
+                Pick a trained model version, review its task, classes, and metrics, then run live inference on image, video, or RTSP.
+              </p>
+              <span class="text-[12px] font-mono text-primary">Detect / Segment / Pose / Classify</span>
             </button>
           </div>
 

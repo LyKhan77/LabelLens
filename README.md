@@ -218,7 +218,7 @@ npm run dev -- --host 0.0.0.0 --port 8282
 9. Start a training job and monitor `/train-tune/jobs/:id`.
 10. Watch task-aware metrics stream from Ultralytics `results.csv`; detection, segmentation, pose, and classification jobs use their matching metric columns.
 11. Review results at `/train-tune/results/:id`.
-12. Test a registered artifact at `/train-tune/test/:id`.
+12. Test a registered artifact at `/train-tune/test/:id`, or pick one from the Test Model gallery at `/test` (reachable from the landing page).
 
 ## Routes
 
@@ -226,6 +226,7 @@ npm run dev -- --host 0.0.0.0 --port 8282
 |-------|---------|
 | `/` | Feature Modes landing page |
 | `/workspace` | Free/Text/Visual inference workspace after model load |
+| `/test` | Test Model — model-version picker (master-detail) |
 | `/datasets` | Dataset Manager |
 | `/train-tune` | Train Tune builder |
 | `/train-tune/jobs/:id` | Live training progress |
