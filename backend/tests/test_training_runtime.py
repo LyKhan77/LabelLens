@@ -104,6 +104,44 @@ class TrainingRuntimeTest(unittest.TestCase):
         self.assertEqual(killpg.call_args_list[0].args[0], 1234)
         self.assertEqual(killpg.call_args_list[1].args[0], 1234)
 
+    def test_handle_worker_completed_event_publishes_completed_metrics(self):
+        runtime = TrainingRuntime()
+        completed = {
+            "best_model_path": "runs/train/best.pt",
+            "last_checkpoint_path": "runs/train/last.pt",
+            "metrics_best": {"epoch": 3, "map50": 0.91},
+        }
+
+        with (
+            patch("backend.services.training_runtime.training_service.complete_training_job", return_value=completed) as complete,
+            patch("backend.services.training_runtime.training_event_hub.publish") as publish,
+        ):
+            runtime._handle_worker_event(
+                "job-1",
+                {
+                    "event": "job_completed",
+                    "best_model_path": "worker-best.pt",
+                    "last_checkpoint_path": "worker-last.pt",
+                    "metrics_best": {"epoch": 3, "map50": 0.91},
+                },
+            )
+
+        complete.assert_called_once_with(
+            "job-1",
+            best_model_path="worker-best.pt",
+            last_checkpoint_path="worker-last.pt",
+            metrics_best={"epoch": 3, "map50": 0.91},
+        )
+        publish.assert_called_once_with(
+            "job-1",
+            {
+                "event": "job_completed",
+                "best_model_path": "runs/train/best.pt",
+                "last_checkpoint_path": "runs/train/last.pt",
+                "metrics_best": {"epoch": 3, "map50": 0.91},
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

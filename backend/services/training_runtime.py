@@ -145,8 +145,20 @@ class TrainingRuntime:
             latest = training_service.get_training_job(job['id'])
             if latest.get('status') not in {'completed', 'failed', 'cancelled'}:
                 if return_code == 0:
-                    training_service.complete_training_job(job['id'], latest.get('best_model_path') or '', latest.get('last_checkpoint_path') or latest.get('best_model_path') or '')
-                    training_event_hub.publish(job['id'], {'event': 'job_completed', 'best_model_path': latest.get('best_model_path')})
+                    completed = training_service.complete_training_job(
+                        job['id'],
+                        latest.get('best_model_path') or '',
+                        latest.get('last_checkpoint_path') or latest.get('best_model_path') or '',
+                    )
+                    training_event_hub.publish(
+                        job['id'],
+                        {
+                            'event': 'job_completed',
+                            'best_model_path': completed.get('best_model_path'),
+                            'last_checkpoint_path': completed.get('last_checkpoint_path'),
+                            'metrics_best': completed.get('metrics_best'),
+                        },
+                    )
                 else:
                     training_service.fail_training_job(job['id'], f'Training process exited with code {return_code}')
                     training_event_hub.publish(job['id'], {'event': 'job_failed', 'error': f'Training process exited with code {return_code}'})
@@ -264,8 +276,14 @@ class TrainingRuntime:
                 job_id,
                 best_model_path=event.get('best_model_path') or '',
                 last_checkpoint_path=event.get('last_checkpoint_path') or event.get('best_model_path') or '',
+                metrics_best=event.get('metrics_best'),
             )
-            event = {**event, 'best_model_path': completed.get('best_model_path')}
+            event = {
+                **event,
+                'best_model_path': completed.get('best_model_path'),
+                'last_checkpoint_path': completed.get('last_checkpoint_path'),
+                'metrics_best': completed.get('metrics_best'),
+            }
         elif kind == 'job_failed':
             training_service.fail_training_job(job_id, event.get('error', 'Training failed'))
         training_event_hub.publish(job_id, event)
