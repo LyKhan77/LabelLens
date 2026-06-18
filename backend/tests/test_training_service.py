@@ -970,6 +970,152 @@ class TrainingServiceTest(unittest.TestCase):
         self.assertEqual(models[0]["best_model_path"], best_path)
         self.assertEqual(models[0]["task_type"], "detect")
 
+    def test_complete_training_job_uses_best_epoch_metrics_for_segment_model_version(self):
+        self.dataset_service.create_project("seg-demo", ["pcb"])
+        self.dataset_service.save_image(
+            "seg-demo",
+            jpg_bytes(),
+            [
+                {
+                    "box": [2, 4, 20, 18],
+                    "label": "pcb",
+                    "confidence": 0.91,
+                    "mask": [[2, 4], [20, 4], [20, 18], [2, 18]],
+                }
+            ],
+            original_filename="panel-top.jpg",
+        )
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "seg-demo",
+            {
+                "version_name": "seg-demo-v1",
+                "task_type": "segment",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"resize_mode": "keep"},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+        job = self.training_service.create_training_job(
+            {
+                "job_name": "pcb-segmenter",
+                "dataset_version_id": version["id"],
+                "family": "yolo26",
+                "size": "l",
+                "base_checkpoint": "yolo26l.pt",
+                "epochs": 3,
+                "imgsz": 640,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+                "task_type": "segment",
+            },
+            inference_active=False,
+        )
+
+        self.training_service.append_metric(
+            job["id"],
+            {
+                "epoch": 1,
+                "map50": 0.61786,
+                "map50_95": 0.599,
+                "precision": 0.82504,
+                "recall": 0.33333,
+                "val_loss": 0.22,
+            },
+        )
+        self.training_service.append_metric(
+            job["id"],
+            {
+                "epoch": 3,
+                "map50": 0.0022,
+                "map50_95": 0.00022,
+                "precision": 0.00281,
+                "recall": 0.33333,
+                "val_loss": 2.41,
+            },
+        )
+
+        completed = self.training_service.complete_training_job(
+            job["id"],
+            best_model_path="/tmp/best.pt",
+            last_checkpoint_path="/tmp/last.pt",
+        )
+
+        self.assertEqual(completed["metrics_latest"]["epoch"], 3)
+        self.assertEqual(completed["metrics_best"]["epoch"], 1)
+        self.assertEqual(completed["metrics_best"]["map50"], 0.61786)
+        self.assertEqual(completed["metrics_best"]["map50_95"], 0.599)
+        model = next(model for model in self.training_service.list_model_versions() if model["job_id"] == job["id"])
+        self.assertEqual(model["metrics_best"], completed["metrics_best"])
+
+    def test_complete_training_job_uses_accuracy_for_classification_best_metrics(self):
+        self.dataset_service.create_project("cls-demo", ["ok", "ng"], task_type="classify_single")
+        uploaded = self.dataset_service.upload_raw("cls-demo", jpg_bytes(), original_filename="panel-ok.jpg")
+        self.dataset_service.set_image_labels("cls-demo", uploaded["img_id"], [{"label": "ok", "confidence": 1.0}])
+        version = self.training_service.create_dataset_version_from_live_dataset(
+            "cls-demo",
+            {
+                "version_name": "cls-demo-v1",
+                "task_type": "classify_single",
+                "split_config": {"train": 70, "val": 20, "test": 10},
+                "preprocessing_config": {"resize_mode": "keep"},
+                "augmentation_config": {"profile": "baseline"},
+                "resize_mode": "keep",
+            },
+        )
+        with patch.object(
+            self.training_service,
+            "_validate_training_config",
+            return_value={
+                "family": "yolo26",
+                "size": "n",
+                "base_checkpoint": "yolo26n-cls.pt",
+                "epochs": 2,
+                "patience": 30,
+                "imgsz": 224,
+                "batch": 2,
+                "workers": 1,
+                "training_mode": "standard",
+                "task_type": "classify_single",
+            },
+        ):
+            job = self.training_service.create_training_job(
+                {
+                    "job_name": "panel-classifier",
+                    "dataset_version_id": version["id"],
+                    "family": "yolo26",
+                    "size": "n",
+                    "base_checkpoint": "yolo26n-cls.pt",
+                    "epochs": 2,
+                    "imgsz": 224,
+                    "batch": 2,
+                    "workers": 1,
+                    "training_mode": "standard",
+                    "task_type": "classify_single",
+                },
+                inference_active=False,
+            )
+
+        self.training_service.append_metric(
+            job["id"],
+            {"epoch": 1, "accuracy_top1": 0.91, "accuracy_top5": 1.0, "val_loss": 0.4},
+        )
+        self.training_service.append_metric(
+            job["id"],
+            {"epoch": 2, "accuracy_top1": 0.5, "accuracy_top5": 0.75, "val_loss": 0.8},
+        )
+
+        completed = self.training_service.complete_training_job(
+            job["id"],
+            best_model_path="/tmp/best.pt",
+            last_checkpoint_path="/tmp/last.pt",
+        )
+
+        self.assertEqual(completed["metrics_latest"]["epoch"], 2)
+        self.assertEqual(completed["metrics_best"]["epoch"], 1)
+        self.assertEqual(completed["metrics_best"]["accuracy_top1"], 0.91)
+
     def test_metrics_are_json_safe_when_training_outputs_nan(self):
         self.dataset_service.create_project("demo", ["bolt"])
         self.dataset_service.save_image(
