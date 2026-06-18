@@ -58,7 +58,7 @@ mobileclip_blt.ts
 
 # --- Other ---
 docs/superpowers/
-test-model/
+/test-model/
 docs/plans/
 .superpowers/
 .antigravitycli/
